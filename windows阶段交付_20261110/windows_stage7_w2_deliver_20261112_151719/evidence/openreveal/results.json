@@ -1,0 +1,79 @@
+{
+  "suite": "w2_openreveal",
+  "summary": {
+    "PASS": 10,
+    "FAIL": 0,
+    "BLOCK": 0,
+    "UNTESTED": 0,
+    "missing": 0,
+    "errors": [],
+    "elapsed_sec": 31.01,
+    "pid": 82020,
+    "python": "3.14.7",
+    "platform": "win32"
+  },
+  "items": [
+    {
+      "id": "OR1_1",
+      "title": "OR1_1",
+      "status": "PASS",
+      "detail": "扫描+计划完成 total=2"
+    },
+    {
+      "id": "OR1_2",
+      "title": "OR1_2",
+      "status": "PASS",
+      "detail": "duplicates dialog ready=True"
+    },
+    {
+      "id": "OR1_3",
+      "title": "OR1_3",
+      "status": "PASS",
+      "detail": "content 组存在且 2 份 paths=['w2打开定位样例目录甲\\\\w2重复内容样例.txt', '乙\\\\w2重复内容样例.txt']"
+    },
+    {
+      "id": "OR2_2",
+      "title": "OR2_2",
+      "status": "PASS",
+      "detail": "默认程序窗口出现（标题含文件名，置前并截图）：w2重复内容样例.txt - Notepad cls=Notepad"
+    },
+    {
+      "id": "OR2_3",
+      "title": "OR2_3",
+      "status": "PASS",
+      "detail": "打开为只读体验后文件 SHA-256 不变且截图非空；closed=True"
+    },
+    {
+      "id": "OR3_1",
+      "title": "OR3_1",
+      "status": "PASS",
+      "detail": "资源管理器定位窗口真实打开（CabinetWClass，标题=「目录名 - 文件资源管理器」）：title=w2打开定位样例目录甲 - 文件资源管理器"
+    },
+    {
+      "id": "OR3_2",
+      "title": "OR3_2",
+      "status": "PASS",
+      "detail": "Explorer 定位窗口已移动到固定位置截图（可见选中高亮）并关闭；shot_ok=True closed=True"
+    },
+    {
+      "id": "OR4_1",
+      "title": "OR4_1",
+      "status": "PASS",
+      "detail": "打开/定位后副本无删除/无移动/内容不变：['w2打开定位样例目录甲/w2重复内容样例.txt', '乙/w2重复内容样例.txt']"
+    },
+    {
+      "id": "OR_EXIT",
+      "title": "子进程真实 OS 退出码为 0",
+      "status": "PASS",
+      "detail": "exit=0 timed_out=False elapsed_ms=31006.1"
+    },
+    {
+      "id": "OR_EXIT_ALL",
+      "title": "所有非故障注入子进程的最终退出码均为 0（不只看 JSON 是否完整）；打开/定位子进程必须 exit=0",
+      "status": "PASS",
+      "detail": "子进程数=1 "
+    }
+  ],
+  "required_missing": [],
+  "finished_at_utc": "2026-11-12T07:40:26.841453+00:00"
+}

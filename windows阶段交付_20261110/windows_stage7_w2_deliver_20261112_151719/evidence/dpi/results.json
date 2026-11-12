@@ -1,0 +1,145 @@
+{
+  "suite": "w2_dpi",
+  "summary": {
+    "PASS": 21,
+    "FAIL": 0,
+    "BLOCK": 0,
+    "UNTESTED": 0,
+    "missing": 0,
+    "errors": [],
+    "elapsed_sec": 7.79,
+    "pid": 63500,
+    "python": "3.14.7",
+    "platform": "win32"
+  },
+  "items": [
+    {
+      "id": "DPI0_1",
+      "title": "屏幕原生 DPI 探测成功（Qt 原生进程，无任何覆盖变量）",
+      "status": "PASS",
+      "detail": "GetDpiForSystem=96；screens=[{'name': 'ATNA60HU01-0 ', 'dpr': 1.5, 'geometry': [0, 0, 1707, 1067]}, {'name': 'ARZOPA', 'dpr': 1.25, 'geometry': [-1080, -315, 864, 1536]}]；probe_exit=0"
+    },
+    {
+      "id": "DPI0_2",
+      "title": "档位来源：主屏原生 dpr=1.5 → 150% 档为系统真实设置（子进程不设任何 DPI 覆盖变量）；125% 档用 QT_ENABLE_HIGHDPI_SCALING=0 + QT_SCALE_FACTOR=1.25 模拟",
+      "status": "PASS",
+      "detail": "native_150=True；副屏（竖屏）不作为档位载体；系统级缩放修改需注销会话，本轮未做"
+    },
+    {
+      "id": "DPI125_1",
+      "title": "[125%] DPI125_1",
+      "status": "PASS",
+      "detail": "devicePixelRatio=1.25 expect=1.25 QT_SCALE_FACTOR=1.25 QT_ENABLE_HIGHDPI_SCALING=0 platform=windows"
+    },
+    {
+      "id": "DPI125_2",
+      "title": "[125%] DPI125_2",
+      "status": "PASS",
+      "detail": "扫描+计划完成 total=4"
+    },
+    {
+      "id": "DPI125_3",
+      "title": "[125%] DPI125_3",
+      "status": "PASS",
+      "detail": "主窗口全部可见按钮（20 个）非零尺寸、可点、未被窗口/屏幕截断；buttons=20"
+    },
+    {
+      "id": "DPI125_4",
+      "title": "[125%] DPI125_4",
+      "status": "PASS",
+      "detail": "预览表列全部宽度>0、表头非零且在屏内；越界列可经横向滚动到达；cols=6 sizes=[48, 337, 337, 388, 48, 48] viewport=1206 overflow=[] scrollbar_max=0"
+    },
+    {
+      "id": "DPI125_5",
+      "title": "[125%] DPI125_5",
+      "status": "PASS",
+      "detail": "确认框出现且「确认开始整理」「取消」均可完整点到（已截图）done=True ok=True cancel=True"
+    },
+    {
+      "id": "DPI125_6",
+      "title": "[125%] DPI125_6",
+      "status": "PASS",
+      "detail": "历史窗口打开、其按钮与表格列可完整点到（已截图）open=True bad=[] tables=2 cols=[10, 7]"
+    },
+    {
+      "id": "DPI125_7",
+      "title": "[125%] DPI125_7",
+      "status": "PASS",
+      "detail": "主窗口整体位于屏幕可用区内（未被屏幕边缘截断）frame=(449,251,1686,1006) avail=(0,0,2047,1221)"
+    },
+    {
+      "id": "DPI125_EXIT",
+      "title": "[125%] 子进程真实 OS 退出码为 0",
+      "status": "PASS",
+      "detail": "exit=0 timed_out=False elapsed_ms=3684.7"
+    },
+    {
+      "id": "DPI125_SHOTS",
+      "title": "[125%] 四张截图（主窗口/预览表/确认框/历史）已生成且非空",
+      "status": "PASS",
+      "detail": "shots=['dpi125_confirm.png', 'dpi125_history.png', 'dpi125_main.png', 'dpi125_table.png']"
+    },
+    {
+      "id": "DPI150_1",
+      "title": "[150%] DPI150_1",
+      "status": "PASS",
+      "detail": "devicePixelRatio=1.5 expect=1.5 QT_SCALE_FACTOR=None QT_ENABLE_HIGHDPI_SCALING=None platform=windows"
+    },
+    {
+      "id": "DPI150_2",
+      "title": "[150%] DPI150_2",
+      "status": "PASS",
+      "detail": "扫描+计划完成 total=4"
+    },
+    {
+      "id": "DPI150_3",
+      "title": "[150%] DPI150_3",
+      "status": "PASS",
+      "detail": "主窗口全部可见按钮（20 个）非零尺寸、可点、未被窗口/屏幕截断；buttons=20"
+    },
+    {
+      "id": "DPI150_4",
+      "title": "[150%] DPI150_4",
+      "status": "PASS",
+      "detail": "预览表列全部宽度>0、表头非零且在屏内；越界列可经横向滚动到达；cols=6 sizes=[32, 381, 380, 261, 32, 32] viewport=1118 overflow=[] scrollbar_max=0"
+    },
+    {
+      "id": "DPI150_5",
+      "title": "[150%] DPI150_5",
+      "status": "PASS",
+      "detail": "确认框出现且「确认开始整理」「取消」均可完整点到（已截图）done=True ok=True cancel=True"
+    },
+    {
+      "id": "DPI150_6",
+      "title": "[150%] DPI150_6",
+      "status": "PASS",
+      "detail": "历史窗口打开、其按钮与表格列可完整点到（已截图）open=True bad=[] tables=2 cols=[10, 7]"
+    },
+    {
+      "id": "DPI150_7",
+      "title": "[150%] DPI150_7",
+      "status": "PASS",
+      "detail": "主窗口整体位于屏幕可用区内（未被屏幕边缘截断）frame=(278,149,1427,898) avail=(0,0,1706,1018)"
+    },
+    {
+      "id": "DPI150_EXIT",
+      "title": "[150%] 子进程真实 OS 退出码为 0",
+      "status": "PASS",
+      "detail": "exit=0 timed_out=False elapsed_ms=3873.8"
+    },
+    {
+      "id": "DPI150_SHOTS",
+      "title": "[150%] 四张截图（主窗口/预览表/确认框/历史）已生成且非空",
+      "status": "PASS",
+      "detail": "shots=['dpi150_confirm.png', 'dpi150_history.png', 'dpi150_main.png', 'dpi150_table.png']"
+    },
+    {
+      "id": "DPI_EXIT_ALL",
+      "title": "所有非故障注入子进程的最终退出码均为 0（不只看 JSON 是否完整）；探针与两个 DPI 子进程必须 exit=0",
+      "status": "PASS",
+      "detail": "子进程数=3 "
+    }
+  ],
+  "required_missing": [],
+  "finished_at_utc": "2026-11-12T07:30:30.613488+00:00"
+}

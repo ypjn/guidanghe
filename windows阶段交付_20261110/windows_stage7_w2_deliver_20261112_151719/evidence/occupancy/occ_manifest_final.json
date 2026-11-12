@@ -1,0 +1,16 @@
+{
+  "count": 2,
+  "meta": {
+    "phase": "after_undo2"
+  },
+  "items": {
+    "大二上/数据结构/乙-被占用.pdf": {
+      "size": 4,
+      "sha256": "0b6463c43302171e8a8a76146f2e45c471999bd4f2bded4a86b87a10838b3ac2"
+    },
+    "大二上/数据结构/甲-未占用.pdf": {
+      "size": 4,
+      "sha256": "19f1fa5ec989d121d8d2714dbed4db965eaaa6eef40df756c8a2526cedcbd0a3"
+    }
+  }
+}

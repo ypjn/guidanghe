@@ -1,0 +1,25 @@
+[
+  {
+    "tag": "125",
+    "expect": "1.25",
+    "exit": 0,
+    "timed_out": false,
+    "overrides": {
+      "QT_ENABLE_HIGHDPI_SCALING": "0",
+      "QT_SCALE_FACTOR": "1.25"
+    },
+    "stdout_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\w2_dpi_20261112_153022_d4a430\\children\\dpi125.stdout.log",
+    "stderr_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\w2_dpi_20261112_153022_d4a430\\children\\dpi125.stderr.log",
+    "checks": 7
+  },
+  {
+    "tag": "150",
+    "expect": "1.5",
+    "exit": 0,
+    "timed_out": false,
+    "overrides": {},
+    "stdout_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\w2_dpi_20261112_153022_d4a430\\children\\dpi150.stdout.log",
+    "stderr_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\w2_dpi_20261112_153022_d4a430\\children\\dpi150.stderr.log",
+    "checks": 7
+  }
+]

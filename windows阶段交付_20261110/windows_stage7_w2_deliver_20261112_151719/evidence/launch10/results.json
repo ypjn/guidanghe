@@ -1,0 +1,49 @@
+{
+  "suite": "launch_exit_10x",
+  "summary": {
+    "PASS": 5,
+    "FAIL": 0,
+    "BLOCK": 0,
+    "UNTESTED": 0,
+    "missing": 0,
+    "errors": [],
+    "elapsed_sec": 12.35,
+    "pid": 80880,
+    "python": "3.14.7",
+    "platform": "win32"
+  },
+  "items": [
+    {
+      "id": "L0_1",
+      "title": "10 次独立进程退出码全部为 0（无超时）",
+      "status": "PASS",
+      "detail": "exits=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]"
+    },
+    {
+      "id": "L0_2",
+      "title": "每次窗口都真实可见，并在 app.exec() 内被正常关闭",
+      "status": "PASS",
+      "detail": "[('run01', True, True), ('run02', True, True), ('run03', True, True), ('run04', True, True), ('run05', True, True), ('run06', True, True), ('run07', True, True), ('run08', True, True), ('run09', True, True), ('run10', True, True)]"
+    },
+    {
+      "id": "L0_3",
+      "title": "退出时没有遗留运行中的 QThread",
+      "status": "PASS",
+      "detail": "[[], [], [], [], [], [], [], [], [], []]"
+    },
+    {
+      "id": "L0_4",
+      "title": "单次启动+退出耗时均在 20s 内（无挂死）",
+      "status": "PASS",
+      "detail": "[1210.2, 1191.9, 1231.7, 1204.0, 1238.3, 1229.0, 1258.3, 1266.4, 1288.9, 1206.2]"
+    },
+    {
+      "id": "L0_5",
+      "title": "每次运行使用各自独立的隔离目录（recent/配置不共享）",
+      "status": "PASS",
+      "detail": "runs=10"
+    }
+  ],
+  "required_missing": [],
+  "finished_at_utc": "2026-11-12T07:20:45.347614+00:00"
+}

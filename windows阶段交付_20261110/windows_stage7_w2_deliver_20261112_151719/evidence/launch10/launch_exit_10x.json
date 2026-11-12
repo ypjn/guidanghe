@@ -1,0 +1,152 @@
+[
+  {
+    "tag": "run01",
+    "exit": 0,
+    "timed_out": false,
+    "elapsed_ms": 1210.2,
+    "obs": {
+      "visible": true,
+      "closed": true,
+      "threads_running": [],
+      "python": "3.14.7",
+      "shutdown_done": true
+    },
+    "stdout_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\launch_20261112_152032_142a98\\children\\run01.stdout.log",
+    "stderr_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\launch_20261112_152032_142a98\\children\\run01.stderr.log"
+  },
+  {
+    "tag": "run02",
+    "exit": 0,
+    "timed_out": false,
+    "elapsed_ms": 1191.9,
+    "obs": {
+      "visible": true,
+      "closed": true,
+      "threads_running": [],
+      "python": "3.14.7",
+      "shutdown_done": true
+    },
+    "stdout_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\launch_20261112_152032_142a98\\children\\run02.stdout.log",
+    "stderr_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\launch_20261112_152032_142a98\\children\\run02.stderr.log"
+  },
+  {
+    "tag": "run03",
+    "exit": 0,
+    "timed_out": false,
+    "elapsed_ms": 1231.7,
+    "obs": {
+      "visible": true,
+      "closed": true,
+      "threads_running": [],
+      "python": "3.14.7",
+      "shutdown_done": true
+    },
+    "stdout_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\launch_20261112_152032_142a98\\children\\run03.stdout.log",
+    "stderr_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\launch_20261112_152032_142a98\\children\\run03.stderr.log"
+  },
+  {
+    "tag": "run04",
+    "exit": 0,
+    "timed_out": false,
+    "elapsed_ms": 1204.0,
+    "obs": {
+      "visible": true,
+      "closed": true,
+      "threads_running": [],
+      "python": "3.14.7",
+      "shutdown_done": true
+    },
+    "stdout_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\launch_20261112_152032_142a98\\children\\run04.stdout.log",
+    "stderr_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\launch_20261112_152032_142a98\\children\\run04.stderr.log"
+  },
+  {
+    "tag": "run05",
+    "exit": 0,
+    "timed_out": false,
+    "elapsed_ms": 1238.3,
+    "obs": {
+      "visible": true,
+      "closed": true,
+      "threads_running": [],
+      "python": "3.14.7",
+      "shutdown_done": true
+    },
+    "stdout_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\launch_20261112_152032_142a98\\children\\run05.stdout.log",
+    "stderr_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\launch_20261112_152032_142a98\\children\\run05.stderr.log"
+  },
+  {
+    "tag": "run06",
+    "exit": 0,
+    "timed_out": false,
+    "elapsed_ms": 1229.0,
+    "obs": {
+      "visible": true,
+      "closed": true,
+      "threads_running": [],
+      "python": "3.14.7",
+      "shutdown_done": true
+    },
+    "stdout_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\launch_20261112_152032_142a98\\children\\run06.stdout.log",
+    "stderr_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\launch_20261112_152032_142a98\\children\\run06.stderr.log"
+  },
+  {
+    "tag": "run07",
+    "exit": 0,
+    "timed_out": false,
+    "elapsed_ms": 1258.3,
+    "obs": {
+      "visible": true,
+      "closed": true,
+      "threads_running": [],
+      "python": "3.14.7",
+      "shutdown_done": true
+    },
+    "stdout_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\launch_20261112_152032_142a98\\children\\run07.stdout.log",
+    "stderr_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\launch_20261112_152032_142a98\\children\\run07.stderr.log"
+  },
+  {
+    "tag": "run08",
+    "exit": 0,
+    "timed_out": false,
+    "elapsed_ms": 1266.4,
+    "obs": {
+      "visible": true,
+      "closed": true,
+      "threads_running": [],
+      "python": "3.14.7",
+      "shutdown_done": true
+    },
+    "stdout_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\launch_20261112_152032_142a98\\children\\run08.stdout.log",
+    "stderr_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\launch_20261112_152032_142a98\\children\\run08.stderr.log"
+  },
+  {
+    "tag": "run09",
+    "exit": 0,
+    "timed_out": false,
+    "elapsed_ms": 1288.9,
+    "obs": {
+      "visible": true,
+      "closed": true,
+      "threads_running": [],
+      "python": "3.14.7",
+      "shutdown_done": true
+    },
+    "stdout_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\launch_20261112_152032_142a98\\children\\run09.stdout.log",
+    "stderr_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\launch_20261112_152032_142a98\\children\\run09.stderr.log"
+  },
+  {
+    "tag": "run10",
+    "exit": 0,
+    "timed_out": false,
+    "elapsed_ms": 1206.2,
+    "obs": {
+      "visible": true,
+      "closed": true,
+      "threads_running": [],
+      "python": "3.14.7",
+      "shutdown_done": true
+    },
+    "stdout_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\launch_20261112_152032_142a98\\children\\run10.stdout.log",
+    "stderr_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7w2_run_base\\runs\\launch_20261112_152032_142a98\\children\\run10.stderr.log"
+  }
+]

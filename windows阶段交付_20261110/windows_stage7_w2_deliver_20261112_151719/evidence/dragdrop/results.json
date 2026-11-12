@@ -1,0 +1,85 @@
+{
+  "suite": "w2_dragdrop",
+  "summary": {
+    "PASS": 11,
+    "FAIL": 0,
+    "BLOCK": 0,
+    "UNTESTED": 0,
+    "missing": 0,
+    "errors": [],
+    "elapsed_sec": 13.02,
+    "pid": 123536,
+    "python": "3.14.7",
+    "platform": "win32"
+  },
+  "items": [
+    {
+      "id": "DD0_1",
+      "title": "DD0_1",
+      "status": "PASS",
+      "detail": "待整理清单对话框已打开"
+    },
+    {
+      "id": "DD0_2",
+      "title": "DD0_2",
+      "status": "PASS",
+      "detail": "对话框已定位，清单控件释放点（物理像素）=(1513, 504) dpr=1.5 screen=2560x1600"
+    },
+    {
+      "id": "DD1_1",
+      "title": "DD1_1",
+      "status": "PASS",
+      "detail": "资源管理器窗口已打开（/select 第一项）：title=拖入源 - 文件资源管理器"
+    },
+    {
+      "id": "DD1_2",
+      "title": "DD1_2",
+      "status": "PASS",
+      "detail": "Ctrl+A 生效证明（单击定位行→全选，真实键鼠注入）：初始选中行=(313, 349) 高=37px 初始色带=[(226, 234), (281, 291), (313, 349), (368, 383), (556, 559)] 全选后色带=[(281, 291), (313, 349), (356, 392)] 总高=85px（须≥1.5×37px）背景=(25, 25, 25)"
+    },
+    {
+      "id": "DD2_1",
+      "title": "DD2_1",
+      "status": "PASS",
+      "detail": "拖放后清单 +2 且恰为两个合成文件：count=2 paths=['C:\\\\Users\\\\Lenovo\\\\Documents\\\\Trae-CN\\\\temp_20261110_01\\\\_s7w2_run_base_dd\\\\dragdrop_root\\\\拖入源\\\\w2拖放样例乙.pdf', 'C:\\\\Users\\\\Lenovo\\\\Documents\\\\Trae-CN\\\\temp_20261110_01\\\\_s7w2_run_base_dd\\\\dragdrop_root\\\\拖入源\\\\w2拖放样例甲.txt']"
+    },
+    {
+      "id": "DD3_1",
+      "title": "DD3_1",
+      "status": "PASS",
+      "detail": "按清单扫描完成：scope=intake total=2"
+    },
+    {
+      "id": "DD3_2",
+      "title": "DD3_2",
+      "status": "PASS",
+      "detail": "计划恰包含这两个文件：['拖入源/w2拖放样例乙.pdf', '拖入源/w2拖放样例甲.txt'] expect=['拖入源/w2拖放样例乙.pdf', '拖入源/w2拖放样例甲.txt']"
+    },
+    {
+      "id": "DD3_3",
+      "title": "DD3_3",
+      "status": "PASS",
+      "detail": "范围外文件不在计划且三文件均在原位、SHA-256 不变（扫描/计划不移动文件）：outside_in_plan=False"
+    },
+    {
+      "id": "DD4_1",
+      "title": "DD4_1",
+      "status": "PASS",
+      "detail": "三张截图（资源管理器定位/全选高亮/清单+2）非空：['29_explorer_open.png', '30_before_drag.png', '31_after_drop.png']"
+    },
+    {
+      "id": "DD_EXIT",
+      "title": "子进程真实 OS 退出码为 0",
+      "status": "PASS",
+      "detail": "exit=0 timed_out=False elapsed_ms=13010.2"
+    },
+    {
+      "id": "DD_EXIT_ALL",
+      "title": "所有非故障注入子进程的最终退出码均为 0（不只看 JSON 是否完整）；原生拖放子进程必须 exit=0",
+      "status": "PASS",
+      "detail": "子进程数=1 "
+    }
+  ],
+  "required_missing": [],
+  "finished_at_utc": "2026-11-12T08:34:38.836199+00:00"
+}

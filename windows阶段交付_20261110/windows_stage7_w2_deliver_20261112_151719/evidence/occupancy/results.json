@@ -1,0 +1,193 @@
+{
+  "suite": "s5_names_occupancy",
+  "summary": {
+    "PASS": 29,
+    "FAIL": 0,
+    "BLOCK": 0,
+    "UNTESTED": 0,
+    "missing": 0,
+    "errors": [],
+    "elapsed_sec": 1.74,
+    "pid": 76352,
+    "python": "3.14.7",
+    "platform": "win32"
+  },
+  "items": [
+    {
+      "id": "N1_1",
+      "title": "中文+空格文件名：计划目标保留原名、位于 _已整理 下且不写出根目录",
+      "status": "PASS",
+      "detail": "sources=['大二上/数据结构/我的 讲义.pdf'] targets=['_已整理/未分类课程/文档/我的 讲义.pdf']"
+    },
+    {
+      "id": "N1_2",
+      "title": "中文+空格：执行后磁盘命中目标、历史记为 moved、无多余成功项",
+      "status": "PASS",
+      "detail": "moved=1 failed=0 skipped=0 target_exists=True sha_ok=True"
+    },
+    {
+      "id": "N1_3",
+      "title": "中文+空格：源已不存在（同一份内容只在一个位置）",
+      "status": "PASS",
+      "detail": "src_exists=False target_exists=True"
+    },
+    {
+      "id": "N2_1",
+      "title": "计划内同名目标碰撞：分配出两个互不相同的目标名",
+      "status": "PASS",
+      "detail": "targets=['_已整理/未分类课程/文档/讲义.pdf', '_已整理/未分类课程/文档/讲义 (1).pdf']"
+    },
+    {
+      "id": "N2_2",
+      "title": "执行后两份不同内容都在，未互相覆盖",
+      "status": "PASS",
+      "detail": "moved=2 targets=['C:\\\\Users\\\\Lenovo\\\\Documents\\\\Trae-CN\\\\temp_20261110_01\\\\_s7w2_run_base\\\\runs\\\\s5ab_20261112_151942_dd6dc4\\\\n2\\\\_已整理\\\\未分类课程\\\\文档\\\\讲义.pdf', 'C:\\\\Users\\\\Lenovo\\\\Documents\\\\Trae-CN\\\\temp_20261110_01\\\\_s7w2_run_base\\\\runs\\\\s5ab_20261112_151942_dd6dc4\\\\n2\\\\_已整理\\\\未分类课程\\\\文档\\\\讲义 (1).pdf'] sha_ok=True"
+    },
+    {
+      "id": "N3_1",
+      "title": "磁盘已有同名目标：计划改用 (1) 并标记 conflict_with_existing",
+      "status": "PASS",
+      "detail": "probe_target=_已整理/未分类课程/文档/讲义.pdf targets=['_已整理/未分类课程/文档/讲义 (1).pdf'] conflict=[True]"
+    },
+    {
+      "id": "N3_2",
+      "title": "执行后既有文件哈希未变，新文件落在 (1) 名下",
+      "status": "PASS",
+      "detail": "moved=1 pre_sha_same=True"
+    },
+    {
+      "id": "N4_1",
+      "title": "大小写差异：计划给出两个仅大小写不同的目标名（记录实测，不做推断）",
+      "status": "PASS",
+      "detail": "targets=['_已整理/未分类课程/文档/report.pdf', '_已整理/未分类课程/文档/RePort.pdf']"
+    },
+    {
+      "id": "N4_2",
+      "title": "大小写差异：未覆盖丢内容——目标仅一份，另一份内容仍在源位置",
+      "status": "PASS",
+      "detail": "target_dir_files=['report.pdf'] present=1 kept=1 moved=1 skipped=1 failed=0"
+    },
+    {
+      "id": "N4_3",
+      "title": "大小写差异：被跳过项在历史中如实记录（未记成功）且错误提示为目标被占用",
+      "status": "PASS",
+      "detail": "summary=成功 1/跳过 1 skipped_error=['目标路径已被占用']"
+    },
+    {
+      "id": "N5_1",
+      "title": "真实磁盘行为：CON.txt 在本机 可以创建（实测，非推断）",
+      "status": "PASS",
+      "detail": "created=True detail=创建成功；Microsoft 文档仍将其列为保留设备名，故不同 Windows 版本可能不同，本机结论只对本机成立"
+    },
+    {
+      "id": "N5_2",
+      "title": "保留名课程 CON：历史与磁盘一致——要么如实 failed 且源在目标不在，要么如实 moved 且目标在源不在；不出现“失败却记成功”或源/目标双丢",
+      "status": "PASS",
+      "detail": "observed=moved targets=['_已整理/CON/文档/讲义.pdf'] summary=成功 1 err=[''] src_ok=False tgt_ok=True"
+    },
+    {
+      "id": "N5_3",
+      "title": "保留名场景未在整理根目录外写出任何文件",
+      "status": "PASS",
+      "detail": "root_entries=['.organizer', '_已整理', '大二上']"
+    },
+    {
+      "id": "N6_1",
+      "title": "课程名含非法字符：目标目录中的非法字符被替换为 _（计划层面）",
+      "status": "PASS",
+      "detail": "targets=['_已整理/高数_实验___x_/文档/讲义.pdf']"
+    },
+    {
+      "id": "N6_1b",
+      "title": "非法字符课程名：真实磁盘创建目录并移动成功",
+      "status": "PASS",
+      "detail": "moved=1 failed=0 targets=['_已整理/高数_实验___x_/文档/讲义.pdf']"
+    },
+    {
+      "id": "N6_2",
+      "title": "课程名带尾随点：目标目录去掉尾随点并可真实创建",
+      "status": "PASS",
+      "detail": "targets=['_已整理/高数/文档/讲义.pdf'] moved=1 failed=0"
+    },
+    {
+      "id": "N6_3",
+      "title": "输入验证层：配置组件尾随空白被拒绝；尾随点与 Windows 保留名未被拒绝（后者只能在计划/执行层清理，已记录为已知限制）",
+      "status": "PASS",
+      "detail": "space_errors=[\"学期映射第 9 条 学期标签：首尾不能有空白（当前：'测试来源Z '）\"] dot_errors=[] reserved_errors=[]"
+    },
+    {
+      "id": "N6_4",
+      "title": "路径逃逸：课程名 .. 不会把目标写出整理根目录",
+      "status": "PASS",
+      "detail": "targets=['_已整理/_/文档/讲义.pdf']"
+    },
+    {
+      "id": "O1_1",
+      "title": "占用子进程已用显式共享模式（无 FILE_SHARE_DELETE）打开文件",
+      "status": "PASS",
+      "detail": "{\"handle_ok\": true, \"handle\": \"0x204\", \"share_mode\": \"FILE_SHARE_READ|FILE_SHARE_WRITE (无 FILE_SHARE_DELETE)\", \"desired_access\": \"GENERIC_READ\", \"get_last_error\": 0, \"pid\": 116320}"
+    },
+    {
+      "id": "O1_2",
+      "title": "父进程改名探测失败 → 占用已实际建立（可删/可改名被拒绝）",
+      "status": "PASS",
+      "detail": "PermissionError: winerror=32 [WinError 32] 另一个程序正在使用此文件，进程无法访问。: 'C:\\\\Users\\\\Lenovo\\\\Documents\\\\Trae-CN\\\\temp_20261110_01\\\\_s7w2_run_base\\\\runs\\\\s5ab_20261112_151942_dd6dc4\\\\occ\\\\大二上\\\\数据结构\\\\乙-被占用.pdf' -> 'C:\\\\Users\\\\Lenovo\\\\Documents\\\\Trae-CN\\\\temp_20261110_01\\\\_s7w2_run_base\\\\runs\\\\s5ab_20261112_151942_dd6dc4\\\\occ\\\\大二上\\\\数据结构\\\\乙-被占用.pdf.__probe'"
+    },
+    {
+      "id": "O2_1",
+      "title": "占用中执行：未占用项成功 1、占用项失败 1，失败未被记成成功",
+      "status": "PASS",
+      "detail": "summary=成功 1/失败 1 actions=[('大二上\\\\数据结构\\\\乙-被占用.pdf', 'failed', \"移动失败：[WinError 32] 另一个程序正在使用此文件，进程无法访问。: 'C:\\\\\\\\Users\\\\\\\\Lenovo\\\\\\\\Documents\\\\\\\\Trae-CN\\\\\\\\temp_20261110_01\\\\\\\\_s7w2_run_base\\\\\\\\runs\\\\\\\\s5ab_20261112_151942_dd6dc4\\\\\\\\occ\\\\\\\\大二上\\\\\\\\数据结构\\\\\\\\乙-被占用.pdf' -> 'C:\\\\\\\\Users\\\\\\\\Lenovo\\\\\\\\Documents\\\\\\\\Trae-CN\\\\\\\\temp_20261110_01\\\\\\\\_s7w2_run_base\\\\\\\\runs\\\\\\\\s5ab_20261112_151942_dd6dc4\\\\\\\\occ\\\\\\\\_已整理/未分类课程/文档\\\\\\\\乙-被占用.pdf'；源文件保留在 C:\\\\Users\\\\Lenovo\\\\Documents\\\\Trae-CN\\\\temp_20261110_01\\\\_s7w2_run_base\\\\runs\\\\s5ab_20261112_151942_dd6dc4\\\\occ\\\\大二上\\\\数据结构\\\\乙-被占用.pdf（未由本次操作改动）；目标路径未创建：C:\\\\Users\\\\Lenovo\\\\Documents\\\\Trae-CN\\\\temp_20261110_01\\\\_s7w2_run_base\\\\runs\\\\s5ab_20261112_151942_dd6dc4\\\\occ\\\\_已整理/未分类课程/文档\\\\乙-被占用.pdf；本次未复制、未删除任何文件，也没有留下临时文件\"), ('大二上\\\\数据结构\\\\甲-未占用.pdf', 'moved', '')]"
+    },
+    {
+      "id": "O2_2",
+      "title": "占用项的历史错误串给出移动失败原因（非空）",
+      "status": "PASS",
+      "detail": "error=[\"移动失败：[WinError 32] 另一个程序正在使用此文件，进程无法访问。: 'C:\\\\\\\\Users\\\\\\\\Lenovo\\\\\\\\Documents\\\\\\\\Trae-CN\\\\\\\\temp_20261110_01\\\\\\\\_s7w2_run_base\\\\\\\\runs\\\\\\\\s5ab_20261112_151942_dd6dc4\\\\\\\\occ\\\\\\\\大二上\\\\\\\\数据结构\\\\\\\\乙-被占用.pdf' -> 'C:\\\\\\\\Users\\\\\\\\Lenovo\\\\\\\\Documents\\\\\\\\Trae-CN\\\\\\\\temp_20261110_01\\\\\\\\_s7w2_run_base\\\\\\\\runs\\\\\\\\s5ab_20261112_151942_dd6dc4\\\\\\\\occ\\\\\\\\_已整理/未分类课程/文档\\\\\\\\乙-被占用.pdf'；源文件保留在 C:\\\\Users\\\\Lenovo\\\\Documents\\\\Trae-CN\\\\temp_20261110_01\\\\_s7w2_run_base\\\\runs\\\\s5ab_20261112_151942_dd6dc4\\\\occ\\\\大二上\\\\数据结构\\\\乙-被占用.pdf（未由本次操作改动）；目标路径未创建：C:\\\\Users\\\\Lenovo\\\\Documents\\\\Trae-CN\\\\temp_20261110_01\\\\_s7w2_run_base\\\\runs\\\\s5ab_20261112_151942_dd6dc4\\\\occ\\\\_已整理/未分类课程/文档\\\\乙-被占用.pdf；本次未复制、未删除任何文件，也没有留下临时文件\"]"
+    },
+    {
+      "id": "O2_3",
+      "title": "占用失败项：源仍在原位、目标路径不存在（失败不得留下副本/半成品）",
+      "status": "PASS",
+      "detail": "held_exists=True target=_已整理/未分类课程/文档\\乙-被占用.pdf target_exists=False"
+    },
+    {
+      "id": "O3_1",
+      "title": "占用释放：子进程正常退出（exit=0）",
+      "status": "PASS",
+      "detail": "exit=0 timeout=False"
+    },
+    {
+      "id": "O4_1",
+      "title": "释放后按产品流程撤销该批次：恢复 1 项，清单与初始一致",
+      "status": "PASS",
+      "detail": "undo=完整撤销：恢复 1 项 diff={}"
+    },
+    {
+      "id": "O5_1",
+      "title": "释放后完整流程：两项都移动成功",
+      "status": "PASS",
+      "detail": "summary=成功 2"
+    },
+    {
+      "id": "O5_2",
+      "title": "撤销后完整文件清单（含大小与 SHA-256）与初始完全一致",
+      "status": "PASS",
+      "detail": "undo=完整撤销：恢复 2 项 diff={}"
+    },
+    {
+      "id": "O6_1",
+      "title": "只读属性观察（单独记录，不等同于权限/ACL 测试）：实测 moved=1, failed=0",
+      "status": "PASS",
+      "detail": "summary=成功 1（Windows 同卷 os.rename 不受只读属性限制，因此不能把只读属性当写权限测试）"
+    },
+    {
+      "id": "O_EXIT",
+      "title": "所有非故障注入子进程的最终退出码均为 0（不只看 JSON 是否完整）；占用持有进程 occ_holder 必须 exit=0",
+      "status": "PASS",
+      "detail": "子进程数=1 "
+    }
+  ],
+  "required_missing": [],
+  "finished_at_utc": "2026-11-12T07:19:44.627119+00:00"
+}
