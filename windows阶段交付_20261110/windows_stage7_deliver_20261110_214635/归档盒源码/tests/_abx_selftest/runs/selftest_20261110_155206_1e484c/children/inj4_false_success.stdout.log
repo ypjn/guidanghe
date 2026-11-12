@@ -1,0 +1,6 @@
+[FAIL] I4 故意失败但退出 0
+         injected false success
+
+=== injected_false_success 汇总: PASS=0 FAIL=1 BLOCK=0 未测=0 缺失=0 耗时=0.0s ===
+EXIT_CODE=1
+EXIT_CODE=0

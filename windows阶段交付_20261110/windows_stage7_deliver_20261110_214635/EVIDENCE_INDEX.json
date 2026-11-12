@@ -1,0 +1,1190 @@
+{
+  "deliver_dir": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\windows_stage7_deliver_20261110_214635",
+  "generated_at": "2026-11-10T21:49:28",
+  "algorithm": "sha256",
+  "file_count": 236,
+  "verified_files": 236,
+  "mismatch": [],
+  "files": [
+    {
+      "path": "REBUILD.md",
+      "size": 3469,
+      "sha256": "818cd0aee60c3515b18718c83adcbff76669e0769aaca68eb013a5c3a8f4b8a3"
+    },
+    {
+      "path": "STAGE7_W1_REPORT.md",
+      "size": 14359,
+      "sha256": "ff5ff9682c25d5170eb2f145c9ee2747e67d666ae0d7805ebbbdc4478bb01d09"
+    },
+    {
+      "path": "evidence/recent.json",
+      "size": 736,
+      "sha256": "92254dafb50c1f87a3ca3d5d068105e28e3a68d94583182a3fee89a9cccdaeb4"
+    },
+    {
+      "path": "evidence/appdata/schemes/imported-a-7f31.json",
+      "size": 10105,
+      "sha256": "140e98be69a9617441c99f9b83eb9d7943331cbe27105c5ebfe255bd6f4fcecb"
+    },
+    {
+      "path": "evidence/appdata/schemes/imported-b-7f32.json",
+      "size": 10095,
+      "sha256": "7aadb77013261864f79d6e5df01889540a44d966a38f737fd23563d01e1cceb9"
+    },
+    {
+      "path": "evidence/appdata/schemes/imported-c-7f33.json",
+      "size": 10079,
+      "sha256": "7f521147a523eeb2575ca2994c8ffd855781db1ce2ab7b003be3ab1dd5d3d0e3"
+    },
+    {
+      "path": "evidence/appdata/schemes/sc-a8dfa7cc9e8b.json",
+      "size": 9665,
+      "sha256": "f55ed03db5b0d1f174e36111adb6dea7dca8d71807fc4d1c835e865bc0890ecd"
+    },
+    {
+      "path": "evidence/dupes_root/.organizer/history.db",
+      "size": 24576,
+      "sha256": "b873b3b762dacbf0c902f2326eb609fb27e23c3afc7087bd2e7c09f3934b2a01"
+    },
+    {
+      "path": "evidence/dupes_root/a/讲义.pdf",
+      "size": 30,
+      "sha256": "b4d7cc8589878198b92b26f0d34e65d4c16390ede4ff7c2d6b28a93504bf327e"
+    },
+    {
+      "path": "evidence/dupes_root/b/副本-讲义.pdf",
+      "size": 22,
+      "sha256": "cfb0ca37c3451d3e015a143358f0bd54183ae583363045d39e9bbcf694b6a285"
+    },
+    {
+      "path": "evidence/dupes_root/c/报告.txt",
+      "size": 3,
+      "sha256": "cb1ad2119d8fafb69566510ee712661f9f14b83385006ef92aec47f523a38358"
+    },
+    {
+      "path": "evidence/dupes_root/d/报告.txt",
+      "size": 4,
+      "sha256": "4a8d8134f29b0b7b60c126f5532bc9f5d9bb73037373cf6fb872d81f1dcefdfd"
+    },
+    {
+      "path": "evidence/history_root/.organizer/classification_config.json",
+      "size": 8983,
+      "sha256": "af9b2414a6ffd3703f66b8c0241f1dfa4ac352751c6fa50b49a05210ba7c68d5"
+    },
+    {
+      "path": "evidence/history_root/.organizer/history.db",
+      "size": 32768,
+      "sha256": "64e73d07ff4c745b6bbd2a2497f98cdfd97edad6a8211ee905da5290dd678422"
+    },
+    {
+      "path": "evidence/history_root/22级/数据结构/讲义.pdf",
+      "size": 7,
+      "sha256": "ce41b9344da912bb1cf64071f6c516dea7ab91c92de86042b9a17ab5e3e4321a"
+    },
+    {
+      "path": "evidence/history_root/22级/数据结构/试卷.pdf",
+      "size": 4,
+      "sha256": "bb86f6ac87986ae1e5c420ee82a911c5473444bdd34a0c2c679eb0ae904bae43"
+    },
+    {
+      "path": "evidence/history_root/_已整理/待定/其他/说明.txt",
+      "size": 6,
+      "sha256": "2b7814d3fca2e99e56c51b6ff2aa313ea6e9da6424804240aa8ad891fdfe0900"
+    },
+    {
+      "path": "evidence/history_root/_已整理/项目/讲义存档/讲义.pdf",
+      "size": 7,
+      "sha256": "ce41b9344da912bb1cf64071f6c516dea7ab91c92de86042b9a17ab5e3e4321a"
+    },
+    {
+      "path": "evidence/history_root/竞赛/蓝桥杯/报名表.pdf",
+      "size": 4,
+      "sha256": "1e2f12a3eb67501bd186592cd9510d4bfd1c07d3d68de842fd48b1d5fe7f6b4e"
+    },
+    {
+      "path": "evidence/out_dupes/child_dupes.py",
+      "size": 9681,
+      "sha256": "3f69d58e9e93759cb6ca162ee8a003186a071f81dadb48023545cc2563299137"
+    },
+    {
+      "path": "evidence/out_dupes/dupes.process.json",
+      "size": 1452,
+      "sha256": "dca204c463f951373dd066eb9dcf2c2d1c5e410576f48299f7abff6711000051"
+    },
+    {
+      "path": "evidence/out_dupes/dupes.stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/out_dupes/dupes.stdout.log",
+      "size": 7415,
+      "sha256": "0042bfbe483d4befbb2b92f0977acb2c354d649247a3626676d99ff7d6351aef"
+    },
+    {
+      "path": "evidence/out_dupes/dupes_manifest_base.json",
+      "size": 593,
+      "sha256": "f3d8c61eb616f6862b5f5f1a1d622bbf7ea89f65cccda0e0596cdaad9938fb4d"
+    },
+    {
+      "path": "evidence/out_dupes/duplicates.csv",
+      "size": 1620,
+      "sha256": "6a3fc92aff7556f7d497ddbcaa06143c8b6893aa1619336c9e3e06ae3d5d982b"
+    },
+    {
+      "path": "evidence/out_dupes/duplicates.json",
+      "size": 4279,
+      "sha256": "9b8d2d7ee45e0cf198a01f79d87482b5e20bb831c2d47a89366b994dac46e66b"
+    },
+    {
+      "path": "evidence/out_dupes/result.json",
+      "size": 5276,
+      "sha256": "e1f93c68f8b66054893b9077c4a4beb9ae2a14060ce5ccbadd9a261f52ad9f07"
+    },
+    {
+      "path": "evidence/out_dupes/shots/40_duplicates.png",
+      "size": 87392,
+      "sha256": "3f11626b5afbf8ab2a3a42a2e62a8e7eebf42db9ebb133ea011b72b28dac65a3"
+    },
+    {
+      "path": "evidence/out_dupes/shots/41_duplicates_after_change.png",
+      "size": 73901,
+      "sha256": "7b95e0f4d49a7ba1b07b35de780ad56dcbc725134f7e89ec51965213b7ffcac5"
+    },
+    {
+      "path": "evidence/out_history/child_history.py",
+      "size": 11103,
+      "sha256": "d236721fdc2bf2eea69f65b573bdc3645989b1d6a695b12db23a852b23bf692b"
+    },
+    {
+      "path": "evidence/out_history/history.process.json",
+      "size": 1468,
+      "sha256": "4970975e472d4d02bd44c5a9cfdb408a6e7c7b7a0ab7c05b1967b1b2fa6454f6"
+    },
+    {
+      "path": "evidence/out_history/history.stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/out_history/history.stdout.log",
+      "size": 9986,
+      "sha256": "44a99474157af25efbefcee13963eb8c2d6a57eb7576989d912a12557af217c7"
+    },
+    {
+      "path": "evidence/out_history/history_batch.csv",
+      "size": 780,
+      "sha256": "d92d1823d5249618ea836087e0cae8d58a332d86a48ba825d62b400f43f9143c"
+    },
+    {
+      "path": "evidence/out_history/history_batch.json",
+      "size": 1713,
+      "sha256": "fe3ebb0e0406cbe6eb266ed9da43bebef788ead1954290f57fbb96aa36aa03c2"
+    },
+    {
+      "path": "evidence/out_history/history_batch_after_config_change.csv",
+      "size": 780,
+      "sha256": "d92d1823d5249618ea836087e0cae8d58a332d86a48ba825d62b400f43f9143c"
+    },
+    {
+      "path": "evidence/out_history/result.json",
+      "size": 6805,
+      "sha256": "fd3ace602ee40214dfb86d8f0aafcb1a4b6b59cf1e3316ca77918975f80f1caa"
+    },
+    {
+      "path": "evidence/out_history/shots/50_history_dialog.png",
+      "size": 68294,
+      "sha256": "5ef5f239f44e7549d79b64b50ced16803308e1c54e5e98f043baee822f12119c"
+    },
+    {
+      "path": "evidence/out_history/shots/51_history_after_config_change.png",
+      "size": 68294,
+      "sha256": "5ef5f239f44e7549d79b64b50ced16803308e1c54e5e98f043baee822f12119c"
+    },
+    {
+      "path": "evidence/out_rules/child_rules.py",
+      "size": 15988,
+      "sha256": "6c42006c57d805689d5738a4cb0f4b06d8fcd61e8585c197241a6fbe9106b87d"
+    },
+    {
+      "path": "evidence/out_rules/manifest_after_move.json",
+      "size": 674,
+      "sha256": "6e1b23c884c7d1507ad933629093945471fe3444401998ee17480c621d34a6bc"
+    },
+    {
+      "path": "evidence/out_rules/manifest_after_undo.json",
+      "size": 649,
+      "sha256": "187efe26dee74b67275d39cdc505e9927dcec15f274346e171d687da0f9e9768"
+    },
+    {
+      "path": "evidence/out_rules/manifest_before_move.json",
+      "size": 649,
+      "sha256": "187efe26dee74b67275d39cdc505e9927dcec15f274346e171d687da0f9e9768"
+    },
+    {
+      "path": "evidence/out_rules/result.json",
+      "size": 8241,
+      "sha256": "ce6c4398891fc73c389f6837aba965fb98f4a7db4d5da4c535c0730c0bf6c98c"
+    },
+    {
+      "path": "evidence/out_rules/rules.process.json",
+      "size": 1453,
+      "sha256": "3c88bdacb53f413af6b91986a4aacae56f5a792f8b7799939906ab0b1b98b345"
+    },
+    {
+      "path": "evidence/out_rules/rules.stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/out_rules/rules.stdout.log",
+      "size": 11776,
+      "sha256": "575ad334af771f1ae6955f68ced45465e2e9b3d3b6b64412da6d9fcbbe6ee6a3"
+    },
+    {
+      "path": "evidence/out_rules/shots/01_plan.png",
+      "size": 105822,
+      "sha256": "70d99d9ba84cafb09f97c1bdb0a3b280e665e86c9f9b3130161a4a099c31110f"
+    },
+    {
+      "path": "evidence/out_rules/shots/02_temp_override.png",
+      "size": 109411,
+      "sha256": "4338b749a9d9fa034dc14351cf871fe01d0c9e75de4b2d1087af34c331814e3e"
+    },
+    {
+      "path": "evidence/out_rules/shots/03_rule_preview_invalidated.png",
+      "size": 64248,
+      "sha256": "93af233de1dfbe6f5e1aad05b5d94e1ed7f42597814579a27b6dcd16b11e6f1b"
+    },
+    {
+      "path": "evidence/out_rules/shots/04_saved_longterm.png",
+      "size": 83373,
+      "sha256": "65c690a37ebefc9973ec4eb21d6ac34527dc4a32e0581cd2d6fb694e946dc826"
+    },
+    {
+      "path": "evidence/out_rules/shots/05_rule_applied.png",
+      "size": 107350,
+      "sha256": "20ada3f7590b545ce3cec915b3aaab76dec176647bcb4253d71a41087d7e50b0"
+    },
+    {
+      "path": "evidence/out_rules/shots/06_reordered.png",
+      "size": 107409,
+      "sha256": "a04d2ed6329063ece0e8f366879b87bbb1e8945e0a045bf297f88fb04324daaa"
+    },
+    {
+      "path": "evidence/out_rules/shots/07_rules_deleted.png",
+      "size": 105534,
+      "sha256": "7a7ddc915a5d66b4093b4fcd772fb03a1ec34ca3688d0b4fd63570714580e87f"
+    },
+    {
+      "path": "evidence/out_rules/shots/08_after_execute.png",
+      "size": 103066,
+      "sha256": "8f4d79c8b7d709b509e4030ed569cb8ffd939fd491c6f32a98fdb20e8d723f8d"
+    },
+    {
+      "path": "evidence/out_rules/shots/09_after_undo.png",
+      "size": 103369,
+      "sha256": "c9733e64e62ad90dcaac6acddec02b37cc6b8ba61f483ef590a654837082f9cf"
+    },
+    {
+      "path": "evidence/out_scheme/child_scheme.py",
+      "size": 11057,
+      "sha256": "3c1afc8245be572770fd84c0b7add96a925ae868e1f38e49d1237744fe9caf88"
+    },
+    {
+      "path": "evidence/out_scheme/export_current.json",
+      "size": 9629,
+      "sha256": "0cbe0a01ced95874494e0b775ca29f2411b68548f5daa2333dba931499403200"
+    },
+    {
+      "path": "evidence/out_scheme/incoming_a.json",
+      "size": 10107,
+      "sha256": "c00c427424a0391e61a45c557a3cd5854a377e8d67a2de9e4ccc0dee9a41cd12"
+    },
+    {
+      "path": "evidence/out_scheme/incoming_b.json",
+      "size": 10096,
+      "sha256": "8d43a7d7244af18536ab90ef4f94fbe47c3ac516a4214ff0d228fa649122aeaa"
+    },
+    {
+      "path": "evidence/out_scheme/incoming_c.json",
+      "size": 10080,
+      "sha256": "98801880b8da6e40251d78f9173fff52ca6be7daad544659ae0d895bb3c3a134"
+    },
+    {
+      "path": "evidence/out_scheme/result.json",
+      "size": 4763,
+      "sha256": "ed8fa7a80811393d651257185e68a8fdb87f570d1ea768049572056e989e9d0d"
+    },
+    {
+      "path": "evidence/out_scheme/scheme.process.json",
+      "size": 1461,
+      "sha256": "e3986dbd099ef86fedf6b50bd75be530915d53e250c8194e03f0f000212dfd3d"
+    },
+    {
+      "path": "evidence/out_scheme/scheme.stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/out_scheme/scheme.stdout.log",
+      "size": 7486,
+      "sha256": "903d0c212d0634182b1096bdd3e4fe0e35c6772b97caf1e438e48e77e8b80daa"
+    },
+    {
+      "path": "evidence/out_scheme/shots/10_scheme_center.png",
+      "size": 58642,
+      "sha256": "51a767167a119392a17dd9d69aa027a0c4382e4ec00abf91deb722accba50e21"
+    },
+    {
+      "path": "evidence/out_scheme/shots/11_saved_scheme.png",
+      "size": 64697,
+      "sha256": "6d2a7b1a940174b1ac9940e03ace73006c79a672c276443ed25186fcd4901a3d"
+    },
+    {
+      "path": "evidence/out_scheme/shots/12_imported.png",
+      "size": 69386,
+      "sha256": "094b9bda388db7e44af6d68bbf3d8365f2dc1b95f2363e92768e97da6b29d5f6"
+    },
+    {
+      "path": "evidence/out_scheme/shots/13_applied_replace.png",
+      "size": 70289,
+      "sha256": "ec3307dc278f2216e5b5a6037a7644f3ae0d49a43e95604b4587096df0cd4cf9"
+    },
+    {
+      "path": "evidence/out_scheme/shots/14_applied_merge.png",
+      "size": 75796,
+      "sha256": "9efcb14f745cfe2bdb7c9d21b0a037a2f89b4ee2e8e4010fdc2d9ff2f190ae21"
+    },
+    {
+      "path": "evidence/out_scheme/shots/15_backup_blocked.png",
+      "size": 80762,
+      "sha256": "0bf190fc425b3c832b3dd6cd953636ba864a2fecac538a930eee4ea08f21cea4"
+    },
+    {
+      "path": "evidence/out_scheme/shots/16_restored.png",
+      "size": 80762,
+      "sha256": "0bf190fc425b3c832b3dd6cd953636ba864a2fecac538a930eee4ea08f21cea4"
+    },
+    {
+      "path": "evidence/out_scope/child_scope.py",
+      "size": 13007,
+      "sha256": "0fbbebabefe5a1cafac4781bec10a56d32c7de103b416c10f8705dcd5ebaf93c"
+    },
+    {
+      "path": "evidence/out_scope/manifest_before.json",
+      "size": 786,
+      "sha256": "5254ae2824931edec565a23143659a9f50e5d91a46cdb1bfb8b29f430075fdc2"
+    },
+    {
+      "path": "evidence/out_scope/result.json",
+      "size": 6859,
+      "sha256": "69bc9f38785799331b078c106c1a9f008797bccd57633ad4447fd0b3137a8708"
+    },
+    {
+      "path": "evidence/out_scope/scope.process.json",
+      "size": 1452,
+      "sha256": "a7d0b4df0b7b8d190bc33d3b1519e58a296506e2cc42630de10c199f29cf5921"
+    },
+    {
+      "path": "evidence/out_scope/scope.stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/out_scope/scope.stdout.log",
+      "size": 10439,
+      "sha256": "598788c7bc9a016d0895e9c7084f517c76afcbd8182ab5bfe9f36da18f321c68"
+    },
+    {
+      "path": "evidence/out_scope/shots/30_recent_spaces.png",
+      "size": 34381,
+      "sha256": "17acb7fe923e947df7051fac05c15c6d8b3e92d2a888eb205431a25082604508"
+    },
+    {
+      "path": "evidence/out_scope/shots/31_recent_after_remove.png",
+      "size": 29805,
+      "sha256": "50d3b4cda41d1a5138013c814508068f59846f5bc8d3d1fae8b3a716d20654f7"
+    },
+    {
+      "path": "evidence/out_scope/shots/32_intake_list.png",
+      "size": 50048,
+      "sha256": "2390eb085ee146065d19845ba16abe3d79cf6bf18b729a175c4110465a6d503a"
+    },
+    {
+      "path": "evidence/out_scope/shots/33_intake_scope.png",
+      "size": 104236,
+      "sha256": "35b5e6c0af447152cee6150c322065751a47f93747887c4aee9941fe17cc0f78"
+    },
+    {
+      "path": "evidence/out_select/child_select.py",
+      "size": 10406,
+      "sha256": "db7b39ae6865da0722b140af314f74008ca7851b3df5d01d554ed50ec8273bfa"
+    },
+    {
+      "path": "evidence/out_select/manifest_after_move.json",
+      "size": 829,
+      "sha256": "a42d6cbd38443f6f6c48ef0606bcd654d42ba8f4d466503927b1f00e22477a76"
+    },
+    {
+      "path": "evidence/out_select/manifest_before.json",
+      "size": 786,
+      "sha256": "5254ae2824931edec565a23143659a9f50e5d91a46cdb1bfb8b29f430075fdc2"
+    },
+    {
+      "path": "evidence/out_select/result.json",
+      "size": 4448,
+      "sha256": "07edee69c7583e35a856cc0b5dedc0280fd1117c82600a7056220026db6e1840"
+    },
+    {
+      "path": "evidence/out_select/select.process.json",
+      "size": 1460,
+      "sha256": "0e399992f021e7874f19b249f690b54441c0a5ea05b4244dbd96e20d27dfec68"
+    },
+    {
+      "path": "evidence/out_select/select.stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "evidence/out_select/select.stdout.log",
+      "size": 6204,
+      "sha256": "c4c30bf44035d9c8cc8d2cc020f9d6642d42a59d53f8180d4cded9c6831f35a1"
+    },
+    {
+      "path": "evidence/out_select/shots/20_select_visible.png",
+      "size": 93411,
+      "sha256": "e116c0b267c338649b443f90425fbd8c9402a0ce84d9a429b813f280445d608d"
+    },
+    {
+      "path": "evidence/out_select/shots/21_confirm_dialog.png",
+      "size": 85042,
+      "sha256": "9b1ab4f915da47159035c5cde337cb28b6899078385ebc0ef67afa9328b37d7e"
+    },
+    {
+      "path": "evidence/out_select/shots/22_target_tree.png",
+      "size": 21642,
+      "sha256": "c5a7737e34882259e039feb0cf3ff3f1d89bc446eb08e6967819f670504a2f16"
+    },
+    {
+      "path": "evidence/out_select/shots/23_after_execute.png",
+      "size": 108307,
+      "sha256": "0af11a6f871e878e2c7660729062ee8e6de73a93c4c0ba5ca1103b9a9ad0a2e7"
+    },
+    {
+      "path": "evidence/prefix/prefix_rules_stdout.txt",
+      "size": 31337,
+      "sha256": "f4a95255880bdca559c530ee3e3c4e80b0255c63b7ff6330423ea23416581ccd"
+    },
+    {
+      "path": "evidence/prefix/probe_check_after_fix.txt",
+      "size": 485,
+      "sha256": "bd4e2c5897a0c9b34debbbddc1fc6ee106417efa5a88221a495522da76d1a0bd"
+    },
+    {
+      "path": "evidence/prefix/probe_check_before_fix.txt",
+      "size": 486,
+      "sha256": "f2a794f3f6d98e88563014213dc1bcff481fc0cd25dab17a81b15e8def9ff6a9"
+    },
+    {
+      "path": "evidence/rules_root/.organizer/history.db",
+      "size": 32768,
+      "sha256": "9b241fde7b08204c7752544c47997cf674d4cd5a62e8d8f221409aad416eef2b"
+    },
+    {
+      "path": "evidence/rules_root/其他/说明.txt",
+      "size": 8,
+      "sha256": "e87ee9bd60e5417511ccc571226dfd6f8cde0dec76a0850e7c0177e020193ce8"
+    },
+    {
+      "path": "evidence/rules_root/大二上/数据结构/讲义.pdf",
+      "size": 9,
+      "sha256": "f92ad23a5abc0343a40ac114c718040272c140f45e4f1386607da8ad2253478d"
+    },
+    {
+      "path": "evidence/rules_root/大二上/数据结构/试卷.pdf",
+      "size": 6,
+      "sha256": "786301e69eb06550a6caee01ca8072ec0a8327907795ed70577f4f4f55d9a87c"
+    },
+    {
+      "path": "evidence/rules_root/竞赛/蓝桥杯/报名表.pdf",
+      "size": 8,
+      "sha256": "f35c2f994cb5ccec994605bc66969f74ef83fc3485d4036e3d760033e6d416da"
+    },
+    {
+      "path": "evidence/scheme_root/.organizer/classification_config.json",
+      "size": 8980,
+      "sha256": "455566c73a2bc3ea4e9977118f76b3d94c96127eef121d114ca61625d5874f9a"
+    },
+    {
+      "path": "evidence/scheme_root/.organizer/history.db",
+      "size": 24576,
+      "sha256": "b873b3b762dacbf0c902f2326eb609fb27e23c3afc7087bd2e7c09f3934b2a01"
+    },
+    {
+      "path": "evidence/scheme_root/.organizer/config_backups/config-backup-20261110-214532-675261.json",
+      "size": 66,
+      "sha256": "83d4ac20ca55c38094b19271f1e306dc3ba951673fcbf99762ab801201e890a2"
+    },
+    {
+      "path": "evidence/scheme_root/大二上/数据结构/讲义.pdf",
+      "size": 7,
+      "sha256": "6bc636ff0103a2888fb38ca3c2bf3b1371110ceac5a104a519d85d39207732b0"
+    },
+    {
+      "path": "evidence/scope_outside/外部.pdf",
+      "size": 7,
+      "sha256": "31207a2065f46a5b948fce6fe5c13e85abaf5631e2f894b47dcd4fce14f6c57b"
+    },
+    {
+      "path": "evidence/scope_root/.organizer/history.db",
+      "size": 24576,
+      "sha256": "b873b3b762dacbf0c902f2326eb609fb27e23c3afc7087bd2e7c09f3934b2a01"
+    },
+    {
+      "path": "evidence/scope_root/其他/笔记.md",
+      "size": 5,
+      "sha256": "ab5aa97074c454a0632057e704220d9a6678fbf773a0a5806fc09b8173b07309"
+    },
+    {
+      "path": "evidence/scope_root/其他/说明.txt",
+      "size": 6,
+      "sha256": "711a6108ba2ce6ca93dd47d6817f2361db10d8ab6eec89460b2dfc2c325efabe"
+    },
+    {
+      "path": "evidence/scope_root/大二上/数据结构/讲义.pdf",
+      "size": 7,
+      "sha256": "6bc636ff0103a2888fb38ca3c2bf3b1371110ceac5a104a519d85d39207732b0"
+    },
+    {
+      "path": "evidence/scope_root/大二上/数据结构/试卷.pdf",
+      "size": 4,
+      "sha256": "5e89e9d8544af15b204bcdff94f047b0c1b60ab8e9c70edbbdd42b3c83b4ad83"
+    },
+    {
+      "path": "evidence/scope_root/竞赛/蓝桥杯/报名表.pdf",
+      "size": 6,
+      "sha256": "7c8718bdc78be44bf7f3e5554152c20e99216dcb93ac9aefb8857fd7f9d02102"
+    },
+    {
+      "path": "evidence/select_root/.organizer/history.db",
+      "size": 32768,
+      "sha256": "fc5ad75ad7577b0e7a0f8bba6a90972722c24ba8e387a4439afa89f0267c63bc"
+    },
+    {
+      "path": "evidence/select_root/其他/笔记.md",
+      "size": 5,
+      "sha256": "ab5aa97074c454a0632057e704220d9a6678fbf773a0a5806fc09b8173b07309"
+    },
+    {
+      "path": "evidence/select_root/其他/说明.txt",
+      "size": 6,
+      "sha256": "711a6108ba2ce6ca93dd47d6817f2361db10d8ab6eec89460b2dfc2c325efabe"
+    },
+    {
+      "path": "evidence/select_root/大二上/数据结构/讲义.pdf",
+      "size": 7,
+      "sha256": "6bc636ff0103a2888fb38ca3c2bf3b1371110ceac5a104a519d85d39207732b0"
+    },
+    {
+      "path": "evidence/select_root/大二上/数据结构/试卷.pdf",
+      "size": 4,
+      "sha256": "5e89e9d8544af15b204bcdff94f047b0c1b60ab8e9c70edbbdd42b3c83b4ad83"
+    },
+    {
+      "path": "evidence/select_root/竞赛/蓝桥杯/报名表.pdf",
+      "size": 6,
+      "sha256": "7c8718bdc78be44bf7f3e5554152c20e99216dcb93ac9aefb8857fd7f9d02102"
+    },
+    {
+      "path": "evidence/suite/stage7_evidence.json",
+      "size": 18173,
+      "sha256": "f8944ee742b458fda3e5645a6db1cad7f298c72e500580a68c7261ec5d0af01a"
+    },
+    {
+      "path": "evidence/suite/stage7_results.json",
+      "size": 5763,
+      "sha256": "1ccebf92f1849a4b12db9571a3649819084f6c9760b339785e876b6287afd2c1"
+    },
+    {
+      "path": "patches/windows_stage7_production_fixes.patch",
+      "size": 1329,
+      "sha256": "3aed1a5b156d1b4e62933e2188a45051b239a1162e18f61837ea02bc89c7c38b"
+    },
+    {
+      "path": "归档盒源码/V0.1-界面预览.png",
+      "size": 89887,
+      "sha256": "3a840ef720786934b4d57108ca385b410e6f6f241c703815ba2cf163da2fa96c"
+    },
+    {
+      "path": "归档盒源码/V0.2-界面预览.png",
+      "size": 152832,
+      "sha256": "ef97e328974d932477931f4d830ebc918aa96648c39d859c7166de9db5d6eab3"
+    },
+    {
+      "path": "归档盒源码/_windows_paths.py",
+      "size": 963,
+      "sha256": "a305dcc20ded2235215bb67f2c0cb46d3a9fdd836af1ab01bef65942fcf95315"
+    },
+    {
+      "path": "归档盒源码/classification_config.py",
+      "size": 51565,
+      "sha256": "8368f60617fdc53c06ca347c22b512ea3aa42839b9d964520ce25ad339154fe9"
+    },
+    {
+      "path": "归档盒源码/config_dialog.py",
+      "size": 31809,
+      "sha256": "e2d2c958b6e2c39ae307f7717255e7bcfbd77b51ae8f945206f4b3c3590fd04a"
+    },
+    {
+      "path": "归档盒源码/config_transfer.py",
+      "size": 27436,
+      "sha256": "7e799cea4af4a153f5dca189efc8e7768fff6c0b77681a891784a490ece2e2db"
+    },
+    {
+      "path": "归档盒源码/daily_entry_dialogs.py",
+      "size": 10916,
+      "sha256": "e6ef5b5a190f4d7cb6f3b220fd0d8d027fce63f31359b73311e7d674af723151"
+    },
+    {
+      "path": "归档盒源码/duplicate_dialog.py",
+      "size": 14148,
+      "sha256": "662e3ba81da9ae9b266d8ac481772350a16d1ba9f0cae7fc7f9c91b715562115"
+    },
+    {
+      "path": "归档盒源码/duplicate_report.py",
+      "size": 13674,
+      "sha256": "168c0153dfcb50aa598a5b7bcbd9b16821b6e9c3025298d4748bb497b1c4b713"
+    },
+    {
+      "path": "归档盒源码/executor.py",
+      "size": 24310,
+      "sha256": "93cfa6baf39ef2231d48ef72ca60b88a4b50629278824f57459ea33e823a094a"
+    },
+    {
+      "path": "归档盒源码/intake_model.py",
+      "size": 8793,
+      "sha256": "33f2d32a626e4258eb3d01ebcdc19cdb0d2b9d488a918c4c237c34f69af87251"
+    },
+    {
+      "path": "归档盒源码/main.py",
+      "size": 174408,
+      "sha256": "943d647c7e192c3d46bab8b9afb3f5dae6c089cf43b0396b33d761fde0b39e80"
+    },
+    {
+      "path": "归档盒源码/plan_patch.py",
+      "size": 54779,
+      "sha256": "ef25be8c25ae37dc7fa9e3b779ce272cd67c0ab633c3d707dab0d74ebccc2c41"
+    },
+    {
+      "path": "归档盒源码/planner.py",
+      "size": 28422,
+      "sha256": "9ec5bfd9e2697d3567d3216464e366c4975fd7639dc4adcded16de2a26c44981"
+    },
+    {
+      "path": "归档盒源码/protect_config.py",
+      "size": 5588,
+      "sha256": "e3831b751cece9601ea6ad01baefdfaa55f3e2caeb893b3459aa38dcecc8af46"
+    },
+    {
+      "path": "归档盒源码/recent_spaces.py",
+      "size": 6071,
+      "sha256": "5f988bc49085829e4ae6b48904e2c8601420161f4801490a8475fe5ec010df6c"
+    },
+    {
+      "path": "归档盒源码/requirements.txt",
+      "size": 153,
+      "sha256": "31779b687cc057b007ee990b95de69093d17fc976dcbdd09df345d035def81c4"
+    },
+    {
+      "path": "归档盒源码/rule_preview.py",
+      "size": 7778,
+      "sha256": "d6247909eb913c86a4cd2ba56e4f5a1d5c1c005fd48db09be3cb9edb7240fd3b"
+    },
+    {
+      "path": "归档盒源码/scanner.py",
+      "size": 19144,
+      "sha256": "d5922946ea115aa506ebc3cb4beec2bc248067922f1ceaf3d7be5a4ff579ceeb"
+    },
+    {
+      "path": "归档盒源码/scheme_store.py",
+      "size": 10085,
+      "sha256": "ad29c2e2380874509d0305c5dac9ed16ba92739c63934e939e37a3bf030f5c77"
+    },
+    {
+      "path": "归档盒源码/storage.py",
+      "size": 19509,
+      "sha256": "7dfddfe0fc565f8a104d8cc2d61e3a2aa76b3c8e0e982efc8693ae5a4ace55cf"
+    },
+    {
+      "path": "归档盒源码/target_tree_dialog.py",
+      "size": 4917,
+      "sha256": "a3fe96634fbf519fa20b4c6eb03fe32adbc10f8bcb3a0d127d0ec01434ffd6bb"
+    },
+    {
+      "path": "归档盒源码/transfer_dialogs.py",
+      "size": 29865,
+      "sha256": "62fa75248f6f34b3347d8cd75a6b834e3249eca614b22c82fc8627cf0db2d480"
+    },
+    {
+      "path": "归档盒源码/utils.py",
+      "size": 1318,
+      "sha256": "f9ea9fe515b2cfe9680dd5ee444c5522dd1bf1b51b04878274ffe6473f47a8db"
+    },
+    {
+      "path": "归档盒源码/tests/_diag_db.py",
+      "size": 778,
+      "sha256": "49fc64384b8adc17aafafc25b175c8b4012ae8a50d1622b9f59e1e3ee84d9447"
+    },
+    {
+      "path": "归档盒源码/tests/_v12r2_noop_check.py",
+      "size": 9466,
+      "sha256": "471ad852dc1ec877e8091808f4cea4afbb7ab00e8d6539b64ffe4b720e3dd9a4"
+    },
+    {
+      "path": "归档盒源码/tests/acceptance_v17_scale.py",
+      "size": 22555,
+      "sha256": "d2d3a3bc87b85a8b07908c80f2b5b70d6f61c58c9b84ea32283f2ecfb4e7d6c6"
+    },
+    {
+      "path": "归档盒源码/tests/desktop_check.py",
+      "size": 11822,
+      "sha256": "8d1e403b9621e7a8e89388ff9c7bae0d9e69cd33ab4cee612b7c7593545323c2"
+    },
+    {
+      "path": "归档盒源码/tests/desktop_check_v12.py",
+      "size": 16417,
+      "sha256": "c7bb9cc12365fa62180a3fed603e50315b7c109df51695b9c8f584fc4c00889b"
+    },
+    {
+      "path": "归档盒源码/tests/desktop_check_v12r2.py",
+      "size": 16026,
+      "sha256": "55b8f8a8a81330ca9412066b3d39729ac1c4f037be5cefaddac1b5f37a6ec7ec"
+    },
+    {
+      "path": "归档盒源码/tests/desktop_check_v13.py",
+      "size": 12572,
+      "sha256": "735bf73ffae327e49aedbffc6ea9fc7bb56280e0b340b8bd76bf390cc45829c2"
+    },
+    {
+      "path": "归档盒源码/tests/desktop_check_v13r2.py",
+      "size": 12635,
+      "sha256": "7012d655be269e549f7d27d2a00ac3ae08550d5e8e6cedb0f28bcd5e809aec75"
+    },
+    {
+      "path": "归档盒源码/tests/desktop_check_v14_override.py",
+      "size": 15591,
+      "sha256": "7d57f7e90dffa528efee0c08fe45a7377f861b040e74506a6d0a60371a8e2f7c"
+    },
+    {
+      "path": "归档盒源码/tests/desktop_check_v15_long_term.py",
+      "size": 13560,
+      "sha256": "5782221e6e4fee3ef0fda6179a0446e587899c0c1cc66438d80b4d81bf85b354"
+    },
+    {
+      "path": "归档盒源码/tests/desktop_check_v16_scheme_preview.py",
+      "size": 8201,
+      "sha256": "30fc1c632d815569a37d92d69fef34cd1d0d8e3683ce8f00999eaab95be48b7d"
+    },
+    {
+      "path": "归档盒源码/tests/desktop_check_v17_daily.py",
+      "size": 8733,
+      "sha256": "b53fded88a1299f0fa055c005b276eaf159d5f39695f968d49cde926e950db95"
+    },
+    {
+      "path": "归档盒源码/tests/desktop_trial_v12r3.py",
+      "size": 23949,
+      "sha256": "031820884740977eea6caea26f5c9936257ea34418517a93f1a40fb36d088f62"
+    },
+    {
+      "path": "归档盒源码/tests/exit_cleanup_check.py",
+      "size": 4001,
+      "sha256": "a428216613c17bc4a901cf076a2ae20b7535f32934af4b05200a39138710df88"
+    },
+    {
+      "path": "归档盒源码/tests/frozen_executor_stage6.py",
+      "size": 28539,
+      "sha256": "6b65dd546399ea96711f5b4fedec53c63ced56bd5fc6dbfd8a31c7232e396dad"
+    },
+    {
+      "path": "归档盒源码/tests/manifest_tool.py",
+      "size": 6558,
+      "sha256": "ca99f9adc0182d9ce3ed3f5562613ef54223e76752d9db4fdcb0b45211b43188"
+    },
+    {
+      "path": "归档盒源码/tests/run_isolated.py",
+      "size": 4428,
+      "sha256": "40d89441edd58e32482c6e65eb1f2b3961826a872233076fa228101985c2b34d"
+    },
+    {
+      "path": "归档盒源码/tests/scale_check.py",
+      "size": 22200,
+      "sha256": "24bbeb77139d0baffc4f1c44e9c1f2f76b0d87d21d251baab11ce37c93af7732"
+    },
+    {
+      "path": "归档盒源码/tests/test_launch_entry.py",
+      "size": 7817,
+      "sha256": "ea0f4a991e8cef47a2fe77835398dd6a72c5fcbd4cf76fa50c0843735a5b3f79"
+    },
+    {
+      "path": "归档盒源码/tests/test_manifest_tool.py",
+      "size": 15046,
+      "sha256": "06856034ae7bc06f1be4b2cd776af748abc0a5ef90c77d926ce505cb595d75b1"
+    },
+    {
+      "path": "归档盒源码/tests/test_v10_exit_code.py",
+      "size": 6312,
+      "sha256": "6d575432e2b137019e72ac2418605a7c66e2298f2f24bb4e302019a7ee2039d3"
+    },
+    {
+      "path": "归档盒源码/tests/test_v10_regression.py",
+      "size": 37351,
+      "sha256": "a34b69e6b46015d3774ff481b0363b91bc8f59748b26d31291ee6a4cc2c674ba"
+    },
+    {
+      "path": "归档盒源码/tests/test_v11_e2e.py",
+      "size": 19852,
+      "sha256": "6056352acb19a814b1c594a01fe1cc1a01559ab97c5987aa71d10e5dfbd9e26f"
+    },
+    {
+      "path": "归档盒源码/tests/test_v11_manual_protect.py",
+      "size": 18223,
+      "sha256": "62e76ad0ed28f343535421bfc4a3ab8a1a28e35147ad430db843d3062fd25c81"
+    },
+    {
+      "path": "归档盒源码/tests/test_v11_ui_state.py",
+      "size": 33714,
+      "sha256": "84556ab9715eca1ff1000e2ff9321ee5587c9cf11467a4083c0f80f49b4d4b7e"
+    },
+    {
+      "path": "归档盒源码/tests/test_v12_history_task.py",
+      "size": 64340,
+      "sha256": "cd1c3559e71d255991c427ef4c518112dfb89afe4c970bd80a7daa41e6036a7f"
+    },
+    {
+      "path": "归档盒源码/tests/test_v13_config.py",
+      "size": 63596,
+      "sha256": "bef9ae52f2f8d7654b9d2f72d448515c48f93ff42b03fe14e1b9f71a4ffc7fad"
+    },
+    {
+      "path": "归档盒源码/tests/test_v14_single_file.py",
+      "size": 40192,
+      "sha256": "e0eb7e76b1360f48943d4ebe18af88ecbf570c4a66bf718f5ce56895f0f81a75"
+    },
+    {
+      "path": "归档盒源码/tests/test_v15_long_term_rules.py",
+      "size": 45191,
+      "sha256": "a6428f7d0a54d8abe1085b158e9e88b1f4c0643dd1dd0e5fe3864e349af06de8"
+    },
+    {
+      "path": "归档盒源码/tests/test_v16_scheme_preview.py",
+      "size": 35790,
+      "sha256": "a35fac18be06c39c9d3718480d6c1f30f990f5755545e7e92285697322b49d18"
+    },
+    {
+      "path": "归档盒源码/tests/test_v17_combined.py",
+      "size": 7168,
+      "sha256": "35b7f10adeedb3c1e66423c4a1eb58a3991815dbbfaf4dfb4d38b39789139b42"
+    },
+    {
+      "path": "归档盒源码/tests/test_v17_daily_entry.py",
+      "size": 12963,
+      "sha256": "daebb74f54523d4459c4f9500088827e1672117ef279501f08e5ae9d484c64aa"
+    },
+    {
+      "path": "归档盒源码/tests/test_v17_duplicates.py",
+      "size": 16671,
+      "sha256": "c919785e86039e6cd9478d68905c7bfb55867321544ca7cdb8fd98cba85e374e"
+    },
+    {
+      "path": "归档盒源码/tests/windows_desktop_full.py",
+      "size": 12610,
+      "sha256": "200da72331718653cebad32a5b0bf0e1845db0a4dc0b856ff2c58bfc1e1332d9"
+    },
+    {
+      "path": "归档盒源码/tests/windows_desktop_full_part2.py",
+      "size": 9894,
+      "sha256": "46fdc8eaffeb9db32a71c3228d3d1f9775e64b157c3b827eef1e8b3be670257e"
+    },
+    {
+      "path": "归档盒源码/tests/windows_gui_smoke.py",
+      "size": 4140,
+      "sha256": "8bdd0e06586e1663900340db742a325bef0c646e133db734a27e1d75e716237b"
+    },
+    {
+      "path": "归档盒源码/tests/windows_harness.py",
+      "size": 15689,
+      "sha256": "9198b9aa0f4611577db161c3726837e980a65dd7801523056eed8f5e705c8bad"
+    },
+    {
+      "path": "归档盒源码/tests/windows_harness_selftest.py",
+      "size": 6013,
+      "sha256": "a234e19295bdbcb933b9aa99a02c850c8c40f393fa01ee25f57dd8e2873e05cd"
+    },
+    {
+      "path": "归档盒源码/tests/windows_launch_exit_10x.py",
+      "size": 4969,
+      "sha256": "de27cdcbd8d0f274870727b4e73616504947bd693adea550114fc981ff22092a"
+    },
+    {
+      "path": "归档盒源码/tests/windows_patch_verify.py",
+      "size": 6821,
+      "sha256": "4490049f3d1cb94f4fb1623053fbd0e5290a55812a73765ea571ed4809d4f053"
+    },
+    {
+      "path": "归档盒源码/tests/windows_protect_paths.py",
+      "size": 8160,
+      "sha256": "4d55147b127023a255422f8acdbf75ee79bb995674f737cc3e2839a01c4030ae"
+    },
+    {
+      "path": "归档盒源码/tests/windows_runner_v2.py",
+      "size": 3645,
+      "sha256": "23759bdf4397b12f166c85d6a99ef77899bd4fb6c2b1bd3705361f87e2d52b3f"
+    },
+    {
+      "path": "归档盒源码/tests/windows_stage5_names_occupancy.py",
+      "size": 21291,
+      "sha256": "eedd744e0c5b9bc31a479638b3c00d5c60ecacb78cf681e6bfeb5a513a367b9d"
+    },
+    {
+      "path": "归档盒源码/tests/windows_stage5_plan_scope.py",
+      "size": 29416,
+      "sha256": "bd84805bd44219b3f5031301582257b896e2f9e7978163eef19c232ed30851d5"
+    },
+    {
+      "path": "归档盒源码/tests/windows_stage6b_ownership.py",
+      "size": 24814,
+      "sha256": "6a36c5a22b12b616181e2a7ce29c6177bdd6d9fe81b5c8f0bfa29251995ee9db"
+    },
+    {
+      "path": "归档盒源码/tests/windows_stage7_w1.py",
+      "size": 8222,
+      "sha256": "75ed2f9f8b70ed271a70144525b4deeb014defe6d37285287fd3a92544b67598"
+    },
+    {
+      "path": "归档盒源码/tests/windows_supervisor.py",
+      "size": 8393,
+      "sha256": "fa725ed2f2038831802750b104ef73c4925ac451caae0238f3cd55bfa39aee95"
+    },
+    {
+      "path": "归档盒源码/tests/windows_v1_first_round.py",
+      "size": 20091,
+      "sha256": "bcb6d6f02165cc4875ea42aae063272fa75f2d275152278d079e00c3e9d2a520"
+    },
+    {
+      "path": "归档盒源码/tests/windows_w2_1_cancel_close.py",
+      "size": 19991,
+      "sha256": "a9524f8136de5e769a466c33b6568ecefef0cf0c1b81ad4eeb33127370033165"
+    },
+    {
+      "path": "归档盒源码/tests/windows_w2_2_recovery.py",
+      "size": 19242,
+      "sha256": "89fa7aff6a1abe68014dd84cdb42b1a0cd31faa1b704309ed87c9f50b2e314a7"
+    },
+    {
+      "path": "归档盒源码/tests/windows_w2_3_config_isolation.py",
+      "size": 19611,
+      "sha256": "249e28188df86b550712811ebcc97b0ef10e057e37e9688328c1a0c132680df3"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/.abx_owned_20261110_155206_1e484c",
+      "size": 22,
+      "sha256": "274778fe8ea0ee8663adc8450ba3a1e171d2d4da37209a38a3b19fc14de3d312"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/child_inj1_recorded_fail.py",
+      "size": 565,
+      "sha256": "ca4442e56a24ee99bae635cfcceb7535abb59488caf481717ea24f394b780cf5"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/child_inj2_exception.py",
+      "size": 39,
+      "sha256": "df6bf9060a7a4d6881871485a91e7fa2a35b0493ebf41db16702dcedb887d4fd"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/child_inj3_timeout.py",
+      "size": 61,
+      "sha256": "36172bc8e509afae20530d80ab9b4fd1e985a0ebc88367c0b27c1fac50062075"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/child_inj4_false_success.py",
+      "size": 621,
+      "sha256": "ad3e77b8db524055b9d28eb9b2e5d394952a79899f0efc51af16165f18ace40e"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/child_inj5_no_results.py",
+      "size": 24,
+      "sha256": "1e0ebafb9150133aa62fb52cb4d860e183fc8838654eb99cf8b9fba51a49dec7"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/child_inj6_all_pass.py",
+      "size": 554,
+      "sha256": "d5cbde9cda39f6bbbd1b303e900359b077bc37c907723347e13d655ebf0c5a3e"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/child_inj7_missing_required.py",
+      "size": 597,
+      "sha256": "8e3b1fea7676df150376899f0572bbf8b6c56c1e45fff77f5e032822ee8e2942"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj1_recorded_fail.process.json",
+      "size": 2253,
+      "sha256": "40b692bcc2a9233848ad497f86112af833ed31b684d56c6f6ca4cbd570671647"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj1_recorded_fail.stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj1_recorded_fail.stdout.log",
+      "size": 144,
+      "sha256": "4ce2077eef2ebdd43cb5fab57e9cbea628ef34db571e33f3f938c9b8a5c92666"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj1_results.json",
+      "size": 481,
+      "sha256": "2209d8d1e83e5d4e6012998786375004c1e0a4b78cda2f995d4e1df621a310b9"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj2_exception.process.json",
+      "size": 2237,
+      "sha256": "2db0dda64a2a8a66fbc377ae6045f926ca819bdb295cb19cb13e4ccc13cc5b2e"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj2_exception.stderr.log",
+      "size": 373,
+      "sha256": "577a5ad1fbcc40cbe98ce935ca3d78cde84beb22bac827d4427966e22adfa098"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj2_exception.stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj3_timeout.process.json",
+      "size": 2231,
+      "sha256": "17b77ea7c8ad0a4a5b2dc7024820484b4387e87c2749558dac09425da3e0fbce"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj3_timeout.stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj3_timeout.stdout.log",
+      "size": 10,
+      "sha256": "3c3632bc9193e424d6c4554ca8712ce1e27a6a199c0158b68e46627f4e0c79e1"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj4_false_success.process.json",
+      "size": 2253,
+      "sha256": "c532b08d58c7e1148740d3fd74f89b67960da7237ba262538b471149a2fbc92e"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj4_false_success.stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj4_false_success.stdout.log",
+      "size": 188,
+      "sha256": "25276247840bec16407e7afc52e39967dfaf169ce3755b5c3a35184b6367cfd0"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj4_results.json",
+      "size": 512,
+      "sha256": "98652b98cc36ab8c40e88cde4fdee566314b768cf9df31e26c3ed74eab58e599"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj5_no_results.process.json",
+      "size": 2240,
+      "sha256": "9449a58c3ed39da6bfcdf58cd1850faace3ed8868ffd7bdb639f93c32d92f637"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj5_no_results.stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj5_no_results.stdout.log",
+      "size": 13,
+      "sha256": "c1e97067c5f479a44a6f57297a0a8f87a59d181c3c529910f8bf059094bc3abb"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj6_all_pass.process.json",
+      "size": 2233,
+      "sha256": "0b62e3b01ba58e227b111e5dbb9341af36489ae9d8cb6fe0bed4310751a27a1d"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj6_all_pass.stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj6_all_pass.stdout.log",
+      "size": 126,
+      "sha256": "60dae3c2dc130c0bfad1e3b49ab37083de014d29ecb9c2cccf5e16125d443213"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj6_results.json",
+      "size": 475,
+      "sha256": "aefe4e89c872f22752d9d2b857af108cca9d22997f0afbb63c2d8efb47924ac6"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj7_missing_required.process.json",
+      "size": 2265,
+      "sha256": "d0c895da1f3e7cd7aaede9ace53340d5f1b0ee098900f5ea8d3c677bebe14256"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj7_missing_required.stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj7_missing_required.stdout.log",
+      "size": 181,
+      "sha256": "13f3f331a232b4944ba5b0c1caa1b00d3a5775d9c1b0723e0a8ed5837cb6a074"
+    },
+    {
+      "path": "归档盒源码/tests/_abx_selftest/runs/selftest_20261110_155206_1e484c/children/inj7_results.json",
+      "size": 638,
+      "sha256": "309ca8efef6f5270f824b75fd9490587e5bb7b37b34dc115779dc3b3d1221084"
+    },
+    {
+      "path": "归档盒源码/tests/stage7_children/s7_child_dupes.py",
+      "size": 9440,
+      "sha256": "61f8b74472bb4b7ba9fbd3c47b0cd9a6542ec5ea1059bc2cb126bff7e9d293ba"
+    },
+    {
+      "path": "归档盒源码/tests/stage7_children/s7_child_history.py",
+      "size": 10862,
+      "sha256": "1383a8580d8ae76258cdc03ab229463ff88802c2bc2e27521e93a47b770246c1"
+    },
+    {
+      "path": "归档盒源码/tests/stage7_children/s7_child_rules.py",
+      "size": 15577,
+      "sha256": "c1949ab5d93d349bed82073528a1000dedb861551e1052fd2a4ebf57abdbc1d4"
+    },
+    {
+      "path": "归档盒源码/tests/stage7_children/s7_child_scheme.py",
+      "size": 10782,
+      "sha256": "052f5cdec7b0d88ef7038f2e4b1cc671d5bf10bc1e3779de098fd84f2af89929"
+    },
+    {
+      "path": "归档盒源码/tests/stage7_children/s7_child_scope.py",
+      "size": 12705,
+      "sha256": "530226687769eeb6587f67f8824a4af0433eec5db218a9a50e860e198d95e629"
+    },
+    {
+      "path": "归档盒源码/tests/stage7_children/s7_child_select.py",
+      "size": 10131,
+      "sha256": "05e3b45f102209443dd534649432131c5d9beb8c5006720168232673b488a10b"
+    },
+    {
+      "path": "归档盒源码/tests/stage7_children/s7_common.py",
+      "size": 13713,
+      "sha256": "140630087921ba2bd1be453975ae7bdc174b0b993cae8e46c9a651383f6853ec"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "count": 4,
+  "meta": {},
+  "items": {
+    "a/讲义.pdf": {
+      "size": 22,
+      "sha256": "cfb0ca37c3451d3e015a143358f0bd54183ae583363045d39e9bbcf694b6a285"
+    },
+    "b/副本-讲义.pdf": {
+      "size": 22,
+      "sha256": "cfb0ca37c3451d3e015a143358f0bd54183ae583363045d39e9bbcf694b6a285"
+    },
+    "c/报告.txt": {
+      "size": 3,
+      "sha256": "cb1ad2119d8fafb69566510ee712661f9f14b83385006ef92aec47f523a38358"
+    },
+    "d/报告.txt": {
+      "size": 4,
+      "sha256": "4a8d8134f29b0b7b60c126f5532bc9f5d9bb73037373cf6fb872d81f1dcefdfd"
+    }
+  }
+}

@@ -1,0 +1,139 @@
+{
+  "suite": "windows_stage7_w1",
+  "summary": {
+    "PASS": 20,
+    "FAIL": 0,
+    "BLOCK": 0,
+    "UNTESTED": 0,
+    "missing": 0,
+    "errors": [],
+    "elapsed_sec": 51.7,
+    "pid": 108664,
+    "python": "3.14.7",
+    "platform": "win32"
+  },
+  "items": [
+    {
+      "id": "P-RULES",
+      "title": "长期规则与临时修正：子进程 0 退出且全部子断言通过",
+      "status": "PASS",
+      "detail": "exit=0 timed_out=False checks=30 fails=[] errors=[] 结果文件一致=True 缺产物=[] 缺覆盖族=[] "
+    },
+    {
+      "id": "P-RULES-FAMILIES",
+      "title": "长期规则与临时修正：覆盖族 8 组且全部 PASS",
+      "status": "PASS",
+      "detail": "families=['R1-', 'R2-', 'R3-', 'R4-', 'R5-', 'R6-', 'R7-', 'R8-'] missing=[] file_checks=30"
+    },
+    {
+      "id": "P-RULES-ARTIFACTS",
+      "title": "长期规则与临时修正：清单/导出等产物落盘可复核",
+      "status": "PASS",
+      "detail": "artifacts=['confirm_texts', 'manifest_after_move', 'manifest_after_undo', 'manifest_before_move', 'rule_impact_text'] missing=[]"
+    },
+    {
+      "id": "P-SCHEME",
+      "title": "方案导入导出与回退：子进程 0 退出且全部子断言通过",
+      "status": "PASS",
+      "detail": "exit=0 timed_out=False checks=18 fails=[] errors=[] 结果文件一致=True 缺产物=[] 缺覆盖族=[] "
+    },
+    {
+      "id": "P-SCHEME-FAMILIES",
+      "title": "方案导入导出与回退：覆盖族 8 组且全部 PASS",
+      "status": "PASS",
+      "detail": "families=['S1-', 'S2-', 'S3-', 'S4-', 'S5-', 'S6-', 'S7-', 'S8-'] missing=[] file_checks=18"
+    },
+    {
+      "id": "P-SCHEME-ARTIFACTS",
+      "title": "方案导入导出与回退：清单/导出等产物落盘可复核",
+      "status": "PASS",
+      "detail": "artifacts=['backup_dir', 'config_snapshot', 'export_current', 'incoming_a', 'incoming_b', 'incoming_c', 'scheme_library'] missing=[]"
+    },
+    {
+      "id": "P-SELECT",
+      "title": "筛选、勾选与执行确认：子进程 0 退出且全部子断言通过",
+      "status": "PASS",
+      "detail": "exit=0 timed_out=False checks=21 fails=[] errors=[] 结果文件一致=True 缺产物=[] 缺覆盖族=[] "
+    },
+    {
+      "id": "P-SELECT-FAMILIES",
+      "title": "筛选、勾选与执行确认：覆盖族 6 组且全部 PASS",
+      "status": "PASS",
+      "detail": "families=['C1-', 'C2-', 'C3-', 'C4-', 'C5-', 'C6-'] missing=[] file_checks=21"
+    },
+    {
+      "id": "P-SELECT-ARTIFACTS",
+      "title": "筛选、勾选与执行确认：清单/导出等产物落盘可复核",
+      "status": "PASS",
+      "detail": "artifacts=['manifest_after_move', 'manifest_before'] missing=[]"
+    },
+    {
+      "id": "P-SCOPE",
+      "title": "最近空间、待整理清单及范围：子进程 0 退出且全部子断言通过",
+      "status": "PASS",
+      "detail": "exit=0 timed_out=False checks=31 fails=[] errors=[] 结果文件一致=True 缺产物=[] 缺覆盖族=[] "
+    },
+    {
+      "id": "P-SCOPE-FAMILIES",
+      "title": "最近空间、待整理清单及范围：覆盖族 7 组且全部 PASS",
+      "status": "PASS",
+      "detail": "families=['Z1-', 'Z2-', 'Z3-', 'Z4-', 'Z5-', 'Z6-', 'Z7-'] missing=[] file_checks=31"
+    },
+    {
+      "id": "P-SCOPE-ARTIFACTS",
+      "title": "最近空间、待整理清单及范围：清单/导出等产物落盘可复核",
+      "status": "PASS",
+      "detail": "artifacts=['manifest_before'] missing=[]"
+    },
+    {
+      "id": "P-DUPES",
+      "title": "重复核对：子进程 0 退出且全部子断言通过",
+      "status": "PASS",
+      "detail": "exit=0 timed_out=False checks=23 fails=[] errors=[] 结果文件一致=True 缺产物=[] 缺覆盖族=[] "
+    },
+    {
+      "id": "P-DUPES-FAMILIES",
+      "title": "重复核对：覆盖族 8 组且全部 PASS",
+      "status": "PASS",
+      "detail": "families=['D1-', 'D2-', 'D3-', 'D4-', 'D5-', 'D6-', 'D7-', 'D8-'] missing=[] file_checks=23"
+    },
+    {
+      "id": "P-DUPES-ARTIFACTS",
+      "title": "重复核对：清单/导出等产物落盘可复核",
+      "status": "PASS",
+      "detail": "artifacts=['duplicates_csv', 'duplicates_json', 'manifest_base'] missing=[]"
+    },
+    {
+      "id": "P-HISTORY",
+      "title": "历史导出：子进程 0 退出且全部子断言通过",
+      "status": "PASS",
+      "detail": "exit=0 timed_out=False checks=24 fails=[] errors=[] 结果文件一致=True 缺产物=[] 缺覆盖族=[] "
+    },
+    {
+      "id": "P-HISTORY-FAMILIES",
+      "title": "历史导出：覆盖族 5 组且全部 PASS",
+      "status": "PASS",
+      "detail": "families=['H1-', 'H2-', 'H3-', 'H4-', 'H5-'] missing=[] file_checks=24"
+    },
+    {
+      "id": "P-HISTORY-ARTIFACTS",
+      "title": "历史导出：清单/导出等产物落盘可复核",
+      "status": "PASS",
+      "detail": "artifacts=['history_csv', 'history_csv_after_config_change', 'history_json'] missing=[]"
+    },
+    {
+      "id": "P-EXITS",
+      "title": "所有非故障注入子进程的最终退出码均为 0（不只看 JSON 是否完整）；6 个子进程均为真实 OS 退出码 0",
+      "status": "PASS",
+      "detail": "子进程数=6 "
+    },
+    {
+      "id": "P-EVIDENCE",
+      "title": "同轮证据索引落盘并逐项计算 SHA-256",
+      "status": "PASS",
+      "detail": "evidence=C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\suite\\stage7_evidence.json sha256=f8944ee742b458fda3e5645a6db1cad7f298c72e500580a68c7261ec5d0af01a"
+    }
+  ],
+  "required_missing": [],
+  "finished_at_utc": "2026-11-10T13:46:08.505144+00:00"
+}

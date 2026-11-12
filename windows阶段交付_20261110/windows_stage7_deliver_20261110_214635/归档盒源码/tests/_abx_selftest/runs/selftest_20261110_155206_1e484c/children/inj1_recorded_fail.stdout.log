@@ -1,0 +1,5 @@
+[FAIL] I1 故意失败项
+         injected
+
+=== injected_fail 汇总: PASS=0 FAIL=1 BLOCK=0 未测=0 缺失=0 耗时=0.0s ===
+EXIT_CODE=1

@@ -1,0 +1,150 @@
+{
+  "checks": [
+    {
+      "id": "H0-OPEN",
+      "ok": true,
+      "detail": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\history_root"
+    },
+    {
+      "id": "H0-PLAN",
+      "ok": true,
+      "detail": "total=4"
+    },
+    {
+      "id": "H0-PLAN-WITH-RULE",
+      "ok": true,
+      "detail": "targets=['_已整理/项目/讲义存档\\\\讲义.pdf', '_已整理/待定/22级\\\\试卷.pdf', '_已整理/待定/其他\\\\说明.txt', '_已整理/待定/竞赛\\\\报名表.pdf']"
+    },
+    {
+      "id": "H0-RULE-TARGET",
+      "ok": true,
+      "detail": "target=_已整理/项目/讲义存档\\讲义.pdf"
+    },
+    {
+      "id": "H0-SELECTED-2",
+      "ok": true,
+      "detail": "selected=2"
+    },
+    {
+      "id": "H0-EXEC",
+      "ok": true,
+      "detail": "working=False"
+    },
+    {
+      "id": "H0-EXEC-2",
+      "ok": true,
+      "detail": "actions=[('22级\\\\数据结构\\\\讲义.pdf', 'moved'), ('其他\\\\说明.txt', 'moved')]"
+    },
+    {
+      "id": "H1-DIALOG",
+      "ok": true,
+      "detail": "dialog=HistoryDialog"
+    },
+    {
+      "id": "H1-BATCH-ROW",
+      "ok": true,
+      "detail": "row0=['#1', '11-10 21:46:03', '按方向/学期/类别（推荐）', '已完成', '2', '0', '0', '0', '0', '⚑ 长期规则×1']"
+    },
+    {
+      "id": "H1-CONFIG-SNAPSHOT",
+      "ok": true,
+      "detail": "本批次实际使用的分类配置（快照，不受后来修改影响）：分类配置 v2：学期 8 / 顶层方向 4 / 学期内目录 25 / 通用前缀 1 / 关键词 12"
+    },
+    {
+      "id": "H1-ITEM-ROWS",
+      "ok": true,
+      "detail": "rows=['22级/数据结构/讲义.pdf', '其他/说明.txt']"
+    },
+    {
+      "id": "H1-RULE-BASIS",
+      "ok": true,
+      "detail": "lecture={'target': '_已整理/项目/讲义存档\\\\讲义.pdf', 'status': '已移动', 'source': '长期规则', 'tip': '命中长期修正规则\\n规则标识：long_term:rule-hist-0001\\n命中依据：长期规则「历史依据规则」：精确路径「22级\\\\数据结构\\\\讲义.pdf」 → 项目/讲义存档'} other={'target': '_已整理/待定/其他\\\\说明.txt', 'status': '已移动', 'source': '自动', 'tip': '命中依据：未登记顶层目录「其他」\\n规则标识：fallback'}"
+    },
+    {
+      "id": "H2-SEARCH",
+      "ok": true,
+      "detail": "rows=1 page=第 1/1 页 · 共 1 项"
+    },
+    {
+      "id": "H2-STATUS-FILTER",
+      "ok": true,
+      "detail": "rows=0 page=无匹配项"
+    },
+    {
+      "id": "H2-FILTER-RESET",
+      "ok": true,
+      "detail": "rows=2"
+    },
+    {
+      "id": "H3-CSV-FILE",
+      "ok": true,
+      "detail": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_history\\history_batch.csv"
+    },
+    {
+      "id": "H3-CSV-CONTENT",
+      "ok": true,
+      "detail": "head=['序号', '原位置', '目标位置', '大小(字节)', 'SHA-256', '状态', '原因', '执行时间', '撤销时间', '分类来源', '自动目标', '自动依据', '修正说明', '规则标识', '命中依据']\nlecture=['1', '22级\\\\数据结构\\\\讲义.pdf', '_已整理/项目/讲义存档\\\\讲义.pdf', '7', 'ce41b9344da912bb1cf64071f6c516dea7ab91c92de86042b9a17ab5e3e4321a', 'moved', '', '2026-11-10T21:46:03', '', '长期规则', '', '', '', 'long_term:rule-hist-0001', '长期规则「历史依据规则」：精确路径「22级\\\\数据结构\\\\讲义.pdf」 → 项目/讲义存档']"
+    },
+    {
+      "id": "H3-JSON-FILE",
+      "ok": true,
+      "detail": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_history\\history_batch.json"
+    },
+    {
+      "id": "H3-JSON-CONTENT",
+      "ok": true,
+      "detail": "batch=1 actions=['22级/数据结构/讲义.pdf', '其他/说明.txt']"
+    },
+    {
+      "id": "H4-DB-MATCHES-EXPORT",
+      "ok": true,
+      "detail": "db=[('22级\\\\数据结构\\\\讲义.pdf', '_已整理/项目/讲义存档\\\\讲义.pdf', 'long_term:rule-hist-0001'), ('其他\\\\说明.txt', '_已整理/待定/其他\\\\说明.txt', 'fallback')]"
+    },
+    {
+      "id": "H5-NEW-PLAN-DIFFERS",
+      "ok": true,
+      "detail": "targets=['_已整理/校园事务/待归档/文档\\\\讲义.pdf', '_已整理/待定/22级\\\\试卷.pdf', '_已整理/待定/竞赛\\\\报名表.pdf']"
+    },
+    {
+      "id": "H5-TARGET-ACTUALLY-CHANGED",
+      "ok": true,
+      "detail": "old=_已整理/项目/讲义存档\\讲义.pdf new=_已整理/校园事务/待归档/文档\\讲义.pdf"
+    },
+    {
+      "id": "H5-HISTORY-NOT-RECOMPUTED",
+      "ok": true,
+      "detail": "items={'22级/数据结构/讲义.pdf': '_已整理/项目/讲义存档\\\\讲义.pdf', '其他/说明.txt': '_已整理/待定/其他\\\\说明.txt'}"
+    },
+    {
+      "id": "H5-EXPORT-STABLE",
+      "ok": true,
+      "detail": "exported=['1', '22级\\\\数据结构\\\\讲义.pdf', '_已整理/项目/讲义存档\\\\讲义.pdf', '7', 'ce41b9344da912bb1cf64071f6c516dea7ab91c92de86042b9a17ab5e3e4321a', 'moved', '', '2026-11-10T21:46:03', '', '长期规则', '', '', '', 'long_term:rule-hist-0001', '长期规则「历史依据规则」：精确路径「22级\\\\数据结构\\\\讲义.pdf」 → 项目/讲义存档']"
+    }
+  ],
+  "artifacts": {
+    "history_csv": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_history\\history_batch.csv",
+    "history_json": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_history\\history_batch.json",
+    "history_csv_after_config_change": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_history\\history_batch_after_config_change.csv"
+  },
+  "dialogs": [
+    {
+      "title": "归档盒",
+      "text": "整理完成！\n\n成功 2\n\n\n批次 #1 已保存至 .organizer/history.db\n关闭程序后仍可重新打开撤销。"
+    },
+    {
+      "title": "归档盒",
+      "text": "已导出批次 #1 的 2 条记录到：\nC:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_history\\history_batch.csv"
+    },
+    {
+      "title": "归档盒",
+      "text": "已导出批次 #1 的 2 条记录到：\nC:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_history\\history_batch.json"
+    },
+    {
+      "title": "归档盒",
+      "text": "已导出批次 #1 的 2 条记录到：\nC:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_history\\history_batch_after_config_change.csv"
+    }
+  ],
+  "notes": [],
+  "errors": [],
+  "finished_at": "2026-11-10T21:46:08"
+}

@@ -1,0 +1,22 @@
+{
+  "label": "inj2_exception",
+  "cmd": [
+    "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\archivebox_v17_windows_adapt_20261110\\.venv\\Scripts\\python.exe",
+    "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\archivebox_v17_windows_adapt_20261110\\ArchiveBox_V1.7_Windows_Handoff_20261110\\归档盒源码\\tests\\_abx_selftest\\runs\\selftest_20261110_155206_1e484c\\children\\child_inj2_exception.py"
+  ],
+  "cwd": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\archivebox_v17_windows_adapt_20261110\\ArchiveBox_V1.7_Windows_Handoff_20261110\\归档盒源码\\tests\\_abx_selftest\\runs\\selftest_20261110_155206_1e484c\\children",
+  "python": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\archivebox_v17_windows_adapt_20261110\\.venv\\Scripts\\python.exe",
+  "timeout": 30,
+  "env_isolated": {
+    "ARCHIVEBOX_RECENT_FILE": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\archivebox_v17_windows_adapt_20261110\\ArchiveBox_V1.7_Windows_Handoff_20261110\\归档盒源码\\tests\\_abx_selftest\\recent.json",
+    "ARCHIVEBOX_APP_DIR": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\archivebox_v17_windows_adapt_20261110\\ArchiveBox_V1.7_Windows_Handoff_20261110\\归档盒源码\\tests\\_abx_selftest\\appdata",
+    "ARCHIVEBOX_SCHEME_DIR": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\archivebox_v17_windows_adapt_20261110\\ArchiveBox_V1.7_Windows_Handoff_20261110\\归档盒源码\\tests\\_abx_selftest\\appdata\\schemes"
+  },
+  "start_utc": "2026-11-10T07:52:06.246264+00:00",
+  "timed_out": false,
+  "exit_code": 1,
+  "elapsed_ms": 195.5,
+  "end_utc": "2026-11-10T07:52:06.441824+00:00",
+  "stdout_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\archivebox_v17_windows_adapt_20261110\\ArchiveBox_V1.7_Windows_Handoff_20261110\\归档盒源码\\tests\\_abx_selftest\\runs\\selftest_20261110_155206_1e484c\\children\\inj2_exception.stdout.log",
+  "stderr_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\archivebox_v17_windows_adapt_20261110\\ArchiveBox_V1.7_Windows_Handoff_20261110\\归档盒源码\\tests\\_abx_selftest\\runs\\selftest_20261110_155206_1e484c\\children\\inj2_exception.stderr.log"
+}

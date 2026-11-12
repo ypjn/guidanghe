@@ -1,0 +1,12 @@
+﻿platform = windows  screens = 2
+suppress = False
+total = 2 selected = 2
+row = 0
+checkboxes = 1 [True]
+after deselect: plan= 0 cb= False suppress= False
+after setChecked: plan= 1 cb= True fired= [('stateChanged', 2), ('toggled', True)]
+after click: plan= 0 cb= False fired= [('stateChanged', 0), ('toggled', False)]
+suppress now = False plan id = 1639324914688
+direct set -> selected_count = 1
+after manual call: plan= 1 item.selected= True
+item0 is row0? a\x.pdf row= 0

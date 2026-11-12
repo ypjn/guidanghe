@@ -1,0 +1,24 @@
+{
+  "label": "history",
+  "cmd": [
+    "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\archivebox_v17_windows_adapt_20261110\\.venv\\Scripts\\python.exe",
+    "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_history\\child_history.py"
+  ],
+  "cwd": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_history",
+  "python": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\archivebox_v17_windows_adapt_20261110\\.venv\\Scripts\\python.exe",
+  "timeout": 600,
+  "env_isolated": {
+    "ARCHIVEBOX_RECENT_FILE": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\recent.json",
+    "ARCHIVEBOX_APP_DIR": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\appdata",
+    "ARCHIVEBOX_SCHEME_DIR": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\appdata\\schemes"
+  },
+  "start_utc": "2026-11-10T13:46:01.581138+00:00",
+  "timed_out": false,
+  "exit_code": 0,
+  "exit_code_kind": "os_exit_code",
+  "os_exit_code": 0,
+  "elapsed_ms": 6906.6,
+  "end_utc": "2026-11-10T13:46:08.487788+00:00",
+  "stdout_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_history\\history.stdout.log",
+  "stderr_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_history\\history.stderr.log"
+}

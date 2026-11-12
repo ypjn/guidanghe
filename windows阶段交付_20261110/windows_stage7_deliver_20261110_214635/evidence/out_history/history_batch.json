@@ -1,0 +1,48 @@
+{
+  "batch": {
+    "batch_id": 1,
+    "root": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\history_root",
+    "mode": "by_direction_semester",
+    "status": "done",
+    "created_at": "2026-11-10T21:46:03",
+    "finished_at": "2026-11-10T21:46:03",
+    "summary": "移动 2 / 跳过 0 / 失败 0 / 取消 0"
+  },
+  "actions": [
+    {
+      "action_index": 0,
+      "source_rel": "22级\\数据结构\\讲义.pdf",
+      "target_rel": "_已整理/项目/讲义存档\\讲义.pdf",
+      "size": 7,
+      "sha256": "ce41b9344da912bb1cf64071f6c516dea7ab91c92de86042b9a17ab5e3e4321a",
+      "status": "moved",
+      "error": "",
+      "executed_at": "2026-11-10T21:46:03",
+      "undone_at": "",
+      "classification_source": "长期规则",
+      "auto_target_rel": "",
+      "auto_rule_applied": "",
+      "override_note": "",
+      "rule_key": "long_term:rule-hist-0001",
+      "rule_applied": "长期规则「历史依据规则」：精确路径「22级\\数据结构\\讲义.pdf」 → 项目/讲义存档"
+    },
+    {
+      "action_index": 1,
+      "source_rel": "其他\\说明.txt",
+      "target_rel": "_已整理/待定/其他\\说明.txt",
+      "size": 6,
+      "sha256": "2b7814d3fca2e99e56c51b6ff2aa313ea6e9da6424804240aa8ad891fdfe0900",
+      "status": "moved",
+      "error": "",
+      "executed_at": "2026-11-10T21:46:03",
+      "undone_at": "",
+      "classification_source": "自动",
+      "auto_target_rel": "",
+      "auto_rule_applied": "",
+      "override_note": "",
+      "rule_key": "fallback",
+      "rule_applied": "未登记顶层目录「其他」"
+    }
+  ],
+  "exported_at": "2026-11-10 21:46:06"
+}

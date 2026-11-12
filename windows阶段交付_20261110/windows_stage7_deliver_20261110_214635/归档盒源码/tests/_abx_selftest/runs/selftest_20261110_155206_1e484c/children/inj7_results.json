@@ -1,0 +1,33 @@
+{
+  "suite": "injected_missing",
+  "summary": {
+    "PASS": 1,
+    "FAIL": 1,
+    "BLOCK": 0,
+    "UNTESTED": 0,
+    "missing": 1,
+    "errors": [],
+    "elapsed_sec": 0.0,
+    "pid": 66812,
+    "python": "3.14.7",
+    "platform": "win32"
+  },
+  "items": [
+    {
+      "id": "I7",
+      "title": "只有一项",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "id": "I7_MISSING",
+      "title": "必测项 I7_MISSING 未产生结果",
+      "status": "FAIL",
+      "detail": ""
+    }
+  ],
+  "required_missing": [
+    "I7_MISSING"
+  ],
+  "finished_at_utc": "2026-11-10T07:52:09.129220+00:00"
+}

@@ -1,0 +1,325 @@
+{
+  "suite": "windows_stage7_w1",
+  "base": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final",
+  "src": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\archivebox_v17_windows_adapt_20261110\\ArchiveBox_V1.7_Windows_Handoff_20261110\\归档盒源码",
+  "started_at": "2026-11-10T21:45:16",
+  "children": {
+    "rules": {
+      "title": "长期规则与临时修正",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_ms": 10832.2,
+      "cmd": [
+        "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\archivebox_v17_windows_adapt_20261110\\.venv\\Scripts\\python.exe",
+        "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_rules\\child_rules.py"
+      ],
+      "env_isolated": {
+        "ARCHIVEBOX_RECENT_FILE": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\recent.json",
+        "ARCHIVEBOX_APP_DIR": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\appdata",
+        "ARCHIVEBOX_SCHEME_DIR": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\appdata\\schemes"
+      },
+      "stdout_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_rules\\rules.stdout.log",
+      "stderr_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_rules\\rules.stderr.log",
+      "process_json": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_rules\\rules.process.json",
+      "result_json": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_rules\\result.json",
+      "checks": 30,
+      "fails": [],
+      "notes": [],
+      "artifacts": {
+        "rule_impact_text": {
+          "inline": true,
+          "preview": "命中文件数：1\n目标位置变化数：1\n目标冲突（磁盘已存在同名）：0\n\n代表样本：\n· 大二上\\数据结构\\讲义.pdf\n   旧目标：_已整理/课程/大二上/数据结构/文档\\讲义.pdf\n   新目标：_已整理/项目/课程项目A\\资料\\讲义.pdf\n   依据：长期规则「数据结构 修正规则」：精确路径「大二上\\数据结构\\讲义.pdf」 → 项目/课程项目A"
+        },
+        "confirm_texts": {
+          "inline": true,
+          "preview": "[['<b>根目录：</b>C:\\\\Users\\\\Lenovo\\\\Documents\\\\Trae-CN\\\\temp_20261110_01\\\\_s7run_20261110_w1_final\\\\rules_root<br><b>分类模式：</b>按方向/学期/类别（推荐）<br><b>已选文件：</b>1 / 4<br><b>本次范围：</b>整个整理空间（扫描纳入 4 个文件）<br><b>目标目录：</b>rules_root/_已整理/…<br>', \"<span style='color:#B71C1C;'>重要：将实际移动这些文件！</span><br>操作将记录在目录下的 .org"
+        },
+        "manifest_before_move": {
+          "path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_rules\\manifest_before_move.json",
+          "exists": true,
+          "kind": "file",
+          "sha256": "187efe26dee74b67275d39cdc505e9927dcec15f274346e171d687da0f9e9768"
+        },
+        "manifest_after_move": {
+          "path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_rules\\manifest_after_move.json",
+          "exists": true,
+          "kind": "file",
+          "sha256": "6e1b23c884c7d1507ad933629093945471fe3444401998ee17480c621d34a6bc"
+        },
+        "manifest_after_undo": {
+          "path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_rules\\manifest_after_undo.json",
+          "exists": true,
+          "kind": "file",
+          "sha256": "187efe26dee74b67275d39cdc505e9927dcec15f274346e171d687da0f9e9768"
+        }
+      },
+      "screenshots": [
+        "01_plan.png",
+        "02_temp_override.png",
+        "03_rule_preview_invalidated.png",
+        "04_saved_longterm.png",
+        "05_rule_applied.png",
+        "06_reordered.png",
+        "07_rules_deleted.png",
+        "08_after_execute.png",
+        "09_after_undo.png"
+      ]
+    },
+    "scheme": {
+      "title": "方案导入导出与回退",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_ms": 13586.1,
+      "cmd": [
+        "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\archivebox_v17_windows_adapt_20261110\\.venv\\Scripts\\python.exe",
+        "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_scheme\\child_scheme.py"
+      ],
+      "env_isolated": {
+        "ARCHIVEBOX_RECENT_FILE": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\recent.json",
+        "ARCHIVEBOX_APP_DIR": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\appdata",
+        "ARCHIVEBOX_SCHEME_DIR": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\appdata\\schemes"
+      },
+      "stdout_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_scheme\\scheme.stdout.log",
+      "stderr_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_scheme\\scheme.stderr.log",
+      "process_json": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_scheme\\scheme.process.json",
+      "result_json": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_scheme\\result.json",
+      "checks": 18,
+      "fails": [],
+      "notes": [],
+      "artifacts": {
+        "export_current": {
+          "path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_scheme\\export_current.json",
+          "exists": true,
+          "kind": "file",
+          "sha256": "0cbe0a01ced95874494e0b775ca29f2411b68548f5daa2333dba931499403200"
+        },
+        "incoming_a": {
+          "path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_scheme\\incoming_a.json",
+          "exists": true,
+          "kind": "file",
+          "sha256": "c00c427424a0391e61a45c557a3cd5854a377e8d67a2de9e4ccc0dee9a41cd12"
+        },
+        "incoming_b": {
+          "path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_scheme\\incoming_b.json",
+          "exists": true,
+          "kind": "file",
+          "sha256": "8d43a7d7244af18536ab90ef4f94fbe47c3ac516a4214ff0d228fa649122aeaa"
+        },
+        "incoming_c": {
+          "path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_scheme\\incoming_c.json",
+          "exists": true,
+          "kind": "file",
+          "sha256": "98801880b8da6e40251d78f9173fff52ca6be7daad544659ae0d895bb3c3a134"
+        },
+        "config_snapshot": {
+          "path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\scheme_root\\.organizer\\classification_config.json",
+          "exists": true,
+          "kind": "file",
+          "sha256": "455566c73a2bc3ea4e9977118f76b3d94c96127eef121d114ca61625d5874f9a"
+        },
+        "scheme_library": {
+          "path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\appdata\\schemes",
+          "exists": true,
+          "kind": "dir",
+          "entries": [
+            "imported-a-7f31.json",
+            "imported-b-7f32.json",
+            "imported-c-7f33.json",
+            "sc-a8dfa7cc9e8b.json"
+          ]
+        },
+        "backup_dir": {
+          "path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\scheme_root\\.organizer\\config_backups",
+          "exists": true,
+          "kind": "dir",
+          "entries": [
+            "config-backup-20261110-214532-675261.json"
+          ]
+        }
+      },
+      "screenshots": [
+        "10_scheme_center.png",
+        "11_saved_scheme.png",
+        "12_imported.png",
+        "13_applied_replace.png",
+        "14_applied_merge.png",
+        "15_backup_blocked.png",
+        "16_restored.png"
+      ]
+    },
+    "select": {
+      "title": "筛选、勾选与执行确认",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_ms": 9350.1,
+      "cmd": [
+        "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\archivebox_v17_windows_adapt_20261110\\.venv\\Scripts\\python.exe",
+        "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_select\\child_select.py"
+      ],
+      "env_isolated": {
+        "ARCHIVEBOX_RECENT_FILE": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\recent.json",
+        "ARCHIVEBOX_APP_DIR": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\appdata",
+        "ARCHIVEBOX_SCHEME_DIR": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\appdata\\schemes"
+      },
+      "stdout_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_select\\select.stdout.log",
+      "stderr_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_select\\select.stderr.log",
+      "process_json": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_select\\select.process.json",
+      "result_json": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_select\\result.json",
+      "checks": 21,
+      "fails": [],
+      "notes": [],
+      "artifacts": {
+        "manifest_after_move": {
+          "path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_select\\manifest_after_move.json",
+          "exists": true,
+          "kind": "file",
+          "sha256": "a42d6cbd38443f6f6c48ef0606bcd654d42ba8f4d466503927b1f00e22477a76"
+        },
+        "manifest_before": {
+          "path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_select\\manifest_before.json",
+          "exists": true,
+          "kind": "file",
+          "sha256": "5254ae2824931edec565a23143659a9f50e5d91a46cdb1bfb8b29f430075fdc2"
+        }
+      },
+      "screenshots": [
+        "20_select_visible.png",
+        "21_confirm_dialog.png",
+        "22_target_tree.png",
+        "23_after_execute.png"
+      ]
+    },
+    "scope": {
+      "title": "最近空间、待整理清单及范围",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_ms": 6073.4,
+      "cmd": [
+        "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\archivebox_v17_windows_adapt_20261110\\.venv\\Scripts\\python.exe",
+        "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_scope\\child_scope.py"
+      ],
+      "env_isolated": {
+        "ARCHIVEBOX_RECENT_FILE": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\recent.json",
+        "ARCHIVEBOX_APP_DIR": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\appdata",
+        "ARCHIVEBOX_SCHEME_DIR": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\appdata\\schemes"
+      },
+      "stdout_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_scope\\scope.stdout.log",
+      "stderr_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_scope\\scope.stderr.log",
+      "process_json": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_scope\\scope.process.json",
+      "result_json": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_scope\\result.json",
+      "checks": 31,
+      "fails": [],
+      "notes": [
+        "拖放为 Qt 事件注入检查（直接调用控件 dropEvent(QDropEvent)），只验证 dropEvent 的 mime 解析与清单登记；不代表 Windows 资源管理器原生拖放已通过，原生拖放列未测。"
+      ],
+      "artifacts": {
+        "manifest_before": {
+          "path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_scope\\manifest_before.json",
+          "exists": true,
+          "kind": "file",
+          "sha256": "5254ae2824931edec565a23143659a9f50e5d91a46cdb1bfb8b29f430075fdc2"
+        }
+      },
+      "screenshots": [
+        "30_recent_spaces.png",
+        "31_recent_after_remove.png",
+        "32_intake_list.png",
+        "33_intake_scope.png"
+      ]
+    },
+    "dupes": {
+      "title": "重复核对",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_ms": 4885.7,
+      "cmd": [
+        "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\archivebox_v17_windows_adapt_20261110\\.venv\\Scripts\\python.exe",
+        "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_dupes\\child_dupes.py"
+      ],
+      "env_isolated": {
+        "ARCHIVEBOX_RECENT_FILE": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\recent.json",
+        "ARCHIVEBOX_APP_DIR": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\appdata",
+        "ARCHIVEBOX_SCHEME_DIR": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\appdata\\schemes"
+      },
+      "stdout_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_dupes\\dupes.stdout.log",
+      "stderr_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_dupes\\dupes.stderr.log",
+      "process_json": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_dupes\\dupes.process.json",
+      "result_json": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_dupes\\result.json",
+      "checks": 23,
+      "fails": [],
+      "notes": [],
+      "artifacts": {
+        "manifest_base": {
+          "path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_dupes\\dupes_manifest_base.json",
+          "exists": true,
+          "kind": "file",
+          "sha256": "f3d8c61eb616f6862b5f5f1a1d622bbf7ea89f65cccda0e0596cdaad9938fb4d"
+        },
+        "duplicates_csv": {
+          "path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_dupes\\duplicates.csv",
+          "exists": true,
+          "kind": "file",
+          "sha256": "6a3fc92aff7556f7d497ddbcaa06143c8b6893aa1619336c9e3e06ae3d5d982b"
+        },
+        "duplicates_json": {
+          "path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_dupes\\duplicates.json",
+          "exists": true,
+          "kind": "file",
+          "sha256": "9b8d2d7ee45e0cf198a01f79d87482b5e20bb831c2d47a89366b994dac46e66b"
+        }
+      },
+      "screenshots": [
+        "40_duplicates.png",
+        "41_duplicates_after_change.png"
+      ]
+    },
+    "history": {
+      "title": "历史导出",
+      "exit_code": 0,
+      "timed_out": false,
+      "elapsed_ms": 6906.6,
+      "cmd": [
+        "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\archivebox_v17_windows_adapt_20261110\\.venv\\Scripts\\python.exe",
+        "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_history\\child_history.py"
+      ],
+      "env_isolated": {
+        "ARCHIVEBOX_RECENT_FILE": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\recent.json",
+        "ARCHIVEBOX_APP_DIR": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\appdata",
+        "ARCHIVEBOX_SCHEME_DIR": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\appdata\\schemes"
+      },
+      "stdout_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_history\\history.stdout.log",
+      "stderr_log": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_history\\history.stderr.log",
+      "process_json": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_history\\history.process.json",
+      "result_json": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_history\\result.json",
+      "checks": 24,
+      "fails": [],
+      "notes": [],
+      "artifacts": {
+        "history_csv": {
+          "path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_history\\history_batch.csv",
+          "exists": true,
+          "kind": "file",
+          "sha256": "d92d1823d5249618ea836087e0cae8d58a332d86a48ba825d62b400f43f9143c"
+        },
+        "history_json": {
+          "path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_history\\history_batch.json",
+          "exists": true,
+          "kind": "file",
+          "sha256": "fe3ebb0e0406cbe6eb266ed9da43bebef788ead1954290f57fbb96aa36aa03c2"
+        },
+        "history_csv_after_config_change": {
+          "path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_history\\history_batch_after_config_change.csv",
+          "exists": true,
+          "kind": "file",
+          "sha256": "d92d1823d5249618ea836087e0cae8d58a332d86a48ba825d62b400f43f9143c"
+        }
+      },
+      "screenshots": [
+        "50_history_dialog.png",
+        "51_history_after_config_change.png"
+      ]
+    }
+  },
+  "coverage_note": "断言条数不等于功能覆盖数；覆盖结论见交付报告的功能覆盖表。",
+  "finished_at": "2026-11-10T21:46:08"
+}

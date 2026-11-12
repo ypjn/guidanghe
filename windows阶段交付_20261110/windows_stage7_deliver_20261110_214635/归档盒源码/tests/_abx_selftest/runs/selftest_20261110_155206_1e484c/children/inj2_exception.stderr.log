@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "C:\Users\Lenovo\Documents\Trae-CN\temp_20261110_01\archivebox_v17_windows_adapt_20261110\ArchiveBox_V1.7_Windows_Handoff_20261110\归档盒源码\tests\_abx_selftest\runs\selftest_20261110_155206_1e484c\children\child_inj2_exception.py", line 2, in <module>
+    raise RuntimeError("injected boom")
+RuntimeError: injected boom

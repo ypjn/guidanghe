@@ -1,0 +1,25 @@
+{
+  "suite": "injected_all_pass",
+  "summary": {
+    "PASS": 1,
+    "FAIL": 0,
+    "BLOCK": 0,
+    "UNTESTED": 0,
+    "missing": 0,
+    "errors": [],
+    "elapsed_sec": 0.0,
+    "pid": 105740,
+    "python": "3.14.7",
+    "platform": "win32"
+  },
+  "items": [
+    {
+      "id": "I6",
+      "title": "全部通过",
+      "status": "PASS",
+      "detail": ""
+    }
+  ],
+  "required_missing": [],
+  "finished_at_utc": "2026-11-10T07:52:08.938266+00:00"
+}

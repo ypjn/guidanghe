@@ -1,0 +1,23 @@
+--- a/main.py
++++ b/main.py
+@@ -1622,6 +1622,9 @@
+         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+         self.table.setAlternatingRowColors(True)
+         self.table.verticalHeader().setVisible(False)
++        # 选中行变化必须立即刷新按钮状态：手动修正按钮的可用条件包含
++        # “恰好选中一行”，此前没有连接该信号，用户点选一行后按钮仍保持禁用。
++        self.table.itemSelectionChanged.connect(self._update_button_states)
+         self._suppress_cell_signals = False
+         outer.addWidget(self.table, stretch=1)
+@@ -2750,5 +2753,9 @@
+         if self.current_plan is None or row >= len(self.current_plan.items):
+             return
+-        self.current_plan.items[row].selected = (state == Qt.Checked)
++        # stateChanged 在 PySide6 中以 int 形式发出，而 Qt6.4+ 起 Qt.Checked 是
++        # 严格 Python 枚举（2 == Qt.CheckState.Checked 为 False）。必须显式
++        # 转成枚举再比较，否则行内复选框永远只能取消、无法勾选。
++        self.current_plan.items[row].selected = (
++            Qt.CheckState(state) == Qt.CheckState.Checked)
+         self._update_plan_counts()
+         self._update_button_states()

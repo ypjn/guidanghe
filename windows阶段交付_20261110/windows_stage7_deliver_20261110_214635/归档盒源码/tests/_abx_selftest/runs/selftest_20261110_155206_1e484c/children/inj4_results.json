@@ -1,0 +1,25 @@
+{
+  "suite": "injected_false_success",
+  "summary": {
+    "PASS": 0,
+    "FAIL": 1,
+    "BLOCK": 0,
+    "UNTESTED": 0,
+    "missing": 0,
+    "errors": [],
+    "elapsed_sec": 0.0,
+    "pid": 47860,
+    "python": "3.14.7",
+    "platform": "win32"
+  },
+  "items": [
+    {
+      "id": "I4",
+      "title": "故意失败但退出 0",
+      "status": "FAIL",
+      "detail": "injected false success"
+    }
+  ],
+  "required_missing": [],
+  "finished_at_utc": "2026-11-10T07:52:08.658908+00:00"
+}

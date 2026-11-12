@@ -1,0 +1,28 @@
+platform = windows  screens = 2
+PASS C0-OPEN | C:\Users\Lenovo\Documents\Trae-CN\temp_20261110_01\_s7run_20261110_w1_final\select_root
+PASS C0-SCAN | total=5
+PASS C1-START-CLEARED | selected=0
+PASS C1-CHECK-ONE | selected=1
+PASS C1-HIDDEN-KEEPS-CHECK | hidden=True selected=True counts=计划 5｜可见 1｜已勾选 1｜隐藏但仍勾选 1
+PASS C2-FILTER-CHANGES-DONT-MUTATE | selected=True hidden=True counts=计划 5｜可见 1｜已勾选 1｜隐藏但仍勾选 1
+PASS C3-ALL-CLEARED | selected=0
+PASS C3-SELECT-VISIBLE-ONLY | vis=2 selected=2
+shot -> C:\Users\Lenovo\Documents\Trae-CN\temp_20261110_01\_s7run_20261110_w1_final\out_select\shots\20_select_visible.png
+PASS C3-INVERT-VISIBLE | selected=0
+PASS C4-PRECONDITION | hidden=True selected=1
+PASS C4-CONFIRM-STATS | total=1 texts=根目录：C:\Users\Lenovo\Documents\Trae-CN\temp_20261110_01\_s7run_20261110_w1_final\select_root分类模式：按方向/学期/类别（推荐）已选文件：1 / 5本次范围：整个整理空间（扫描纳入 5 个文件）目标目录：select_root/_已整理/… | ⚠ 当前筛选隐藏了 1 个已勾选文件；确认整理会按全部勾选项执行，而不只是当前可见行。 | 重要：将实际移动这些文件！操作将记录在目录下的 .organizer/history.db，可在关闭程序后重新打开撤销最近批次。
+PASS C4-CANCEL-NO-EXEC | batches=0
+shot -> C:\Users\Lenovo\Documents\Trae-CN\temp_20261110_01\_s7run_20261110_w1_final\out_select\shots\21_confirm_dialog.png
+PASS C5-DIALOG-OPEN | dialog=TargetTreeDialog
+shot -> C:\Users\Lenovo\Documents\Trae-CN\temp_20261110_01\_s7run_20261110_w1_final\out_select\shots\22_target_tree.png
+PASS C5-TREE-MATCHES-VISIBLE | leaves=1 visible=1 info=共 5 个文件；当前展示当前筛选范围：1 个文件。该视图只展示计划，不会创建任何真实目录。
+PASS C5-TREE-SCOPE-OFF-COUNTS-ALL | all=5 total=5 info=共 5 个文件；当前展示整份计划：5 个文件。该视图只展示计划，不会创建任何真实目录。
+PASS C6-EXEC-PRECONDITION | selected=2
+PASS C6-EXEC-DONE | working=False
+PASS C6-EXEC-COUNT | actions=2 moved=2 statuses=['moved', 'moved']
+PASS C6-EXEC-FILES | targets=['_已整理/待定/其他\\说明.txt', '_已整理/课程/大二上/数据结构/文档\\讲义.pdf']
+shot -> C:\Users\Lenovo\Documents\Trae-CN\temp_20261110_01\_s7run_20261110_w1_final\out_select\shots\23_after_execute.png
+PASS C6-UNDO-DONE
+PASS C6-UNDO-MANIFEST | diff={"missing": [], "extra": [], "changed": []} count=5
+S7_RESULT={"checks": [{"id": "C0-OPEN", "ok": true, "detail": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\select_root"}, {"id": "C0-SCAN", "ok": true, "detail": "total=5"}, {"id": "C1-START-CLEARED", "ok": true, "detail": "selected=0"}, {"id": "C1-CHECK-ONE", "ok": true, "detail": "selected=1"}, {"id": "C1-HIDDEN-KEEPS-CHECK", "ok": true, "detail": "hidden=True selected=True counts=计划 5｜可见 1｜已勾选 1｜隐藏但仍勾选 1"}, {"id": "C2-FILTER-CHANGES-DONT-MUTATE", "ok": true, "detail": "selected=True hidden=True counts=计划 5｜可见 1｜已勾选 1｜隐藏但仍勾选 1"}, {"id": "C3-ALL-CLEARED", "ok": true, "detail": "selected=0"}, {"id": "C3-SELECT-VISIBLE-ONLY", "ok": true, "detail": "vis=2 selected=2"}, {"id": "C3-INVERT-VISIBLE", "ok": true, "detail": "selected=0"}, {"id": "C4-PRECONDITION", "ok": true, "detail": "hidden=True selected=1"}, {"id": "C4-CONFIRM-STATS", "ok": true, "detail": "total=1 texts=根目录：C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\select_root分类模式：按方向/学期/类别（推荐）已选文件：1 / 5本次范围：整个整理空间（扫描纳入 5 个文件）目标目录：select_root/_已整理/… | ⚠ 当前筛选隐藏了 1 个已勾选文件；确认整理会按全部勾选项执行，而不只是当前可见行。 | 重要：将实际移动这些文件！操作将记录在目录下的 .organizer/history.db，可在关闭程序后重新打开撤销最近批次。"}, {"id": "C4-CANCEL-NO-EXEC", "ok": true, "detail": "batches=0"}, {"id": "C5-DIALOG-OPEN", "ok": true, "detail": "dialog=TargetTreeDialog"}, {"id": "C5-TREE-MATCHES-VISIBLE", "ok": true, "detail": "leaves=1 visible=1 info=共 5 个文件；当前展示当前筛选范围：1 个文件。该视图只展示计划，不会创建任何真实目录。"}, {"id": "C5-TREE-SCOPE-OFF-COUNTS-ALL", "ok": true, "detail": "all=5 total=5 info=共 5 个文件；当前展示整份计划：5 个文件。该视图只展示计划，不会创建任何真实目录。"}, {"id": "C6-EXEC-PRECONDITION", "ok": true, "detail": "selected=2"}, {"id": "C6-EXEC-DONE", "ok": true, "detail": "working=False"}, {"id": "C6-EXEC-COUNT", "ok": true, "detail": "actions=2 moved=2 statuses=['moved', 'moved']"}, {"id": "C6-EXEC-FILES", "ok": true, "detail": "targets=['_已整理/待定/其他\\\\说明.txt', '_已整理/课程/大二上/数据结构/文档\\\\讲义.pdf']"}, {"id": "C6-UNDO-DONE", "ok": true, "detail": ""}, {"id": "C6-UNDO-MANIFEST", "ok": true, "detail": "diff={\"missing\": [], \"extra\": [], \"changed\": []} count=5"}], "artifacts": {"manifest_after_move": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_select\\manifest_after_move.json", "manifest_before": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_select\\manifest_before.json"}, "dialogs": [{"title": "归档盒", "text": "整理完成！\n\n成功 2\n\n\n批次 #1 已保存至 .organizer/history.db\n关闭程序后仍可重新打开撤销。"}, {"title": "归档盒", "text": "将撤销最近一个尚未完全撤销的整理批次。\n\n⚠ 注意：\n• 如果某些目标文件后来被你修改过，撤销时会保留你的修改\n• 如果原路径现在有新文件，撤销不会覆盖新文件\n• 只会恢复本批次实际移动成功的文件\n\n确定要撤销吗？"}, {"title": "归档盒", "text": "撤销批次 #1\n\n完整撤销：恢复 2 项\n\n✓ 完整撤销成功！"}], "notes": [], "errors": [], "finished_at": "2026-11-10T21:45:50"}
+CHILD_EXIT_CODE=0

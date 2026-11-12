@@ -1,0 +1,413 @@
+{
+  "format": "archive-box-scheme",
+  "format_version": 1,
+  "scheme_id": "imported-c-7f33",
+  "name": "导入方案C",
+  "description": "",
+  "exported_at": "2026-11-10T21:45:36",
+  "app": {
+    "name": "归档盒",
+    "version": "1.6"
+  },
+  "config_version": 2,
+  "counts": {
+    "semester_map": 8,
+    "top_direction": 4,
+    "semester_dirs": 25,
+    "generic_dirs": 1,
+    "keyword_rules": 12,
+    "long_term_rules": 1,
+    "long_term_enabled": 1
+  },
+  "config": {
+    "version": 2,
+    "semester_map": [
+      {
+        "source": "大一上",
+        "semester": "大一上",
+        "enabled": true
+      },
+      {
+        "source": "大一下",
+        "semester": "大一下",
+        "enabled": true
+      },
+      {
+        "source": "大二上",
+        "semester": "大二上",
+        "enabled": true
+      },
+      {
+        "source": "大二下",
+        "semester": "大二下",
+        "enabled": true
+      },
+      {
+        "source": "大三上",
+        "semester": "大三上",
+        "enabled": true
+      },
+      {
+        "source": "大三下",
+        "semester": "大三下",
+        "enabled": true
+      },
+      {
+        "source": "大四上",
+        "semester": "大四上",
+        "enabled": true
+      },
+      {
+        "source": "大四下",
+        "semester": "大四下",
+        "enabled": true
+      }
+    ],
+    "top_direction": [
+      {
+        "source": "校园事务",
+        "direction": "校园事务",
+        "enabled": true
+      },
+      {
+        "source": "Code",
+        "direction": "项目",
+        "enabled": true
+      },
+      {
+        "source": "个人项目灵感",
+        "direction": "项目",
+        "enabled": true
+      },
+      {
+        "source": "大创答辩",
+        "direction": "项目",
+        "enabled": true
+      }
+    ],
+    "semester_dirs": [
+      {
+        "semester": "大二上",
+        "source": "数据结构",
+        "direction": "课程",
+        "category": "数据结构",
+        "enabled": true
+      },
+      {
+        "semester": "大二上",
+        "source": "数据结构实验",
+        "direction": "课程",
+        "category": "数据结构",
+        "enabled": true
+      },
+      {
+        "semester": "大二上",
+        "source": "C++程序设计",
+        "direction": "课程",
+        "category": "C++程序设计",
+        "enabled": true
+      },
+      {
+        "semester": "大二上",
+        "source": "python",
+        "direction": "课程",
+        "category": "Python程序设计",
+        "enabled": true
+      },
+      {
+        "semester": "大二上",
+        "source": "概率论与数理统计",
+        "direction": "课程",
+        "category": "概率论与数理统计",
+        "enabled": true
+      },
+      {
+        "semester": "大二上",
+        "source": "计组",
+        "direction": "课程",
+        "category": "计算机组成原理",
+        "enabled": true
+      },
+      {
+        "semester": "大二上",
+        "source": "软件工程专业概论",
+        "direction": "课程",
+        "category": "软件工程专业概论",
+        "enabled": true
+      },
+      {
+        "semester": "大二上",
+        "source": "软概",
+        "direction": "课程",
+        "category": "软件工程专业概论",
+        "enabled": true
+      },
+      {
+        "semester": "大二上",
+        "source": "软件需求分析与设计",
+        "direction": "课程",
+        "category": "软件需求分析与设计",
+        "enabled": true
+      },
+      {
+        "semester": "大二上",
+        "source": "马克思主义基本原理",
+        "direction": "课程",
+        "category": "马克思主义基本原理",
+        "enabled": true
+      },
+      {
+        "semester": "大二上",
+        "source": "体育（轮滑）",
+        "direction": "课程",
+        "category": "体育（轮滑）",
+        "enabled": true
+      },
+      {
+        "semester": "大二上",
+        "source": "aigc2",
+        "direction": "课程",
+        "category": "AIGC（生成式人工智能）",
+        "enabled": true
+      },
+      {
+        "semester": "大二上",
+        "source": "线上课",
+        "direction": "课程",
+        "category": "线上课",
+        "enabled": true
+      },
+      {
+        "semester": "大二上",
+        "source": "周报",
+        "direction": "校园事务",
+        "category": "周报",
+        "enabled": true
+      },
+      {
+        "semester": "大二上",
+        "source": "siri",
+        "direction": "项目",
+        "category": "siri",
+        "enabled": true
+      },
+      {
+        "semester": "大一下",
+        "source": "AIGC",
+        "direction": "课程",
+        "category": "AIGC（生成式人工智能）",
+        "enabled": true
+      },
+      {
+        "semester": "大一下",
+        "source": "编程作业",
+        "direction": "课程",
+        "category": "程序设计基础",
+        "enabled": true
+      },
+      {
+        "semester": "大一下",
+        "source": "大英论文",
+        "direction": "课程",
+        "category": "大学英语",
+        "enabled": true
+      },
+      {
+        "semester": "大一下",
+        "source": "纲要",
+        "direction": "课程",
+        "category": "中国近现代史纲要",
+        "enabled": true
+      },
+      {
+        "semester": "大一下",
+        "source": "高数期末",
+        "direction": "课程",
+        "category": "高等数学",
+        "enabled": true
+      },
+      {
+        "semester": "大一下",
+        "source": "离散实验",
+        "direction": "课程",
+        "category": "离散数学",
+        "enabled": true
+      },
+      {
+        "semester": "大一下",
+        "source": "思政实践",
+        "direction": "课程",
+        "category": "思政实践",
+        "enabled": true
+      },
+      {
+        "semester": "大一下",
+        "source": "已完成期末",
+        "direction": "课程",
+        "category": "",
+        "enabled": true
+      },
+      {
+        "semester": "大一下",
+        "source": "国创赛",
+        "direction": "竞赛",
+        "category": "国创赛",
+        "enabled": true
+      },
+      {
+        "semester": "大一下",
+        "source": "2026年第十六届APMCM 亚太地区大学生数学建模竞赛（中文赛项）赛题发布",
+        "direction": "竞赛",
+        "category": "APMCM 数学建模",
+        "enabled": true
+      }
+    ],
+    "generic_dirs": [
+      {
+        "prefix": "附件-",
+        "direction": "校园事务",
+        "category": "通知",
+        "enabled": true
+      }
+    ],
+    "keyword_rules": [
+      {
+        "keywords": [
+          "java"
+        ],
+        "target": "程序设计(Java)",
+        "direction": "课程",
+        "scope": "path",
+        "trigger": "subdir",
+        "enabled": true
+      },
+      {
+        "keywords": [
+          "离散"
+        ],
+        "target": "离散数学",
+        "direction": "课程",
+        "scope": "path",
+        "trigger": "subdir",
+        "enabled": true
+      },
+      {
+        "keywords": [
+          "高数"
+        ],
+        "target": "高等数学",
+        "direction": "课程",
+        "scope": "path",
+        "trigger": "subdir",
+        "enabled": true
+      },
+      {
+        "keywords": [
+          "概率"
+        ],
+        "target": "概率论与数理统计",
+        "direction": "课程",
+        "scope": "path",
+        "trigger": "subdir",
+        "enabled": true
+      },
+      {
+        "keywords": [
+          "线代"
+        ],
+        "target": "线性代数",
+        "direction": "课程",
+        "scope": "path",
+        "trigger": "subdir",
+        "enabled": true
+      },
+      {
+        "keywords": [
+          "大英"
+        ],
+        "target": "大学英语",
+        "direction": "课程",
+        "scope": "path",
+        "trigger": "subdir",
+        "enabled": true
+      },
+      {
+        "keywords": [
+          "物理"
+        ],
+        "target": "大学物理",
+        "direction": "课程",
+        "scope": "path",
+        "trigger": "subdir",
+        "enabled": true
+      },
+      {
+        "keywords": [
+          "数据结构"
+        ],
+        "target": "数据结构",
+        "direction": "课程",
+        "scope": "path",
+        "trigger": "subdir",
+        "enabled": true
+      },
+      {
+        "keywords": [
+          "python"
+        ],
+        "target": "Python程序设计",
+        "direction": "课程",
+        "scope": "path",
+        "trigger": "subdir",
+        "enabled": true
+      },
+      {
+        "keywords": [
+          "c++"
+        ],
+        "target": "C++程序设计",
+        "direction": "课程",
+        "scope": "path",
+        "trigger": "subdir",
+        "enabled": true
+      },
+      {
+        "keywords": [
+          "aigc"
+        ],
+        "target": "AIGC（生成式人工智能）",
+        "direction": "课程",
+        "scope": "path",
+        "trigger": "subdir",
+        "enabled": true
+      },
+      {
+        "keywords": [
+          "思政"
+        ],
+        "target": "思政",
+        "direction": "课程",
+        "scope": "path",
+        "trigger": "subdir",
+        "enabled": true
+      }
+    ],
+    "long_term_rules": [
+      {
+        "rule_id": "lt-imp-c1",
+        "name": "阻断规则C",
+        "match_type": "exact_path",
+        "source_path": "x/y.txt",
+        "include_subdirs": true,
+        "keywords": [],
+        "direction": "项目",
+        "semester": "",
+        "category": "阻断类别C",
+        "inner_mode": "keep",
+        "inner_path": "",
+        "enabled": true,
+        "reason": "阻断用例"
+      }
+    ]
+  }
+}

@@ -1,0 +1,50 @@
+platform = windows  screens = 2
+PASS R0-OPEN | path=C:\Users\Lenovo\Documents\Trae-CN\temp_20261110_01\_s7run_20261110_w1_final\rules_root
+PASS R0-SCAN | files=4 plan_total=4
+shot -> C:\Users\Lenovo\Documents\Trae-CN\temp_20261110_01\_s7run_20261110_w1_final\out_rules\shots\01_plan.png
+PASS R1-SELECT-STATE | row=1 enabled=True idle=True valid=True mode=by_direction_semester selrows={1} hidden=False
+PASS R1-TEMP-OVERRIDE | auto=_已整理/课程/大二上/数据结构/文档\讲义.pdf now=_已整理/竞赛/蓝桥杯\讲义.pdf dir=竞赛
+PASS R1-TABLE-HIGHLIGHT | cell=✎ 大二上\数据结构\讲义.pdf msg=本次计划共 1 个手动修正文件（仅本次生效）：
+  大二上\数据结构\讲义.pdf  自动=[课程/数据结构]  目标=_已整理/竞赛/蓝桥杯\讲义.pdf（界面临时修正）
+shot -> C:\Users\Lenovo\Documents\Trae-CN\temp_20261110_01\_s7run_20261110_w1_final\out_rules\shots\02_temp_override.png
+PASS R2-REVERT-AUTO | target=_已整理/课程/大二上/数据结构/文档\讲义.pdf auto=_已整理/课程/大二上/数据结构/文档\讲义.pdf
+PASS R7-PREVIEW-RUN | impact error=
+PASS R7-CACHE-INVALIDATED | hint='匹配条件已修改，请重新试运行' view_empty=True
+shot -> C:\Users\Lenovo\Documents\Trae-CN\temp_20261110_01\_s7run_20261110_w1_final\out_rules\shots\03_rule_preview_invalidated.png
+PASS R3-SAVE-LONGTERM | rules=[{"rule_id": "lt-33e63a312998", "name": "数据结构 修正规则", "match_type": "exact_path", "source_path": "大二上\\数据结构\\讲义.pdf", "include_subdirs": true, "keywords": [], "direction": "项目", "semester": "", "category": "课程项目A", "inner_mode": "replace", "inner_path": "资料", "enabled": true, "reason": "由手动修正生成：大二上\\
+PASS R3-IMPACT-SHOWN | 命中文件数：1
+目标位置变化数：1
+目标冲突（磁盘已存在同名）：0
+
+代表样本：
+· 大二上\数据结构\讲义.pdf
+   旧目标：_已整理/课程/大二上/数据结构/文档\讲义.pdf
+   新目标：_已整理/项目/课程项目A\资料\讲义.
+PASS R3-PLAN-INVALIDATED | valid=False plan=None label=True
+shot -> C:\Users\Lenovo\Documents\Trae-CN\temp_20261110_01\_s7run_20261110_w1_final\out_rules\shots\04_saved_longterm.png
+PASS R4-RULE-EFFECT | total=4
+PASS R4-RULE-TARGET | target=_已整理/项目/课程项目A\资料\讲义.pdf rule=长期规则「数据结构 修正规则」：精确路径「大二上\数据结构\讲义.pdf」 → 项目/课程项目A key=long_term:lt-33e63a312998
+PASS R4-RULE-BASIS | rule_key=long_term:lt-33e63a312998 rule_applied=长期规则「数据结构 修正规则」：精确路径「大二上\数据结构\讲义.pdf」 → 项目/课程项目A
+shot -> C:\Users\Lenovo\Documents\Trae-CN\temp_20261110_01\_s7run_20261110_w1_final\out_rules\shots\05_rule_applied.png
+PASS R5-PRIORITY-FIRST | target=_已整理/校园事务/事务B/文档\讲义.pdf key=long_term:lt-cacbbc81f3d8
+PASS R5-EDITOR-ROWS | rows=2
+PASS R5-REORDER-SAVED | order=['数据结构 修正规则', '二号规则']
+PASS R5-ORDER-TAKES-EFFECT | target=_已整理/项目/课程项目A\资料\讲义.pdf key=long_term:lt-33e63a312998 first=lt-33e63a312998
+shot -> C:\Users\Lenovo\Documents\Trae-CN\temp_20261110_01\_s7run_20261110_w1_final\out_rules\shots\06_reordered.png
+PASS R6-DISABLED-SAVED | enabled=[False, True]
+PASS R6-DISABLED-NO-MATCH | target=_已整理/校园事务/事务B/文档\讲义.pdf key=long_term:lt-cacbbc81f3d8
+PASS R7-DELETE-SAVED | left=[] cfg_exists=False
+PASS R7-DELETE-BACK-TO-AUTO | target=_已整理/课程/大二上/数据结构/文档\讲义.pdf auto=_已整理/课程/大二上/数据结构/文档\讲义.pdf key=semester_dir:大二上/数据结构
+shot -> C:\Users\Lenovo\Documents\Trae-CN\temp_20261110_01\_s7run_20261110_w1_final\out_rules\shots\07_rules_deleted.png
+PASS R8-ONE-SELECTED | selected=1
+PASS R8-EXEC-DONE | working=False
+PASS R8-HISTORY-BASIS | status=moved key=semester_dir:大二上/数据结构 target=_已整理/课程/大二上/数据结构/文档\讲义.pdf src=自动
+PASS R8-FILE-MOVED | C:\Users\Lenovo\Documents\Trae-CN\temp_20261110_01\_s7run_20261110_w1_final\rules_root\_已整理/课程/大二上/数据结构/文档\讲义.pdf
+shot -> C:\Users\Lenovo\Documents\Trae-CN\temp_20261110_01\_s7run_20261110_w1_final\out_rules\shots\08_after_execute.png
+PASS R8-UNDO-DONE
+PASS R8-UNDO-MANIFEST | diff={"missing": [], "extra": [], "changed": []} count=4
+PASS R8-UNDO-SHA | SHA-256 与移动前一致
+PASS R8-HISTORY-AFTER-UNDO | action=undone batch=undone
+shot -> C:\Users\Lenovo\Documents\Trae-CN\temp_20261110_01\_s7run_20261110_w1_final\out_rules\shots\09_after_undo.png
+S7_RESULT={"checks": [{"id": "R0-OPEN", "ok": true, "detail": "path=C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\rules_root"}, {"id": "R0-SCAN", "ok": true, "detail": "files=4 plan_total=4"}, {"id": "R1-SELECT-STATE", "ok": true, "detail": "row=1 enabled=True idle=True valid=True mode=by_direction_semester selrows={1} hidden=False"}, {"id": "R1-TEMP-OVERRIDE", "ok": true, "detail": "auto=_已整理/课程/大二上/数据结构/文档\\讲义.pdf now=_已整理/竞赛/蓝桥杯\\讲义.pdf dir=竞赛"}, {"id": "R1-TABLE-HIGHLIGHT", "ok": true, "detail": "cell=✎ 大二上\\数据结构\\讲义.pdf msg=本次计划共 1 个手动修正文件（仅本次生效）：\n  大二上\\数据结构\\讲义.pdf  自动=[课程/数据结构]  目标=_已整理/竞赛/蓝桥杯\\讲义.pdf（界面临时修正）"}, {"id": "R2-REVERT-AUTO", "ok": true, "detail": "target=_已整理/课程/大二上/数据结构/文档\\讲义.pdf auto=_已整理/课程/大二上/数据结构/文档\\讲义.pdf"}, {"id": "R7-PREVIEW-RUN", "ok": true, "detail": "impact error="}, {"id": "R7-CACHE-INVALIDATED", "ok": true, "detail": "hint='匹配条件已修改，请重新试运行' view_empty=True"}, {"id": "R3-SAVE-LONGTERM", "ok": true, "detail": "rules=[{\"rule_id\": \"lt-33e63a312998\", \"name\": \"数据结构 修正规则\", \"match_type\": \"exact_path\", \"source_path\": \"大二上\\\\数据结构\\\\讲义.pdf\", \"include_subdirs\": true, \"keywords\": [], \"direction\": \"项目\", \"semester\": \"\", \"category\": \"课程项目A\", \"inner_mode\": \"replace\", \"inner_path\": \"资料\", \"enabled\": true, \"reason\": \"由手动修正生成：大二上\\\\"}, {"id": "R3-IMPACT-SHOWN", "ok": true, "detail": "命中文件数：1\n目标位置变化数：1\n目标冲突（磁盘已存在同名）：0\n\n代表样本：\n· 大二上\\数据结构\\讲义.pdf\n   旧目标：_已整理/课程/大二上/数据结构/文档\\讲义.pdf\n   新目标：_已整理/项目/课程项目A\\资料\\讲义."}, {"id": "R3-PLAN-INVALIDATED", "ok": true, "detail": "valid=False plan=None label=True"}, {"id": "R4-RULE-EFFECT", "ok": true, "detail": "total=4"}, {"id": "R4-RULE-TARGET", "ok": true, "detail": "target=_已整理/项目/课程项目A\\资料\\讲义.pdf rule=长期规则「数据结构 修正规则」：精确路径「大二上\\数据结构\\讲义.pdf」 → 项目/课程项目A key=long_term:lt-33e63a312998"}, {"id": "R4-RULE-BASIS", "ok": true, "detail": "rule_key=long_term:lt-33e63a312998 rule_applied=长期规则「数据结构 修正规则」：精确路径「大二上\\数据结构\\讲义.pdf」 → 项目/课程项目A"}, {"id": "R5-PRIORITY-FIRST", "ok": true, "detail": "target=_已整理/校园事务/事务B/文档\\讲义.pdf key=long_term:lt-cacbbc81f3d8"}, {"id": "R5-EDITOR-ROWS", "ok": true, "detail": "rows=2"}, {"id": "R5-REORDER-SAVED", "ok": true, "detail": "order=['数据结构 修正规则', '二号规则']"}, {"id": "R5-ORDER-TAKES-EFFECT", "ok": true, "detail": "target=_已整理/项目/课程项目A\\资料\\讲义.pdf key=long_term:lt-33e63a312998 first=lt-33e63a312998"}, {"id": "R6-DISABLED-SAVED", "ok": true, "detail": "enabled=[False, True]"}, {"id": "R6-DISABLED-NO-MATCH", "ok": true, "detail": "target=_已整理/校园事务/事务B/文档\\讲义.pdf key=long_term:lt-cacbbc81f3d8"}, {"id": "R7-DELETE-SAVED", "ok": true, "detail": "left=[] cfg_exists=False"}, {"id": "R7-DELETE-BACK-TO-AUTO", "ok": true, "detail": "target=_已整理/课程/大二上/数据结构/文档\\讲义.pdf auto=_已整理/课程/大二上/数据结构/文档\\讲义.pdf key=semester_dir:大二上/数据结构"}, {"id": "R8-ONE-SELECTED", "ok": true, "detail": "selected=1"}, {"id": "R8-EXEC-DONE", "ok": true, "detail": "working=False"}, {"id": "R8-HISTORY-BASIS", "ok": true, "detail": "status=moved key=semester_dir:大二上/数据结构 target=_已整理/课程/大二上/数据结构/文档\\讲义.pdf src=自动"}, {"id": "R8-FILE-MOVED", "ok": true, "detail": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\rules_root\\_已整理/课程/大二上/数据结构/文档\\讲义.pdf"}, {"id": "R8-UNDO-DONE", "ok": true, "detail": ""}, {"id": "R8-UNDO-MANIFEST", "ok": true, "detail": "diff={\"missing\": [], \"extra\": [], \"changed\": []} count=4"}, {"id": "R8-UNDO-SHA", "ok": true, "detail": "SHA-256 与移动前一致"}, {"id": "R8-HISTORY-AFTER-UNDO", "ok": true, "detail": "action=undone batch=undone"}], "artifacts": {"rule_impact_text": "命中文件数：1\n目标位置变化数：1\n目标冲突（磁盘已存在同名）：0\n\n代表样本：\n· 大二上\\数据结构\\讲义.pdf\n   旧目标：_已整理/课程/大二上/数据结构/文档\\讲义.pdf\n   新目标：_已整理/项目/课程项目A\\资料\\讲义.pdf\n   依据：长期规则「数据结构 修正规则」：精确路径「大二上\\数据结构\\讲义.pdf」 → 项目/课程项目A", "confirm_texts": [["<b>根目录：</b>C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\rules_root<br><b>分类模式：</b>按方向/学期/类别（推荐）<br><b>已选文件：</b>1 / 4<br><b>本次范围：</b>整个整理空间（扫描纳入 4 个文件）<br><b>目标目录：</b>rules_root/_已整理/…<br>", "<span style='color:#B71C1C;'>重要：将实际移动这些文件！</span><br>操作将记录在目录下的 .organizer/history.db，可在关闭程序后重新打开撤销最近批次。"]], "manifest_before_move": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_rules\\manifest_before_move.json", "manifest_after_move": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_rules\\manifest_after_move.json", "manifest_after_undo": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\out_rules\\manifest_after_undo.json"}, "dialogs": [{"title": "确认保存长期规则", "text": "规则：数据结构 修正规则\n命中 1 个文件，1 个目标位置变化。\n\n保存后：\n· 规则写入该目录的配置并在重启后继续生效；\n· 当前计划的临时手动修正会随计划一起失效；\n· 需要点击「重新预览」才能按新规则生成计划。\n\n继续保存吗？"}, {"title": "归档盒", "text": "整理完成！\n\n成功 1\n\n\n批次 #1 已保存至 .organizer/history.db\n关闭程序后仍可重新打开撤销。"}, {"title": "归档盒", "text": "将撤销最近一个尚未完全撤销的整理批次。\n\n⚠ 注意：\n• 如果某些目标文件后来被你修改过，撤销时会保留你的修改\n• 如果原路径现在有新文件，撤销不会覆盖新文件\n• 只会恢复本批次实际移动成功的文件\n\n确定要撤销吗？"}, {"title": "归档盒", "text": "撤销批次 #1\n\n完整撤销：恢复 1 项\n\n✓ 完整撤销成功！"}], "notes": [], "errors": [], "finished_at": "2026-11-10T21:45:27"}
+CHILD_EXIT_CODE=0

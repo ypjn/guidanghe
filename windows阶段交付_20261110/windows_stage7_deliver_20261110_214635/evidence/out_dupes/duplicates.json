@@ -1,0 +1,110 @@
+{
+  "format": "archive-box-duplicate-report",
+  "version": 1,
+  "root": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\dupes_root",
+  "scope": "整个整理空间：当前扫描纳入 5 个文件",
+  "source": "plan",
+  "generated_at": "2026-11-10T21:45:58",
+  "counts": {
+    "total_files": 5,
+    "verified": 4,
+    "failed": 1,
+    "pending": 0,
+    "content_groups": 1,
+    "content_files": 2,
+    "same_name_groups": 1,
+    "same_name_files": 2
+  },
+  "groups": [
+    {
+      "kind": "content",
+      "kind_label": "内容重复",
+      "group_id": "C1",
+      "label": "内容重复 #1（2 份）",
+      "note": "SHA-256 一致：cfb0ca37c3451d3e…",
+      "count": 2,
+      "entries": [
+        {
+          "filename": "讲义.pdf",
+          "rel_path": "a\\讲义.pdf",
+          "abs_path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\dupes_root\\a\\讲义.pdf",
+          "size": 22,
+          "size_display": "22 B",
+          "status": "verified",
+          "status_label": "已核对",
+          "reason": "",
+          "sha256": "cfb0ca37c3451d3e015a143358f0bd54183ae583363045d39e9bbcf694b6a285",
+          "target_rel_path": "_已整理/待定/a\\讲义.pdf"
+        },
+        {
+          "filename": "副本-讲义.pdf",
+          "rel_path": "b\\副本-讲义.pdf",
+          "abs_path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\dupes_root\\b\\副本-讲义.pdf",
+          "size": 22,
+          "size_display": "22 B",
+          "status": "verified",
+          "status_label": "已核对",
+          "reason": "",
+          "sha256": "cfb0ca37c3451d3e015a143358f0bd54183ae583363045d39e9bbcf694b6a285",
+          "target_rel_path": "_已整理/待定/b\\副本-讲义.pdf"
+        }
+      ]
+    },
+    {
+      "kind": "same_name_diff",
+      "kind_label": "同名不同内容",
+      "group_id": "N1",
+      "label": "同名不同内容 #1（2 份）",
+      "note": "名称相同，但已核对出 2 种不同内容",
+      "count": 2,
+      "entries": [
+        {
+          "filename": "报告.txt",
+          "rel_path": "c\\报告.txt",
+          "abs_path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\dupes_root\\c\\报告.txt",
+          "size": 3,
+          "size_display": "3 B",
+          "status": "verified",
+          "status_label": "已核对",
+          "reason": "",
+          "sha256": "cb1ad2119d8fafb69566510ee712661f9f14b83385006ef92aec47f523a38358",
+          "target_rel_path": "_已整理/待定/c\\报告.txt"
+        },
+        {
+          "filename": "报告.txt",
+          "rel_path": "d\\报告.txt",
+          "abs_path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\dupes_root\\d\\报告.txt",
+          "size": 4,
+          "size_display": "4 B",
+          "status": "verified",
+          "status_label": "已核对",
+          "reason": "",
+          "sha256": "4a8d8134f29b0b7b60c126f5532bc9f5d9bb73037373cf6fb872d81f1dcefdfd",
+          "target_rel_path": "_已整理/待定/d\\报告.txt"
+        }
+      ]
+    },
+    {
+      "kind": "unverified",
+      "kind_label": "待核对 / 核对失败",
+      "group_id": "U1",
+      "label": "待核对 / 核对失败（1 份）",
+      "note": "这些条目没有有效指纹，不能作为内容相同或不同的证据",
+      "count": 1,
+      "entries": [
+        {
+          "filename": "将删除.pdf",
+          "rel_path": "e\\将删除.pdf",
+          "abs_path": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261110_01\\_s7run_20261110_w1_final\\dupes_root\\e\\将删除.pdf",
+          "size": 4,
+          "size_display": "4 B",
+          "status": "failed",
+          "status_label": "核对失败",
+          "reason": "文件不存在或无法访问：[WinError 2] 系统找不到指定的文件。: 'C:\\\\Users\\\\Lenovo\\\\Documents\\\\Trae-CN\\\\temp_20261110_01\\\\_s7run_20261110_w1_final\\\\dupes_root\\\\e\\\\将删除.pdf'",
+          "sha256": "",
+          "target_rel_path": "_已整理/待定/e\\将删除.pdf"
+        }
+      ]
+    }
+  ]
+}

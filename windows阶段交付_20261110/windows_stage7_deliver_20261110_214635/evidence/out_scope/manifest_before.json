@@ -1,0 +1,26 @@
+{
+  "count": 5,
+  "meta": {},
+  "items": {
+    "其他/笔记.md": {
+      "size": 5,
+      "sha256": "ab5aa97074c454a0632057e704220d9a6678fbf773a0a5806fc09b8173b07309"
+    },
+    "其他/说明.txt": {
+      "size": 6,
+      "sha256": "711a6108ba2ce6ca93dd47d6817f2361db10d8ab6eec89460b2dfc2c325efabe"
+    },
+    "大二上/数据结构/讲义.pdf": {
+      "size": 7,
+      "sha256": "6bc636ff0103a2888fb38ca3c2bf3b1371110ceac5a104a519d85d39207732b0"
+    },
+    "大二上/数据结构/试卷.pdf": {
+      "size": 4,
+      "sha256": "5e89e9d8544af15b204bcdff94f047b0c1b60ab8e9c70edbbdd42b3c83b4ad83"
+    },
+    "竞赛/蓝桥杯/报名表.pdf": {
+      "size": 6,
+      "sha256": "7c8718bdc78be44bf7f3e5554152c20e99216dcb93ac9aefb8857fd7f9d02102"
+    }
+  }
+}

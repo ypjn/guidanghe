@@ -1,0 +1,25 @@
+{
+  "suite": "injected_fail",
+  "summary": {
+    "PASS": 0,
+    "FAIL": 1,
+    "BLOCK": 0,
+    "UNTESTED": 0,
+    "missing": 0,
+    "errors": [],
+    "elapsed_sec": 0.0,
+    "pid": 53012,
+    "python": "3.14.7",
+    "platform": "win32"
+  },
+  "items": [
+    {
+      "id": "I1",
+      "title": "故意失败项",
+      "status": "FAIL",
+      "detail": "injected"
+    }
+  ],
+  "required_missing": [],
+  "finished_at_utc": "2026-11-10T07:52:06.223746+00:00"
+}
