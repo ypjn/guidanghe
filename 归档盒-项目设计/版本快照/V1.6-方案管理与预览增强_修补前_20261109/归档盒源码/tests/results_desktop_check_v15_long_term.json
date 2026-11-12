@@ -1,0 +1,72 @@
+{
+  "suite": "desktop_check_v15_long_term",
+  "ts": "2026-11-09 19:44:43",
+  "command": ".venv/bin/python tests/desktop_check_v15_long_term.py (cocoa)",
+  "interpreter": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/bin/python",
+  "python": "3.14.8",
+  "platform": "darwin",
+  "qt_platform": "cocoa",
+  "screen": "1470x956",
+  "base": "/tmp/_v15_desktop_check",
+  "screenshot_dir": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261109_V15长期规则",
+  "elapsed_s": 6.35,
+  "exit_code": 0,
+  "counts": {
+    "total": 7,
+    "pass": 7,
+    "fail": 0,
+    "untested": 0
+  },
+  "note": "程序化点击与截图；人工观察项需用户本人查看截图后确认。合成样本，非真人分类错例。",
+  "results": [
+    {
+      "id": "V0",
+      "title": "当前进程可获取真实屏幕（cocoa）",
+      "status": "通过",
+      "evidence": "platform=cocoa；screen=True；尺寸=1470x956",
+      "kind": "程序化点击"
+    },
+    {
+      "id": "V1",
+      "title": "配置编辑器含「长期修正规则」页，可添加规则并生成稳定标识",
+      "status": "通过",
+      "evidence": "标签页=['学期映射', '顶层方向', '学期内目录', '通用目录前缀', '关键词兜底', '长期修正规则']\n行数=1\n规则标识=lt-8bd304573f07",
+      "kind": "程序化点击"
+    },
+    {
+      "id": "V2",
+      "title": "单文件修正对话框出现「保存为长期规则…」按钮且可用",
+      "status": "通过",
+      "evidence": "按钮文字=保存为长期规则…；可用=True",
+      "kind": "程序化点击"
+    },
+    {
+      "id": "V3",
+      "title": "规则草稿默认精确路径；切换到目录范围后试运行命中 2 个文件",
+      "status": "通过",
+      "evidence": "默认匹配=exact_path\n默认来源=大二上/数据结构/作业/a.pdf\n命中文件数：2\n目标位置变化数：2\n目标冲突（磁盘已存在同名）：0\n\n代表样本：\n· 大二上/数据结构/作业/a.pdf",
+      "kind": "程序化点击"
+    },
+    {
+      "id": "V4",
+      "title": "保存规则写入该根目录配置；重新生成命中 2 个文件且保留内部层级",
+      "status": "通过",
+      "evidence": "配置来源=custom；规则数=1\n命中=['大二上/数据结构/作业/a.pdf', '大二上/数据结构/实验/b.pdf']\n内部路径=['作业', '实验']\n目标=['_已整理/项目/数据大创/作业/a.pdf', '_已整理/项目/数据大创/实验/b.pdf']",
+      "kind": "程序化点击"
+    },
+    {
+      "id": "V5",
+      "title": "重新打开配置编辑器可看到刚保存的规则（名称/匹配方式往返一致）",
+      "status": "通过",
+      "evidence": "行数=1；名称=作业 修正规则；匹配方式=目录范围",
+      "kind": "程序化点击"
+    },
+    {
+      "id": "V6",
+      "title": "历史明细把长期规则命中的文件标为「长期规则」并显示规则依据",
+      "status": "通过",
+      "evidence": "分类来源列=['自动', '长期规则', '长期规则']\n长期规则行=[1, 2]\n悬浮提示=命中长期修正规则\n规则标识：long_term:lt-cad4c0e33134\n命中依据：长期规则「作业 修正规则」：来源目录「大二上/数据结构」（含子目录） → 项目/数据大创",
+      "kind": "程序化点击"
+    }
+  ]
+}

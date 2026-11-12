@@ -1,0 +1,86 @@
+{
+  "suite": "desktop_check_v12",
+  "ts": "2026-11-07 13:24:19",
+  "command": ".venv/bin/python tests/desktop_check_v12.py",
+  "interpreter": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/bin/python",
+  "python": "3.14.8",
+  "platform": "darwin",
+  "qt_platform": "cocoa",
+  "screenshots": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261107_V12",
+  "elapsed_s": 9.3,
+  "exit_code": 0,
+  "counts": {
+    "total": 11,
+    "pass": 11,
+    "fail": 0,
+    "unverified": 0
+  },
+  "results": [
+    {
+      "id": "D0",
+      "title": "真实桌面图形后端",
+      "status": "通过",
+      "evidence": "Qt 平台=cocoa（cocoa）"
+    },
+    {
+      "id": "D1",
+      "title": "主窗口：扫描 → 自动生成计划 → 执行按钮可用（程序化点击）",
+      "status": "通过",
+      "evidence": "扫描完成=True 计划完成=True 执行 enabled=True\n截图=/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261107_V12/01_主窗口_初始.png, /Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261107_V12/02_主窗口_分类预览.png"
+    },
+    {
+      "id": "D2",
+      "title": "长中文路径在预览表中显示，悬浮提示含完整绝对路径",
+      "status": "通过",
+      "evidence": "找到长路径行=True 悬浮提示完整路径=True\n截图=/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261107_V12/03_主窗口_长路径行.png"
+    },
+    {
+      "id": "D3",
+      "title": "开始整理：真实移动 208 个文件后主窗口回到空闲",
+      "status": "通过",
+      "evidence": "执行完成=True；状态栏=成功 208 | 批次 #1 已记录，可撤销\n截图=/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261107_V12/04_主窗口_执行完成.png"
+    },
+    {
+      "id": "D4",
+      "title": "历史页面：批次列表显示真实批次，明细按需加载第 1 页",
+      "status": "通过",
+      "evidence": "批次行数=1（应 1）；明细行数=200（应 200）；页码=第 1/2 页 · 共 208 项\n截图=/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261107_V12/05_历史_批次列表与明细.png"
+    },
+    {
+      "id": "D5",
+      "title": "历史搜索与状态筛选：关键词过滤、按「已移动」过滤",
+      "status": "通过",
+      "evidence": "关键词「发票」→ 1 项（应 1）；状态「已移动」→ 共 208 项（应 208），本页渲染 200 行（分页上限 200）\n截图=/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261107_V12/06_历史_搜索发票.png, /Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261107_V12/07_历史_筛选已移动.png"
+    },
+    {
+      "id": "D6",
+      "title": "历史明细分页：第 2 页按需渲染剩余 8 项",
+      "status": "通过",
+      "evidence": "第 2 页行数=8（应 8）；页码=第 2/2 页 · 共 208 项\n截图=/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261107_V12/08_历史_第2页.png"
+    },
+    {
+      "id": "D7",
+      "title": "从历史页撤销：原位置被占用 → 部分撤销，冲突原因可见、现状保留",
+      "status": "通过",
+      "evidence": "撤销前状态=已完成；撤销后状态=部分撤销（有失败）；冲突项 1 个（应 1）；原因=原路径已被占用（保留现状，请人工核对）；占用文件保留=True\n截图=/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261107_V12/09_历史_撤销后自动刷新.png, /Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261107_V12/10_历史_冲突筛选与原因.png"
+    },
+    {
+      "id": "D8",
+      "title": "历史导出：CSV 与 JSON 由用户选择位置保存，内容逐项一致",
+      "status": "通过",
+      "evidence": "CSV 47842 字节、210 行（= 动作 208+2 头）；JSON 动作 208 条\n文件=/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261107_V12/历史导出_批次.csv, /Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261107_V12/历史导出_批次.json"
+    },
+    {
+      "id": "D9",
+      "title": "窗口缩放：主窗口 900×600/1400×900、历史窗口 760×480/1200×800 控件仍可见",
+      "status": "通过",
+      "evidence": "截图=/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261107_V12/11_缩放_主窗口_900x600.png\n截图=/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261107_V12/12_缩放_主窗口_1400x900.png\n截图=/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261107_V12/13_缩放_历史_760x480.png\n截图=/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261107_V12/14_缩放_历史_1200x800.png"
+    },
+    {
+      "id": "D10",
+      "title": "系统级屏幕截图（screencapture）",
+      "status": "通过",
+      "evidence": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261107_V12/15_系统级屏幕截图.png"
+    }
+  ]
+}

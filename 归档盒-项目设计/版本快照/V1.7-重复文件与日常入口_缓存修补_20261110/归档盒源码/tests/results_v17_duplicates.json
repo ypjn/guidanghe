@@ -1,0 +1,62 @@
+{
+  "suite": "test_v17_duplicates",
+  "ts": "2026-11-09 22:14:11",
+  "counts": {
+    "total": 10,
+    "pass": 10,
+    "fail": 0
+  },
+  "exit_code": 0,
+  "results": [
+    {
+      "id": "D01",
+      "status": "通过",
+      "evidence": "内容组=1 文件份数=2"
+    },
+    {
+      "id": "D02",
+      "status": "通过",
+      "evidence": "分组=[('same_name_diff', 2)]"
+    },
+    {
+      "id": "D03",
+      "status": "通过",
+      "evidence": "内容组=1 份数=3"
+    },
+    {
+      "id": "D04",
+      "status": "通过",
+      "evidence": "失败=1 分组=['unverified']"
+    },
+    {
+      "id": "D05",
+      "status": "通过",
+      "evidence": "重新核对=True 状态=verified 指纹变化=True"
+    },
+    {
+      "id": "D06",
+      "status": "通过",
+      "evidence": "返回值=True"
+    },
+    {
+      "id": "D07",
+      "status": "通过",
+      "evidence": "分组=2 筛选后内容组=1 CSV行=5/5"
+    },
+    {
+      "id": "D08",
+      "status": "通过",
+      "evidence": "内容不变=True 副本数=2"
+    },
+    {
+      "id": "D09",
+      "status": "通过",
+      "evidence": "完成=True 内容组=1 缓存复用=True 切换后清理=True"
+    },
+    {
+      "id": "D10",
+      "status": "通过",
+      "evidence": "首次内容组=1 变化后内容组=0 重算指纹次数=1（应 1）"
+    }
+  ]
+}

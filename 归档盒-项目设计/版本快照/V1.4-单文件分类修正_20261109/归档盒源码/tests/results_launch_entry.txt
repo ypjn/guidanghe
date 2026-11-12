@@ -1,0 +1,23 @@
+归档盒 V1.2 第三轮 — 双击启动入口检查
+时间: 2026-11-09 18:15:55
+命令: QT_QPA_PLATFORM=offscreen .venv/bin/python tests/test_launch_entry.py
+入口: /Users/ypjn/Desktop/NEU/大二上/aigc2/启动归档盒.command
+耗时: 4.2s
+合计 5 项：通过 5 / 未通过 0
+退出码: 0
+
+[通过] L1  启动脚本存在、可执行、zsh 语法检查通过
+    路径=/Users/ypjn/Desktop/NEU/大二上/aigc2/启动归档盒.command；可执行=True；语法退出码=0
+
+[通过] L2  缺源码目录：给出清楚说明并退出，不做任何安装/启动
+    退出码=1；输出含「未找到源码目录」=True
+
+[通过] L3  缺虚拟环境：给出 venv+requirements 修复指引，不自动升级或安装
+    退出码=1；指引包含安装命令=True
+
+[通过] L4  中文+空格路径：通过脚本真实启动主窗口（offscreen 子进程存活 4s）
+    路径=/tmp/_v12r3_launch_check/试用 副本 目录；进程存活=True；启动横幅可见=True；结束时退出码=-15
+
+[通过] L5  requirements.txt 声明与当前实际依赖一致（PySide6==6.12.0）
+    实际版本=6.12.0；声明=True
+

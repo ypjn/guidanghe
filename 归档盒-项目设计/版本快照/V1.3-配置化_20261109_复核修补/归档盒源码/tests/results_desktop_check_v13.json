@@ -1,0 +1,56 @@
+{
+  "suite": "desktop_check_v13",
+  "ts": "2026-11-08 11:33:17",
+  "command": ".venv/bin/python tests/desktop_check_v13.py (cocoa)",
+  "interpreter": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/bin/python",
+  "python": "3.14.8",
+  "platform": "darwin",
+  "qt_platform": "cocoa(default)",
+  "base": "/tmp/_v13_desktop_check",
+  "screenshot_dir": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261108_V13",
+  "elapsed_s": 7.11,
+  "exit_code": 0,
+  "counts": {
+    "total": 5,
+    "pass": 5,
+    "fail": 0
+  },
+  "note": "程序化点击与截图；人工观察项需用户本人查看截图后确认。合成样本，非真人分类错例。",
+  "results": [
+    {
+      "id": "D1",
+      "title": "程序中打开配置编辑器、取消编辑不改变生效配置与文件",
+      "status": "通过",
+      "evidence": "取消后未创建配置文件=True；原文件内容未变=True",
+      "kind": "程序化点击"
+    },
+    {
+      "id": "D2",
+      "title": "界面新增学期与课程映射，试运行显示影响（后台线程）",
+      "status": "通过",
+      "evidence": "试运行完成=True；样本=4；变化=2",
+      "kind": "程序化点击"
+    },
+    {
+      "id": "D3",
+      "title": "保存成功后旧计划失效、执行禁用，重新生成使用新配置",
+      "status": "通过",
+      "evidence": "配置文件=True；旧计划失效=True；结果变化=True\n新目标=_已整理/课程/2026秋-自定义学期/机器人基础/文档/实验一/report.pdf",
+      "kind": "程序化点击"
+    },
+    {
+      "id": "D4",
+      "title": "整理批次保存实际使用的配置快照，历史可查看",
+      "status": "通过",
+      "evidence": "批次配置快照=True；历史窗口=True；批次=#1",
+      "kind": "程序化点击"
+    },
+    {
+      "id": "D5",
+      "title": "关闭重开后按根目录恢复自定义配置",
+      "status": "通过",
+      "evidence": "重启后含「自定义学期」=True",
+      "kind": "程序化点击"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+归档盒 V1.2 第二轮 — 恢复空操作注入反例（独立进程）
+时间: 2026-11-09 14:24:59
+命令: QT_QPA_PLATFORM=offscreen .venv/bin/python tests/_v12r2_noop_check.py
+解释器: /Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/bin/python  Python 3.14.8
+耗时: 1.54s
+合计 4 项：通过 4 / 未通过 0
+退出码: 0（0 = 验收能识别空操作）
+
+[通过] N1  空操作注入生效：恢复入口被调用但未做任何事
+    按钮可用=True；流程完成=True；空操作调用批次=[1]（应=[1]）
+
+[通过] N2  空操作下验收必失败：动作仍 planned、批次仍 executing（假阳性已消除）
+    动作0=planned（空操作后应仍 planned）；批次状态=executing（应仍 executing）；若验收仍通过则存在假阳性=False
+
+[通过] N3  空操作不动任何文件：源仍不在、目标仍在（与恢复前一致）
+    恢复前源不在/目标在=True；恢复后源在=False；目标在=True
+
+[通过] N4  空操作结果文案不误报：不显示“补记已移动/暂停待人工确认”
+    状态栏=核对完成：核对批次 #0 | 批次状态 → 
+

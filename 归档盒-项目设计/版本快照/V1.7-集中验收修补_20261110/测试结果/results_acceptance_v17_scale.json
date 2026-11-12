@@ -1,0 +1,126 @@
+{
+  "suite": "acceptance_v17_scale",
+  "ts": "2026-11-09 22:51:44",
+  "root": "/tmp/归档盒_集中验收副本_20261110",
+  "files": 37799,
+  "bytes": 11083639680,
+  "scanned_files": 7492,
+  "scanned_bytes": 8895268744,
+  "plan_items": 7492,
+  "durations": {
+    "manifest_before_s": 19.0,
+    "scan_s": 0.97,
+    "plan_s": 22.2,
+    "duplicates_s": 1.6,
+    "scoped_execute_s": 0.1,
+    "undo_s": 0.1,
+    "cancel_plan_s": 0.2,
+    "close_wait_s": 1.2,
+    "recover_s": 0.0,
+    "manifest_final_s": 19.1
+  },
+  "cleanup_undo_after_close_wait": 0,
+  "recover_undo": {
+    "restored": 11,
+    "complete": true
+  },
+  "exit_code": 0,
+  "counts": {
+    "total": 15,
+    "pass": 14,
+    "fail": 0,
+    "untested": 1
+  },
+  "results": [
+    {
+      "id": "A1",
+      "title": "规模验收副本与真实资料来源",
+      "status": "通过",
+      "evidence": "副本 /tmp/归档盒_集中验收副本_20261110：37799 个文件，11.08 GB\n真实资料 /Users/ypjn/Desktop/NEU/大二上（只读，未写入）：37869 个条目\n所有实际文件操作仅在本副本内执行"
+    },
+    {
+      "id": "A2",
+      "title": "执行前独立文件系统枚举 + SHA-256",
+      "status": "通过",
+      "evidence": "37807 条；枚举/指纹错误 0；耗时 19.0s；内容重复 6775 组 / 17598 份\n清单：/tmp/archive_acceptance_20261110/scale/manifest_before.json"
+    },
+    {
+      "id": "A3",
+      "title": "真实副本扫描",
+      "status": "通过",
+      "evidence": "纳入 7492 个文件，8.90 GB；跳过 694（保护根 692）；扫描错误 0；耗时 0.97s"
+    },
+    {
+      "id": "A4",
+      "title": "生成整理计划（后台线程，真实 QTimer 心跳）",
+      "status": "通过",
+      "evidence": "计划 7492 项；冲突 0；耗时 22.2s\n心跳 430 次（50ms），最大间隔 737 ms"
+    },
+    {
+      "id": "A5",
+      "title": "项目保护目录不进入计划",
+      "status": "通过",
+      "evidence": "自动保护根 692 个；保护文件进入计划 0 个"
+    },
+    {
+      "id": "A6",
+      "title": "重复核对（后台）与独立 SHA-256 复算一致",
+      "status": "通过",
+      "evidence": "报告：内容重复 1592 组 / 5680 份；已核对 7492；耗时 1.6s\n独立复算：内容重复 1592 组 / 5680 份\n同名不同内容 317 组"
+    },
+    {
+      "id": "A7",
+      "title": "待整理清单范围整理：只移动指定范围",
+      "status": "通过",
+      "evidence": "清单 2 项（加入 added/added）→ 范围文件 44 个 → 计划 44 项\n执行：成功 44；批次 #7；动作 44；耗时 0.1s"
+    },
+    {
+      "id": "A8",
+      "title": "范围外文件（未纳入清单）保持原路径、大小与修改时间",
+      "status": "通过",
+      "evidence": "抽查范围外 33509 个文件；变化 0 个"
+    },
+    {
+      "id": "A9",
+      "title": "撤销范围整理：完整恢复",
+      "status": "通过",
+      "evidence": "撤销批次 #7；完整撤销：恢复 44 项；耗时 0.1s；抽查 20 个源路径仍在=True"
+    },
+    {
+      "id": "A10",
+      "title": "计划生成中取消：提前结束且不发布结果",
+      "status": "通过",
+      "evidence": "取消标记=True；处理到第 500 个；耗时 0.2s（完整 22.2s）；返回半成品 0 项（调用方按取消丢弃）"
+    },
+    {
+      "id": "A11",
+      "title": "整理中请求关闭：拒绝立即关闭、等待线程结束、界面保持响应",
+      "status": "通过",
+      "evidence": "执行线程已启动=True；关闭被拒绝=True；进入关闭等待=True；自动关闭=True；等待 1.17s\n门控期间心跳 23 次，最大间隔 56 ms"
+    },
+    {
+      "id": "A12",
+      "title": "中断恢复：强杀后核对磁盘状态、保留已完成记录",
+      "status": "通过",
+      "evidence": "子进程已暂停(可观测)=True；批次 #9；核对批次 #9 | 仍未执行 28 | 批次状态 → recovered_partial；核对后 moved 动作 11；耗时 0.0s"
+    },
+    {
+      "id": "A12b",
+      "title": "中断恢复后可撤销：按实际记录恢复已移动文件",
+      "status": "通过",
+      "evidence": "撤销批次 #9；完整撤销：恢复 11 项；应恢复 11 项"
+    },
+    {
+      "id": "A13",
+      "title": "最终文件系统核对：路径、内容、副本数量全部一致",
+      "status": "通过",
+      "evidence": "缺失 0、多余 0、内容变化 0；内容指纹多重集合一致=True；枚举错误 0\n重复组（前/后）=6775/6775；组内文件（前/后）=17598/17598；清单 37807 条，耗时 19.1s\n文件：/tmp/archive_acceptance_20261110/scale/manifest_final.json"
+    },
+    {
+      "id": "A14",
+      "title": "元数据与其他未验证边界",
+      "status": "未测",
+      "evidence": "已核对：相对路径、文件大小、SHA-256、内容重复副本数量、符号链接文本。\n未核对：修改时间/访问时间恢复（撤销后 mtime 由系统当前时间决定）、权限位、扩展属性、ACL、硬链接身份、空目录残留、文件所有者。\n清单不记录目录；撤销允许残留空父目录。真实资料原目录未被写入。"
+    }
+  ]
+}

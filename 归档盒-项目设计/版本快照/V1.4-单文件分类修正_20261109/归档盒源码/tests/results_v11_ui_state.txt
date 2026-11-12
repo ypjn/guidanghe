@@ -1,0 +1,89 @@
+归档盒 V1.1 UI 状态机验证 — 结果清单
+时间: 2026-11-09 18:15:29
+命令: QT_QPA_PLATFORM=offscreen .venv/bin/python tests/test_v11_ui_state.py
+解释器: /Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/bin/python  Python 3.14.8
+平台: darwin  Qt平台: offscreen
+合计 10 项：通过 10 / 未通过 0 / 未验证 0
+退出码: 0
+
+[通过] P1  扫描结束清理不覆盖计划线程：取消按钮保持、浏览/扫描禁用；完成后恢复
+    计划线程已启动=True
+    模拟扫描结束清理后：
+      _plan_working=True（应 True）
+      取消按钮 visible/enabled=True/True
+      浏览/扫描禁用=True/True（应 True/True）
+      进度条 visible/max=True/320（应 True/320，即当前任务文件数）
+      扫描结束清理未覆盖进度最大值=True
+    计划完成后：valid=True cancel_hidden=True 执行/浏览/扫描 enabled=True/True/True
+
+[通过] P2  取消重新生成：旧计划清空、执行禁用、取消按钮恢复隐藏
+    取消前旧计划可执行=True
+    二次生成已启动=True
+    启动瞬间旧计划失效=True
+    取消请求标记=True，取消按钮禁点=True
+    线程已停=True
+    取消后 current_plan is None=True
+      _plan_valid=False（应 False）
+      执行按钮 enabled=False（应 False）
+      无效标签 visible=True
+      取消按钮 visible=False（应 False）
+      重新预览 enabled=True
+
+[通过] P3  旧 seq 的 finished/progress/failed/cancelled/finished_seq 全部被丢弃；当前 seq 只接受本任务计划对象
+    伪造 seq=101 信号后：
+      计划未被覆盖=True
+      _plan_valid 仍 True=True
+      未弹窗=True
+      状态栏未被进度污染=True
+      _plan_working 仍 True=True
+      取消按钮仍可见=True
+    seq=102 信号：计划被接受=True 接收对象就是本任务计划=True 模式匹配=True 条目数匹配=True
+    结束后 _plan_working=False=True 执行可用=True
+
+[通过] P4  计划生成失败：清空计划、禁用执行、显示错误、允许重新生成
+    current_plan is None=True
+    _plan_valid=False
+    执行按钮 enabled=False（应 False）
+    无效标签 visible=True
+    取消按钮 visible=False（应 False）
+    重新预览 enabled=True
+    错误弹窗已触发=True
+
+[通过] P5  关闭请求被拒绝，窗口与数据库保持到线程结束，随后自动关闭；独立数据库实际写入/读回并确认关闭后不可用
+    closeEvent accepted=False（应 False）
+    窗口仍可见=True
+    _storage 仍存活=True，窗口数据库仍可读=True
+    独立数据库写入批次 #1 并读回=True（动作 1 条）
+    独立数据库 close() 后继续使用会抛错=True
+    线程结束后窗口自动关闭且数据库已正确关闭=True
+
+[通过] P6  正常流程回归：扫描 → 自动生成计划 → 按钮状态正确
+    扫描完成=True，计划完成=True，计划有效=True
+    执行 enabled=True，取消按钮隐藏=True，浏览 enabled=True
+
+[通过] P7  线程已结束但成功结果未交付时点击取消：取消被接受、计划不发布、执行禁用、结束后可重新预览
+    真实 PlanWorker 已停止=True，界面仍处于生成相位=True
+    取消按钮可见可点=True
+    点击后取消被接受=True，取消按钮禁用=True
+    排队的成功结果被拒绝=True（current_plan=None, valid=False）
+    结束回调后：非生成相位/执行禁用/可重新预览=True
+
+[通过] P8  成功回调已处理、结束回调未处理时点击取消：已发布计划立即失效、执行禁用
+    取消前计划已发布且有效=True（生成相位中执行按钮本就禁用）
+    取消后计划已撤下/无效/执行禁用=True，界面仍处生成相位=True
+    结束回调后：非生成相位且可重新预览=True
+
+[通过] P9  扫描中请求关闭：等待扫描结束、不启动新计划任务、不重开数据库、自动关闭
+    真实 ScanWorker 已启动=True
+    关闭请求被拒绝=True，进入关闭等待=True
+    浏览/扫描/执行/保护配置全部禁用=True
+    关闭等待期间窗口可见=True，数据库保持=True
+    放行扫描后：扫描结果已记录=True，未启动 PlanWorker=True（seq 0，worker=None）
+    线程结束后自动关闭且数据库已关闭=True
+
+[通过] P10  界面整理与撤销走真实后台线程：独立 SQLite 连接可用、记录可撤销
+    执行按钮可用=True，执行线程正常结束=True
+    批次 #1，已移动 8 / 计划 8
+    撤销线程正常结束=True，已撤销 8 项
+    撤销后源文件回到原位 8 / 8
+

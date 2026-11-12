@@ -1,0 +1,82 @@
+归档盒 V1.1 端到端验证 — 结果清单
+时间: 2026-11-09 14:24:57
+命令: QT_QPA_PLATFORM=offscreen .venv/bin/python tests/test_v11_e2e.py
+解释器: /Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/bin/python  Python 3.14.8
+平台: darwin  测试根: /tmp/_v11_e2e_verify
+合计 25 项：通过 25 / 未通过 0 / 未验证 0
+退出码: 0
+
+[通过] P1  顶层 Code 下直接放 main.py — 不把文件名当目录
+    → _已整理/项目/Code/main.py
+
+[通过] P2  嵌套 Code/Python/pkg/main.py — pkg 保留为 inner_path
+    → _已整理/项目/Python/pkg/main.py
+
+[通过] P3  学期+登记目录+子目录 — out 保留
+    → _已整理/课程/大一下/程序设计基础/构建产物/out/Main.class
+
+[通过] P4  学期+登记目录直接下文件 — 无 inner_path
+    → _已整理/课程/大二上/数据结构/文档/直接下的文件.pdf
+
+[通过] P5  多层嵌套 — 第3章/讲义 保留
+    → _已整理/课程/大二上/数据结构/文档/第3章/讲义/栈.md
+
+[通过] P6  未登记目录直接下文件
+    → _已整理/课程/大二上/未登记目录/文档/note.txt
+
+[通过] P7  未登记目录多层嵌套 — 子目录 保留
+    → _已整理/课程/大二上/未登记目录/文档/子目录/deep.txt
+
+[通过] P8  顶层散落文件 — 待定方向 + 无额外目录层（不再有文件名当目录）
+    → _已整理/待定/随机散落文件.txt
+
+[通过] P9  中文+空格路径 — 全部保留
+    → _已整理/课程/大二上/数据结构/文档/实验/实验 一/report .docx
+
+[通过] P_bad_dir  无文件名当目录的情况
+    检查 9 项全部 OK
+
+[通过] PR1  父子项目根都被识别（.git + package.json）
+    保护根=['/tmp/_v11_e2e_verify/t_protect_auto/myproject', '/tmp/_v11_e2e_verify/t_protect_auto/myproject/web']
+
+[通过] PR2  有 6 个文件因项目保护跳过（应为 6 个）
+    实际跳过=6 个项目保护文件
+
+[通过] PR3  无标记的普通文件夹不被保护
+    普通资料文件=2（应为 2）
+
+[通过] PE1  显式保护不存在的目录不报错
+    errors=[] protected=0
+
+[通过] PE2  显式保护真实子目录：内部文件被跳过，外部不受影响
+    正常=2 保护=2
+
+[通过] PE3  protect_dirs 指向 root 外部目录不报错
+
+[通过] PT1  有 .git 的项目被整体保护：main.py 和 data.csv 都不进入 files
+    项目保护文件=2 正常文件在项目内=0
+
+[通过] NP1  所有文件保留完整内部层级
+    检查 4 项
+
+[通过] NP2  同名不同位置的文件得到不同目标（不覆盖）
+    reports=['_已整理/课程/大二上/数据结构/文档/实验/实验 一/report.docx', '_已整理/课程/大二上/数据结构/文档/实验/实验 二/report.docx'] unique=2
+
+[通过] TE1  端到端计划生成 5 项
+    plan.total=5
+
+[通过] TE2  执行后 5 个文件成功移动
+    moved=5 failed=0 skipped=0
+
+[通过] TE3  源目录文件消失 + 归档目录出现
+    归档目录文件=5
+
+[通过] TE4  撤销后路径 → 指纹完全恢复
+    撤销恢复=5 冲突=0 errors=0
+
+[通过] MC1  MODE_BY_TYPE 正常生成
+    items=2
+
+[通过] MC2  MODE_BY_COURSE_THEN_TYPE 正常生成
+    items=2
+

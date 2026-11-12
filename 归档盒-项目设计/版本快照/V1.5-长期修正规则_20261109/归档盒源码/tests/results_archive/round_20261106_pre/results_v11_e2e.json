@@ -1,0 +1,159 @@
+{
+  "summary": {
+    "total": 25,
+    "pass": 25,
+    "fail": 0
+  },
+  "results": [
+    {
+      "id": "P1",
+      "title": "顶层 Code 下直接放 main.py — 不把文件名当目录",
+      "status": "通过",
+      "evidence": "→ _已整理/项目/Code/main.py"
+    },
+    {
+      "id": "P2",
+      "title": "嵌套 Code/Python/pkg/main.py — pkg 保留为 inner_path",
+      "status": "通过",
+      "evidence": "→ _已整理/项目/Python/pkg/main.py"
+    },
+    {
+      "id": "P3",
+      "title": "学期+登记目录+子目录 — out 保留",
+      "status": "通过",
+      "evidence": "→ _已整理/课程/大一下/程序设计基础/构建产物/out/Main.class"
+    },
+    {
+      "id": "P4",
+      "title": "学期+登记目录直接下文件 — 无 inner_path",
+      "status": "通过",
+      "evidence": "→ _已整理/课程/大二上/数据结构/文档/直接下的文件.pdf"
+    },
+    {
+      "id": "P5",
+      "title": "多层嵌套 — 第3章/讲义 保留",
+      "status": "通过",
+      "evidence": "→ _已整理/课程/大二上/数据结构/文档/第3章/讲义/栈.md"
+    },
+    {
+      "id": "P6",
+      "title": "未登记目录直接下文件",
+      "status": "通过",
+      "evidence": "→ _已整理/课程/大二上/未登记目录/文档/note.txt"
+    },
+    {
+      "id": "P7",
+      "title": "未登记目录多层嵌套 — 子目录 保留",
+      "status": "通过",
+      "evidence": "→ _已整理/课程/大二上/未登记目录/文档/子目录/deep.txt"
+    },
+    {
+      "id": "P8",
+      "title": "顶层散落文件 — 待定方向 + 无额外目录层（不再有文件名当目录）",
+      "status": "通过",
+      "evidence": "→ _已整理/待定/随机散落文件.txt"
+    },
+    {
+      "id": "P9",
+      "title": "中文+空格路径 — 全部保留",
+      "status": "通过",
+      "evidence": "→ _已整理/课程/大二上/数据结构/文档/实验/实验 一/report .docx"
+    },
+    {
+      "id": "P_bad_dir",
+      "title": "无文件名当目录的情况",
+      "status": "通过",
+      "evidence": "检查 9 项全部 OK"
+    },
+    {
+      "id": "PR1",
+      "title": "父子项目根都被识别（.git + package.json）",
+      "status": "通过",
+      "evidence": "保护根=['/tmp/_v11_e2e_verify/t_protect_auto/myproject', '/tmp/_v11_e2e_verify/t_protect_auto/myproject/web']"
+    },
+    {
+      "id": "PR2",
+      "title": "有 6 个文件因项目保护跳过（应为 6 个）",
+      "status": "通过",
+      "evidence": "实际跳过=6 个项目保护文件"
+    },
+    {
+      "id": "PR3",
+      "title": "无标记的普通文件夹不被保护",
+      "status": "通过",
+      "evidence": "普通资料文件=2（应为 2）"
+    },
+    {
+      "id": "PE1",
+      "title": "显式保护不存在的目录不报错",
+      "status": "通过",
+      "evidence": "errors=[] protected=0"
+    },
+    {
+      "id": "PE2",
+      "title": "显式保护真实子目录：内部文件被跳过，外部不受影响",
+      "status": "通过",
+      "evidence": "正常=2 保护=2"
+    },
+    {
+      "id": "PE3",
+      "title": "protect_dirs 指向 root 外部目录不报错",
+      "status": "通过",
+      "evidence": ""
+    },
+    {
+      "id": "PT1",
+      "title": "有 .git 的项目被整体保护：main.py 和 data.csv 都不进入 files",
+      "status": "通过",
+      "evidence": "项目保护文件=2 正常文件在项目内=0"
+    },
+    {
+      "id": "NP1",
+      "title": "所有文件保留完整内部层级",
+      "status": "通过",
+      "evidence": "检查 4 项"
+    },
+    {
+      "id": "NP2",
+      "title": "同名不同位置的文件得到不同目标（不覆盖）",
+      "status": "通过",
+      "evidence": "reports=['_已整理/课程/大二上/数据结构/文档/实验/实验 一/report.docx', '_已整理/课程/大二上/数据结构/文档/实验/实验 二/report.docx'] unique=2"
+    },
+    {
+      "id": "TE1",
+      "title": "端到端计划生成 5 项",
+      "status": "通过",
+      "evidence": "plan.total=5"
+    },
+    {
+      "id": "TE2",
+      "title": "执行后 5 个文件成功移动",
+      "status": "通过",
+      "evidence": "moved=5 failed=0 skipped=0"
+    },
+    {
+      "id": "TE3",
+      "title": "源目录文件消失 + 归档目录出现",
+      "status": "通过",
+      "evidence": "归档目录文件=5"
+    },
+    {
+      "id": "TE4",
+      "title": "撤销后路径 → 指纹完全恢复",
+      "status": "通过",
+      "evidence": "撤销恢复=5 冲突=0 errors=0"
+    },
+    {
+      "id": "MC1",
+      "title": "MODE_BY_TYPE 正常生成",
+      "status": "通过",
+      "evidence": "items=2"
+    },
+    {
+      "id": "MC2",
+      "title": "MODE_BY_COURSE_THEN_TYPE 正常生成",
+      "status": "通过",
+      "evidence": "items=2"
+    }
+  ]
+}

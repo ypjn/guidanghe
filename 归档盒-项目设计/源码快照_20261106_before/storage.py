@@ -1,0 +1,307 @@
+"""
+归档盒 V0.3 — SQLite 持久化层
+
+职责：保存批次记录、逐项动作记录、本批次创建的目录。
+数据库固定位置：{root}/.organizer/history.db
+
+表结构：
+- batches: 批次级元数据
+- actions:  逐项动作（执行意图先持久化，再移动，再更新结果）
+- created_dirs: 本批次创建的目录（撤销时用于清理空目录）
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sqlite3
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import List, Optional
+
+from scanner import FileEntry
+from planner import OrganizePlan, PlanItem, CourseRule
+
+
+DB_FILENAME = "history.db"
+
+# action.status 常量
+STATUS_PLANNED = "planned"          # 已写入意图，尚未执行
+STATUS_MOVED = "moved"              # 移动成功
+STATUS_FAILED = "failed"            # 移动失败
+STATUS_SKIPPED = "skipped"          # 执行前核验发现变化，跳过
+STATUS_CANCELLED = "cancelled"      # 用户取消（尚未执行或执行中被取消）
+STATUS_UNDONE = "undone"            # 撤销成功
+STATUS_CONFLICT = "conflict"        # 撤销或恢复时发现冲突，保留现状
+STATUS_PAUSED = "paused"            # 中断恢复时状态不明确，暂停人工处理
+
+# 批次状态常量
+BATCH_PLANNING = "planning"
+BATCH_EXECUTING = "executing"
+BATCH_DONE = "done"
+BATCH_PARTIAL = "partial"
+BATCH_CANCELLED = "cancelled"          # 用户取消（有已完成项）
+BATCH_CANCELLED_CLEAN = "cancelled_clean"  # 用户取消 + 无一完成
+BATCH_RECOVERED_PARTIAL = "recovered_partial"  # 中断恢复后仍有不确定项
+BATCH_UNDONE = "undone"
+BATCH_PARTIAL_UNDONE = "partial_undone"
+BATCH_PARTIAL_FAILED_UNDONE = "partial_failed_undone"
+
+
+@dataclass
+class ActionRecord:
+    """逐项动作的完整记录。"""
+    action_index: int
+    source_rel: str
+    target_rel: str
+    source_size: int
+    source_sha256: str
+    status: str = STATUS_PLANNED
+    error: str = ""
+    executed_at: str = ""
+    undone_at: str = ""
+
+
+@dataclass
+class BatchRecord:
+    batch_id: int
+    root: str
+    mode: str
+    status: str
+    created_at: str
+    finished_at: str
+    rules_json: str
+    summary: str
+
+    # 运行时关联
+    actions: List[ActionRecord] = field(default_factory=list)
+    created_dirs: List[str] = field(default_factory=list)
+
+    @property
+    def rules(self) -> List[CourseRule]:
+        raw = json.loads(self.rules_json) if self.rules_json else []
+        return [CourseRule(**r) for r in raw]
+
+    @property
+    def moved_count(self) -> int:
+        return sum(1 for a in self.actions if a.status == STATUS_MOVED)
+
+    @property
+    def undone_count(self) -> int:
+        return sum(1 for a in self.actions if a.status == STATUS_UNDONE)
+
+
+class Storage:
+    """SQLite 持久化管理器。"""
+
+    def __init__(self, root: str):
+        self.root = os.path.abspath(root)
+        self.db_dir = os.path.join(self.root, ".organizer")
+        self.db_path = os.path.join(self.db_dir, DB_FILENAME)
+        self._ensure_db_dir()
+        self.conn = sqlite3.connect(self.db_path)
+        self.conn.execute("PRAGMA foreign_keys = ON")
+        self._init_schema()
+
+    def _ensure_db_dir(self):
+        os.makedirs(self.db_dir, exist_ok=True)
+
+    def _init_schema(self):
+        self.conn.executescript("""
+            CREATE TABLE IF NOT EXISTS batches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                root TEXT NOT NULL,
+                mode TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                finished_at TEXT DEFAULT '',
+                rules_json TEXT DEFAULT '',
+                summary TEXT DEFAULT ''
+            );
+
+            CREATE TABLE IF NOT EXISTS actions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                batch_id INTEGER NOT NULL,
+                action_index INTEGER NOT NULL,
+                source_rel TEXT NOT NULL,
+                target_rel TEXT NOT NULL,
+                source_size INTEGER NOT NULL,
+                source_sha256 TEXT NOT NULL,
+                status TEXT NOT NULL,
+                error TEXT DEFAULT '',
+                executed_at TEXT DEFAULT '',
+                undone_at TEXT DEFAULT '',
+                UNIQUE(batch_id, action_index),
+                FOREIGN KEY(batch_id) REFERENCES batches(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS created_dirs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                batch_id INTEGER NOT NULL,
+                rel_path TEXT NOT NULL,
+                FOREIGN KEY(batch_id) REFERENCES batches(id)
+            );
+        """)
+        self.conn.commit()
+
+    # ============== 批次操作 ==============
+
+    def create_batch(self, plan: OrganizePlan, summary: str) -> int:
+        """创建批次记录（状态 BATCH_PLANNING），返回 batch_id。"""
+        now = datetime.now().isoformat(timespec="seconds")
+        rules_json = json.dumps(
+            [{"keywords": r.keywords, "course_name": r.course_name, "order": r.order}
+             for r in plan.rules],
+            ensure_ascii=False,
+        )
+        cur = self.conn.execute(
+            "INSERT INTO batches(root, mode, status, created_at, finished_at, rules_json, summary) "
+            "VALUES(?, ?, ?, ?, '', ?, ?)",
+            (self.root, plan.mode, BATCH_PLANNING, now, rules_json, summary),
+        )
+        batch_id = cur.lastrowid
+        self.conn.commit()
+        return batch_id
+
+    def update_batch_status(self, batch_id: int, status: str, finished_at: bool = False):
+        sql = "UPDATE batches SET status = ?"
+        params = [status]
+        if finished_at:
+            sql += ", finished_at = ?"
+            params.append(datetime.now().isoformat(timespec="seconds"))
+        sql += " WHERE id = ?"
+        params.append(batch_id)
+        self.conn.execute(sql, params)
+        self.conn.commit()
+
+    def get_batch(self, batch_id: int) -> Optional[BatchRecord]:
+        cur = self.conn.execute("SELECT * FROM batches WHERE id = ?", (batch_id,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        br = self._row_to_batch(row)
+        br.actions = self.get_actions(batch_id)
+        br.created_dirs = self.get_created_dirs(batch_id)
+        return br
+
+    def get_latest_batch(self) -> Optional[BatchRecord]:
+        cur = self.conn.execute(
+            "SELECT id FROM batches WHERE root = ? ORDER BY id DESC LIMIT 1",
+            (self.root,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return self.get_batch(row[0])
+
+    def list_batches(self) -> List[BatchRecord]:
+        cur = self.conn.execute(
+            "SELECT * FROM batches WHERE root = ? ORDER BY id DESC",
+            (self.root,),
+        )
+        results = []
+        for row in cur.fetchall():
+            br = self._row_to_batch(row)
+            br.actions = self.get_actions(br.batch_id)
+            br.created_dirs = self.get_created_dirs(br.batch_id)
+            results.append(br)
+        return results
+
+    def get_pending_batch(self) -> Optional[BatchRecord]:
+        """获取最近一个尚未**完整撤销成功**的批次。
+
+        只排除 BATCH_UNDONE（完全撤销）。
+        BATCH_PARTIAL_UNDONE / BATCH_PARTIAL_FAILED_UNDONE 表示有冲突，
+        用户修好冲突条件后应该能再次撤销，所以不排除。
+        """
+        cur = self.conn.execute(
+            "SELECT id FROM batches WHERE root = ? AND status != ? "
+            "ORDER BY id DESC LIMIT 1",
+            (self.root, BATCH_UNDONE),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return self.get_batch(row[0])
+
+    def _row_to_batch(self, row) -> BatchRecord:
+        # row columns: id, root, mode, status, created_at, finished_at, rules_json, summary
+        return BatchRecord(
+            batch_id=row[0], root=row[1], mode=row[2], status=row[3],
+            created_at=row[4], finished_at=row[5] or "", rules_json=row[6] or "",
+            summary=row[7] or "",
+        )
+
+    # ============== 动作操作 ==============
+
+    def create_action(self, batch_id: int, item: PlanItem, action_index: int, source_sha256: str):
+        """写入执行意图（status=planned）。"""
+        self.conn.execute(
+            "INSERT INTO actions(batch_id, action_index, source_rel, target_rel, source_size, source_sha256, status) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?)",
+            (batch_id, action_index, item.file.rel_path, item.target_rel_path,
+             item.file.size, source_sha256, STATUS_PLANNED),
+        )
+        self.conn.commit()
+
+    def update_action(self, batch_id: int, action_index: int, status: str, error: str = ""):
+        now = datetime.now().isoformat(timespec="seconds")
+        # 通用 UPDATE：取消状态/恢复状态/执行状态都用同一条 SQL
+        # executed_at / undone_at 只在对应阶段赋值；其他状态置空（保持历史记录完整）
+        executed_at = ""
+        undone_at = ""
+        if status in (STATUS_MOVED, STATUS_FAILED, STATUS_SKIPPED, STATUS_PAUSED, STATUS_CANCELLED):
+            executed_at = now
+        elif status in (STATUS_UNDONE, STATUS_CONFLICT):
+            undone_at = now
+
+        self.conn.execute(
+            "UPDATE actions SET status = ?, error = ?, executed_at = ?, undone_at = ? "
+            "WHERE batch_id = ? AND action_index = ?",
+            (status, error, executed_at, undone_at, batch_id, action_index),
+        )
+        self.conn.commit()
+
+    def get_actions(self, batch_id: int) -> List[ActionRecord]:
+        cur = self.conn.execute(
+            "SELECT action_index, source_rel, target_rel, source_size, source_sha256, "
+            "status, error, executed_at, undone_at FROM actions "
+            "WHERE batch_id = ? ORDER BY action_index ASC",
+            (batch_id,),
+        )
+        results = []
+        for row in cur.fetchall():
+            results.append(ActionRecord(
+                action_index=row[0], source_rel=row[1], target_rel=row[2],
+                source_size=row[3], source_sha256=row[4],
+                status=row[5], error=row[6] or "", executed_at=row[7] or "",
+                undone_at=row[8] or "",
+            ))
+        return results
+
+    # ============== 创建的目录 ==============
+
+    def record_created_dir(self, batch_id: int, rel_path: str):
+        self.conn.execute(
+            "INSERT INTO created_dirs(batch_id, rel_path) VALUES(?, ?)",
+            (batch_id, rel_path),
+        )
+        self.conn.commit()
+
+    def get_created_dirs(self, batch_id: int) -> List[str]:
+        cur = self.conn.execute(
+            "SELECT rel_path FROM created_dirs WHERE batch_id = ? ORDER BY id ASC",
+            (batch_id,),
+        )
+        return [row[0] for row in cur.fetchall()]
+
+    # ============== 通用 ==============
+
+    def close(self):
+        self.conn.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        self.close()

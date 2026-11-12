@@ -1,0 +1,24 @@
+归档盒 V1.0 回归退出码验证 — 结果清单
+时间: 2026-11-09 22:52:10
+命令: QT_QPA_PLATFORM=offscreen .venv/bin/python tests/test_v10_exit_code.py
+解释器: /Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/bin/python  Python 3.14.8
+合计 4 项：通过 4 / 未通过 0
+退出码: 0
+
+[通过] X1  全部通过时退出码为 0
+    子进程退出码=0
+    stdout尾行=
+    结果文件: /tmp/_v10_exitcode_verify/pass/results/results_v10_regression.txt
+    结果文件: /tmp/_v10_exitcode_verify/pass/results/results_v10_regression.json
+
+[通过] X2  存在失败项时退出码非 0（独立子进程验证）
+    子进程退出码=1（应非 0）
+    结果统计行=合计 1 项：通过 0 / 未通过 1 / 未验证 0
+
+[通过] X3  存在未验证项时退出码非 0
+    子进程退出码=1（应非 0）
+    结果统计行=合计 1 项：通过 0 / 未通过 0 / 未验证 1
+
+[通过] X4  故障注入仅在测试子进程内，生产模块未被修改
+    生产文件未被写入；子进程通过替换场景函数注入失败，失败证据可见=True
+

@@ -1,0 +1,25 @@
+qt.qpa.fonts: Populating font family aliases took 97 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
+[PASS] E01 最近空间保存/重启恢复、固定排序、移除记录不删目录
+        最近在前=True 固定在前=True 移除=True 重启后=[('/private/tmp/_v17_daily_entry/e01_a', True)]
+[PASS] E02 目录不存在时只标记，不自动创建
+        exists=False usable=False 目录被创建=False
+[PASS] E03 清单加入文件/目录，处理重复与父子包含
+        状态=['added', 'covered', 'covered', 'added', 'covered'] 项数=2
+[PASS] E03b 后加入的父目录合并已有子项
+        状态=coalesced 项数=1 类型=dir
+[PASS] E04 未选空间/空间外来源得到明确处理，不静默设共同父目录
+        文件无空间=needs_root 目录候选根=needs_root 空间外=outside
+[PASS] E05 只纳入清单范围的文件，保护目录被排除
+        纳入=['a/keep1.txt', 'a/keep2.txt'] 受保护项=1
+        明细=[('a', 2, ''), ('protected', 0, '受保护目录，未纳入扫描')]
+[PASS] E06 清单范围扫描只纳入指定文件；清单变化使旧计划失效
+        纳入=['a/sub/y.txt', 'a/x.txt'] 范围说明=待整理清单：1 项 → 纳入 2 个文件 计划失效=True 提示=['已加入：/private/tmp/_v17_daily_entry/e06/a']
+[PASS] E07 忙碌期间拒绝修改清单，新增入口一致禁用
+        项数=1→1 提示=['当前有后台任务运行，未修改待整理清单。']
+[PASS] E08 最近记录与方案数据在测试中使用隔离目录
+        recent=/tmp/_v17_daily_entry/recent.json
+        schemes=/tmp/_v17_daily_entry/appdata/schemes
+[PASS] E09 最近空间与待整理清单窗口可构造并反映当前数据
+        最近行数正确=True 清单行数=1?True
+
+合计 10 项：通过 10 / 未通过 0；退出码 0

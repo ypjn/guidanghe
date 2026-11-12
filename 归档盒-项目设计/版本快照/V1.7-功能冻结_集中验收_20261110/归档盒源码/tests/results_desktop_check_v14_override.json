@@ -1,0 +1,58 @@
+{
+  "suite": "desktop_check_v14_override",
+  "ts": "2026-11-09 18:15:44",
+  "command": ".venv/bin/python tests/desktop_check_v14_override.py (cocoa)",
+  "interpreter": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/bin/python",
+  "python": "3.14.8",
+  "platform": "darwin",
+  "qt_platform": "cocoa",
+  "screen": "1470x956",
+  "base": "/tmp/_v14_desktop_override_check",
+  "screenshot_dir": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261109_V14单文件修正",
+  "elapsed_s": 7.21,
+  "exit_code": 0,
+  "counts": {
+    "total": 5,
+    "pass": 5,
+    "fail": 0,
+    "untested": 0
+  },
+  "note": "程序化点击与截图；人工观察项需用户本人查看截图后确认。合成样本，非真人分类错例。",
+  "results": [
+    {
+      "id": "D0",
+      "title": "当前进程可获取真实屏幕（cocoa）",
+      "status": "通过",
+      "evidence": "platform=cocoa；screen=True；尺寸=1470x956",
+      "kind": "程序化点击"
+    },
+    {
+      "id": "D1",
+      "title": "基本修正（课程→项目，改类别+内部路径）→ 表格该行变黄、加 ✎",
+      "status": "通过",
+      "evidence": "plan.direction=项目\nplan.category=数据结构大创\nplan.inner_path=实验一\nis_manual=True\n表格源路径=✎ 大二上/数据结构/作业/a.pdf\n背景色=#fff9c4",
+      "kind": "程序化点击"
+    },
+    {
+      "id": "D2",
+      "title": "冲突自动加 (1)/(2) 后缀",
+      "status": "通过",
+      "evidence": "C1.target=_已整理/项目/数据结构大创/实验一/same.pdf (filename=same.pdf)\nC2.target=_已整理/项目/数据结构大创/实验一/same (1).pdf (filename=same (1).pdf)\n同目录=True\n带后缀=True",
+      "kind": "程序化点击"
+    },
+    {
+      "id": "D3",
+      "title": "对话框取消不改计划",
+      "status": "通过",
+      "evidence": "targets_before == after=True\nmanual_flags_before == after=True\n被测文件=大二上/数据结构/作业/b.pdf",
+      "kind": "程序化点击"
+    },
+    {
+      "id": "D4",
+      "title": "恢复自动分类按钮有效",
+      "status": "通过",
+      "evidence": "is_manual_overridden=False\ndirection=课程 (auto=课程)\ncategory=数据结构 (auto=数据结构)",
+      "kind": "程序化点击"
+    }
+  ]
+}

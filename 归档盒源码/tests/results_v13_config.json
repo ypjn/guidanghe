@@ -1,0 +1,129 @@
+{
+  "suite": "v13_config",
+  "ts": "2026-11-09 22:52:39",
+  "command": "QT_QPA_PLATFORM=offscreen .venv/bin/python tests/test_v13_config.py",
+  "interpreter": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/bin/python",
+  "python": "3.14.8",
+  "platform": "darwin",
+  "qt_platform": "offscreen",
+  "base": "/tmp/_v13_config_verify",
+  "elapsed_s": 2.07,
+  "exit_code": 0,
+  "counts": {
+    "total": 18,
+    "pass": 18,
+    "fail": 0,
+    "unverified": 0
+  },
+  "note": "C02/C13 使用明确标注的合成样本，不是真人分类错例。",
+  "results": [
+    {
+      "id": "C01",
+      "title": "默认配置保持 V1.1/V1.2 的推荐模式路径结果",
+      "status": "通过",
+      "evidence": "路径一致=True；显式默认配置一致=True；未创建配置文件=True\nCode/proj/x.py -> _已整理/项目/proj/x.py\n大一下/已完成期末/高数/f.pdf -> _已整理/课程/大一下/高等数学/文档/高数/f.pdf\n大二上/数据结构/作业/a.pdf -> _已整理/课程/大二上/数据结构/文档/作业/a.pdf\n大二上/附件-通知/n.pdf -> _已整理/校园事务/通知/文档/n.pdf\n散落.txt -> _已整理/待定/散落.txt"
+    },
+    {
+      "id": "C02",
+      "title": "合成场景（非真人反馈）：仅通过配置新增学期与课程映射，推荐模式结果改变并保留内部目录层级",
+      "status": "通过",
+      "evidence": "原目标=_已整理/待定/自定义学期/report.pdf\n新目标=_已整理/课程/2026秋-自定义学期/机器人基础/文档/实验一/report.pdf\n依据=学期「2026秋-自定义学期」/「机器人基础」→ 课程/机器人基础\n学期=2026秋-自定义学期 内部路径=实验一"
+    },
+    {
+      "id": "C03",
+      "title": "修改方向/类别/关键词规则后，命中依据与目标正确",
+      "status": "通过",
+      "evidence": "顶层方向：竞赛 _已整理/竞赛/proj/a.py (顶层目录「Code」→ 竞赛/proj)\n类别：数据结构（实验班） _已整理/课程/大二上/数据结构（实验班）/文档/x.pdf\n关键词：项目/机器人实验 (keyword_unmatched:1:report)"
+    },
+    {
+      "id": "C04",
+      "title": "启用、停用、顺序调整真实生效",
+      "status": "通过",
+      "evidence": "类别映射启用=数据结构A；停用后=数据结构（学期「大二上」/「数据结构」（目录锚定））\n关键词顺序：默认=离散数学；高数置前=高等数学；全部停用=已完成期末（未细分）"
+    },
+    {
+      "id": "C05",
+      "title": "取消编辑不改变已生效规则和配置文件",
+      "status": "通过",
+      "evidence": "内存生效配置未变=True；文件未变=True；result_config=None"
+    },
+    {
+      "id": "C06",
+      "title": "界面保存成功后旧计划立即失效，重新生成使用新配置",
+      "status": "通过",
+      "evidence": "扫描/首计划=True/True；保存文件=True；旧计划失效=True；重新生成=True\n旧目标=_已整理/待定/自定义学期/report.pdf\n新目标=_已整理/课程/2026秋-自定义/机器人基础/文档/实验一/report.pdf"
+    },
+    {
+      "id": "C07",
+      "title": "重启恢复配置，不同根目录互相隔离",
+      "status": "通过",
+      "evidence": "root1 首载含标记一=True；root2 含标记二=True；重启 root1 含标记一=True"
+    },
+    {
+      "id": "C08",
+      "title": "保存失败、损坏、不兼容版本、非法字段均有明确处理且保留原文件",
+      "status": "通过",
+      "evidence": "保存失败=「保存分类配置失败，原配置未改动。」 旧文件保留=True\n损坏=「分类配置文件无法读取或不是有效 JSON：/tmp/_v13_config_verify/c08/.organizer/classification_config.json」 原文件保留=True\n版本=「分类配置版本不兼容：文件 version=99，当前程序支持 version=(1, 2)。」\n根不匹配=「分类配置不属于当前根目录，已拒绝加载（不同目录的配置不能串用）。」\n非法字段错误数=2；保存被拒=True"
+    },
+    {
+      "id": "C09",
+      "title": "路径逃逸与非法目标名称被拒绝（不写盘）",
+      "status": "通过",
+      "evidence": "../逃逸: 学期映射第 9 条 来源目录名：不能包含路径分隔符（当前：'../逃逸'）\n/绝对路径: 学期映射第 9 条 来源目录名：不能包含路径分隔符（当前：'/绝对路径'）\na/b: 学期映射第 9 条 来源目录名：不能包含路径分隔符（当前：'a/b'）\n..: 学期映射第 9 条 来源目录名：不能是 . 或 ..（路径逃逸）\n~/家目录: 学期映射第 9 条 来源目录名：不能包含路径分隔符（当前：'~/家目录'）\nC:\\x: 学期映射第 9 条 来源目录名：不能包含路径分隔符（当前：'C:\\\\x'）\n关键词目标 ../目标: 关键词规则第 13 条 目标类别：不能包含路径分隔符（当前：'../目标'）"
+    },
+    {
+      "id": "C10",
+      "title": "试运行零文件操作副作用，不计算 SHA-256，并与正式计划共用分类逻辑",
+      "status": "通过",
+      "evidence": "文件清单不变=True；SHA 调用=0；与正式计划一致=True；配置变化项=1；UI 后台试运行=True\n试运行不读取文件内容：未计算 SHA-256，内容重复信息未核验。"
+    },
+    {
+      "id": "C11",
+      "title": "后台任务使用独立配置快照，迟到结果不能覆盖新配置状态",
+      "status": "通过",
+      "evidence": "线程启动=True；保存后旧计划已失效=True；迟到结果被忽略=True；快照独立=True"
+    },
+    {
+      "id": "C12",
+      "title": "保护目录不受新规则影响（配置不能解除保护）",
+      "status": "通过",
+      "evidence": "计划文件=['公开/高数作业.pdf']；保护跳过=1"
+    },
+    {
+      "id": "C13",
+      "title": "自定义配置生成的计划：整理→重开→撤销，路径与内容恢复一致",
+      "status": "通过",
+      "evidence": "移动=3；目标示例=['_已整理/待定/散落.txt', '_已整理/课程/2026秋/机器人基础/文档/实验一/report.pdf']；批次配置快照=True；撤销=完整撤销：恢复 3 项；清单恢复一致=True"
+    },
+    {
+      "id": "C14",
+      "title": "旧历史（无 config_json）与旧配置格式按兼容策略处理",
+      "status": "通过",
+      "evidence": "迁移列=True；旧批次可读=True；新旧批次共存=True；旧批次可撤销=True；旧文件恢复=True；无配置时默认且不建文件=True；同版本多余字段容忍=True"
+    },
+    {
+      "id": "C15",
+      "title": "类别留空目录命中关键词规则时，配置方向与目标类别都真正生效（合成场景，非真人反馈）",
+      "status": "通过",
+      "evidence": "正式计划与试运行一致=True；目录映射方向=课程、关键词规则方向=项目\n实际方向=项目；目标=_已整理/项目/机器人实验/robot.pdf\n依据=学期「大一下」/「已完成期末」+关键词「robot」→ 项目/机器人实验\n默认关键词路径保持兼容=True\n试运行新目标=_已整理/项目/机器人实验/robot.pdf"
+    },
+    {
+      "id": "C16",
+      "title": "原始 JSON 类型错误在类型转换前被拒绝；合法 false/空数组正常",
+      "status": "通过",
+      "evidence": "enabled 字符串：保留原文件=True；错误=True；分类配置字段类型不正确：/tmp/_v13_config_verify/c16_types/.organizer/classification_config.json\n学期标签数字：保留原文件=True；错误=True；分类配置字段类型不正确：/tmp/_v13_config_verify/c16_types/.organizer/classification_config.json\nversion 布尔值：保留原文件=True；错误=True；分类配置字段类型不正确：/tmp/_v13_config_verify/c16_types/.organizer/classification_config.json\n关键词元素数字：保留原文件=True；错误=True；分类配置字段类型不正确：/tmp/_v13_config_verify/c16_types/.organizer/classification_config.json\n规则数组写成对象：保留原文件=True；错误=True；分类配置字段类型不正确：/tmp/_v13_config_verify/c16_types/.organizer/classification_config.json\n缺少必填字段：保留原文件=True；错误=True；分类配置字段类型不正确：/tmp/_v13_config_verify/c16_types/.organizer/classification_config.json\n主窗口记录错误并阻止生成计划=True；合法 false/空数组正常=True"
+    },
+    {
+      "id": "C17",
+      "title": "关闭等待期间不发布试运行结果；迟到/过期/错误根目录结果被忽略",
+      "status": "通过",
+      "evidence": "成功信号已排队且线程仍在=True；关闭等待=True；结果未发布/控件未恢复=True；线程仍受管理=True\n放行后线程结束=True；窗口自动关闭且数据库关闭=True；登记与引用已回收=True\n已关闭/旧seq/错误root被忽略=True；正常结果仍接受=True；正常失败仍提示=True"
+    },
+    {
+      "id": "C18",
+      "title": "取消编辑不在界面线程同步等待；迟到结果被忽略，线程结束后回收",
+      "status": "通过",
+      "evidence": "线程真实进入阻塞点=True；reject 耗时=0.000s（<1s=True）；Qt 心跳=True\n取消后线程仍运行且受主窗口登记=True；迟到进度/结果/失败被忽略=True\n随后关闭主窗口：等待中=True；线程结束后自动关闭且数据库关闭=True；引用回收=True"
+    }
+  ]
+}

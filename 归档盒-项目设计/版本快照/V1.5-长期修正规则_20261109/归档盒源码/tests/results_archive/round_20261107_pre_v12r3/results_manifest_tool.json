@@ -1,0 +1,86 @@
+{
+  "suite": "manifest_tool",
+  "ts": "2026-11-07 14:07:13",
+  "command": ".venv/bin/python tests/test_manifest_tool.py",
+  "interpreter": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/bin/python",
+  "python": "3.14.8",
+  "platform": "darwin",
+  "qt_platform": "offscreen",
+  "base": "/tmp/_manifest_tool_verify",
+  "elapsed_s": 0.01,
+  "exit_code": 0,
+  "counts": {
+    "total": 11,
+    "pass": 11,
+    "fail": 0,
+    "unverified": 0
+  },
+  "results": [
+    {
+      "id": "T1",
+      "title": "文件没有变化 → 判定一致",
+      "status": "通过",
+      "evidence": "清单 2 条；ok=True；缺失/多余/变化=0/0/0"
+    },
+    {
+      "id": "T2",
+      "title": "清单建立后原目录新增文件 → 检测为多余，整体失败",
+      "status": "通过",
+      "evidence": "多余 1 个：['课程/extra.txt']；ok=False"
+    },
+    {
+      "id": "T3",
+      "title": "_已整理 残留文件 → 检测为多余；执行前已有文件本就在清单内",
+      "status": "通过",
+      "evidence": "多余 1 个：['_已整理/leftover.txt']；执行前已有 _已整理/旧文件.txt 在两侧清单=True；ok=False"
+    },
+    {
+      "id": "T4",
+      "title": "删除原文件 → 检测为缺失",
+      "status": "通过",
+      "evidence": "缺失 1 个：['课程/a.pdf']；ok=False"
+    },
+    {
+      "id": "T5",
+      "title": "修改内容但保持文件大小 → 检测为内容变化",
+      "status": "通过",
+      "evidence": "变化 1 个：['笔记.txt']；大小相同、SHA 不同=True；ok=False"
+    },
+    {
+      "id": "T6",
+      "title": "同内容副本增减 → 多重集合检测到份数变化",
+      "status": "通过",
+      "evidence": "执行前：重复组 1 组 / 2 份；减一份后 0 组 / 0 份（单份不成重复组），多重集合一致=False；加两份后 1 组 / 3 份，多重集合一致=False"
+    },
+    {
+      "id": "T7",
+      "title": "自动保护目录内的文件变化 → 仍能检测",
+      "status": "通过",
+      "evidence": "变化 1 个：['项目/main.py']；保护目录内文件在清单中=True；ok=False"
+    },
+    {
+      "id": "T8",
+      "title": "符号链接不跟随、不越界：链接记录目标，目标内容不枚举",
+      "status": "通过",
+      "evidence": "清单 4 条；链接条目=['外部目录链接', '课程自引用', '外部文件链接.txt']；越界条目=[]；错误=0"
+    },
+    {
+      "id": "T9",
+      "title": "不可读文件 → 显式报错并判失败，不静默通过",
+      "status": "通过",
+      "evidence": "枚举错误 1 个：['课程/锁.pdf']；整体 ok=False"
+    },
+    {
+      "id": "T10",
+      "title": "排除规则：仅排除 .organizer，用户文件（含 _已整理）一律纳入",
+      "status": "通过",
+      "evidence": "清单条目 2：['_已整理/用户文件.txt', '课程/a.pdf']；.organizer 被排除=True"
+    },
+    {
+      "id": "T11",
+      "title": "无法进入的目录 → 显式报错并判失败，不静默跳过",
+      "status": "通过",
+      "evidence": "基线：目录内文件可登记=True；chmod 000 后枚举错误 1 个：['机密']；目录内文件被静默漏掉=True；整体 ok=False"
+    }
+  ]
+}

@@ -1,0 +1,132 @@
+{
+  "suite": "test_v15_long_term_rules",
+  "ts": "2026-11-09 21:34:37",
+  "command": "QT_QPA_PLATFORM=offscreen .venv/bin/python tests/test_v15_long_term_rules.py",
+  "interpreter": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/bin/python",
+  "python": "3.14.8",
+  "platform": "darwin",
+  "base": "/tmp/_v15_long_term_rules",
+  "elapsed_s": 0.68,
+  "exit_code": 0,
+  "counts": {
+    "total": 16,
+    "pass": 16,
+    "fail": 0,
+    "untested": 0
+  },
+  "note": "全部为 offscreen 自动化断言；合成样本，非真人分类错例。",
+  "results": [
+    {
+      "id": "T01",
+      "title": "临时修正只在当前计划生效，不写配置、重扫后消失",
+      "status": "通过",
+      "evidence": "计划内生效=True；配置无长期规则=True；重扫恢复自动=True；配置来源=default",
+      "kind": "offscreen"
+    },
+    {
+      "id": "T02",
+      "title": "由手动修正生成长期规则 → 保存 → 重新生成后自动命中",
+      "status": "通过",
+      "evidence": "写入配置=True；来源=custom；规则数=1\nrule_key=long_term:lt-70ac28606d2e\n方向=项目 内部=作业\n目标=_已整理/项目/数据大创/作业/a.pdf",
+      "kind": "offscreen"
+    },
+    {
+      "id": "T03",
+      "title": "长期规则覆盖已命中「学期内目录」映射的文件",
+      "status": "通过",
+      "evidence": "原依据=semester_dir:大二上/数据结构\n原目标=_已整理/课程/大二上/数据结构/文档/作业/a.pdf\n新依据=long_term:lt-1f540339e9ff\n新目标=_已整理/项目/数据大创/作业/a.pdf\n保留内部路径=作业",
+      "kind": "offscreen"
+    },
+    {
+      "id": "T04",
+      "title": "精确路径匹配只改变目标文件，同目录其他文件不受影响",
+      "status": "通过",
+      "evidence": "a 依据=long_term:lt-t04 方向=项目\nb 依据=semester_dir:大二上/数据结构 方向=课程",
+      "kind": "offscreen"
+    },
+    {
+      "id": "T05",
+      "title": "目录范围：仅本级 / 含子目录 / 路径边界不误匹配",
+      "status": "通过",
+      "evidence": "本级目录直接子文件命中=long_term:lt-a940aca778b4\n仅本级模式下子目录文件=semester_dir:大二上/数据结构\n含子目录模式下子目录文件=long_term:lt-21721f8afbec\n相似目录（数据结构实验）=semester_dir:大二上/数据结构实验",
+      "kind": "offscreen"
+    },
+    {
+      "id": "T06",
+      "title": "文件名关键词命中，且限定目录之外的同名关键词不命中",
+      "status": "通过",
+      "evidence": "目录内+关键词=long_term:lt-t06\n目录内但无关键词=semester_dir:大二上/数据结构\n目录外但有关键词=semester_dir:大二上/C++程序设计",
+      "kind": "offscreen"
+    },
+    {
+      "id": "T07",
+      "title": "重叠规则按顺序取第一条；排序/启停/删除实际改变计划；标识稳定",
+      "status": "通过",
+      "evidence": "A在前=long_term:lt-a\nB在前=long_term:lt-b\n禁用A=long_term:lt-b\n删除A=long_term:lt-b\nrule_id 不随行号变化=True",
+      "kind": "offscreen"
+    },
+    {
+      "id": "T08",
+      "title": "试运行与正式计划的命中数/目标变化/依据完全一致",
+      "status": "通过",
+      "evidence": "试运行命中=3 变化=3 冲突=0\n正式计划实际变化=3\n样本依据一致=True 不一致项=[]",
+      "kind": "offscreen"
+    },
+    {
+      "id": "T09",
+      "title": "保存→重启→规则恢复；不同根目录互不串用",
+      "status": "通过",
+      "evidence": "root1 来源=custom 规则数=1 名称=root1 专属\nroot2 来源=default 规则数=0\nroot1 命中=long_term:lt-b68aba6acef1；root2 命中=semester_dir:大二上/数据结构",
+      "kind": "offscreen"
+    },
+    {
+      "id": "T10",
+      "title": "取消/非法配置/保存失败不破坏既有配置",
+      "status": "通过",
+      "evidence": "空名称错误数=1；路径逃逸错误数=1\n非法保存被拒绝=True；原文件字节不变=True",
+      "kind": "offscreen"
+    },
+    {
+      "id": "T11",
+      "title": "同名目标自动分配唯一名，执行后两份副本都保留",
+      "status": "通过",
+      "evidence": "计划目标文件名=['dup (1).txt', 'dup.txt']\n同一目标目录=True\n实际文件=['dup (1).txt', 'dup.txt']\n内容=['same-name-a', 'same-name-b']",
+      "kind": "offscreen"
+    },
+    {
+      "id": "T12",
+      "title": "真实整理→重开→历史保留长期规则标识/依据→撤销恢复内容",
+      "status": "通过",
+      "evidence": "移动=2/2\n全部记录 rule_key=long_term:lt-t12 → True\n依据含规则名 → True\n批次配置快照含该规则 → True\n撤销后源文件与 SHA 恢复 → True (2/2)",
+      "kind": "offscreen"
+    },
+    {
+      "id": "T13",
+      "title": "先单文件修正，再做规则试运行，最后关闭窗口，生命周期正常",
+      "status": "通过",
+      "evidence": "临时修正已应用=True\n试运行命中=2 错误=''\n关闭后无后台计划任务=True",
+      "kind": "offscreen"
+    },
+    {
+      "id": "T14",
+      "title": "历史明细显示「长期规则」并带规则依据；CSV/JSON 导出含规则标识与依据",
+      "status": "通过",
+      "evidence": "分类来源列=['长期规则', '长期规则']\n悬浮提示='命中长期修正规则\\n规则标识：long_term:lt-t14\\n命中依据：长期规则「数据结构归项目」：来源目录「大二上/数据结构」（含子目录） → 项目/历史展示'\n批次注意列='⚑ 长期规则×2'\nJSON 字段=True（rule_key=long_term:lt-t14）\nCSV 表头含规则列=True",
+      "kind": "offscreen"
+    },
+    {
+      "id": "T15",
+      "title": "试运行在后台线程执行：界面不阻塞、运行中可关闭、迟到结果丢弃、线程回收",
+      "status": "通过",
+      "evidence": "调用返回耗时=0.000s（应 <0.25s）\n0.35s 内事件心跳=57 次（应 >30）\n中途仍在运行=True\n关闭返回耗时=0.000s（应 <0.2s）\n关闭后迟到结果被忽略=True\n线程已回收=True（registry 剩余=0）",
+      "kind": "offscreen"
+    },
+    {
+      "id": "T16",
+      "title": "试运行缓存与当前输入一致：改内部路径/匹配/目标后必须先重新试运行",
+      "status": "通过",
+      "evidence": "各次试运行成功=[True, True, True, True, True, True]\n改内部路径值后缓存失效=True；保存被拒=True\n切换内部路径方式后保存被拒=True\n改关键词后保存被拒=True；改目标类别后保存被拒=True\n未重试运行保存被拒=True\n重新试运行后保存新值=True\n未改动时保存与试运行标识/字段一致=True",
+      "kind": "offscreen"
+    }
+  ]
+}

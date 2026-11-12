@@ -1,0 +1,43 @@
+{
+  "suite": "v12r2_noop_injection",
+  "ts": "2026-11-07 14:31:24",
+  "command": "QT_QPA_PLATFORM=offscreen .venv/bin/python tests/_v12r2_noop_check.py",
+  "interpreter": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/bin/python",
+  "python": "3.14.8",
+  "platform": "darwin",
+  "note": "独立进程注入运行结果；正常运行结果见 results_v12_history_task.*",
+  "base": "/tmp/_v12r2_noop",
+  "elapsed_s": 1.16,
+  "exit_code": 0,
+  "counts": {
+    "total": 4,
+    "pass": 4,
+    "fail": 0
+  },
+  "results": [
+    {
+      "id": "N1",
+      "title": "空操作注入生效：恢复入口被调用但未做任何事",
+      "status": "通过",
+      "evidence": "按钮可用=True；流程完成=True；空操作调用批次=[1]（应=[1]）"
+    },
+    {
+      "id": "N2",
+      "title": "空操作下验收必失败：动作仍 planned、批次仍 executing（假阳性已消除）",
+      "status": "通过",
+      "evidence": "动作0=planned（空操作后应仍 planned）；批次状态=executing（应仍 executing）；若验收仍通过则存在假阳性=False"
+    },
+    {
+      "id": "N3",
+      "title": "空操作不动任何文件：源仍不在、目标仍在（与恢复前一致）",
+      "status": "通过",
+      "evidence": "恢复前源不在/目标在=True；恢复后源在=False；目标在=True"
+    },
+    {
+      "id": "N4",
+      "title": "空操作结果文案不误报：不显示“补记已移动/暂停待人工确认”",
+      "status": "通过",
+      "evidence": "状态栏=核对完成：核对批次 #0 | 批次状态 → "
+    }
+  ]
+}

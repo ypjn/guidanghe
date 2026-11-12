@@ -1,0 +1,67 @@
+{
+  "suite": "desktop_check",
+  "ts": "2026-11-06 20:53:58",
+  "command": ".venv/bin/python tests/desktop_check.py",
+  "interpreter": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/bin/python",
+  "python": "3.14.8",
+  "platform": "darwin",
+  "qt_platform": "cocoa",
+  "screenshots": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261106",
+  "exit_code": 0,
+  "counts": {
+    "total": 8,
+    "pass": 8,
+    "fail": 0,
+    "unverified": 0
+  },
+  "results": [
+    {
+      "id": "D0",
+      "title": "真实桌面图形后端",
+      "status": "通过",
+      "evidence": "Qt 平台=cocoa（cocoa）"
+    },
+    {
+      "id": "D1",
+      "title": "真实窗口按钮操作：扫描 → 自动生成计划 → 执行按钮可用",
+      "status": "通过",
+      "evidence": "扫描完成=True 计划完成=True 执行 enabled=True\n截图=/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261106/01_主窗口_初始.png, /Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261106/02_主窗口_分类预览.png"
+    },
+    {
+      "id": "D2",
+      "title": "长中文路径在表格中完整保存并可通过悬浮提示查看",
+      "status": "通过",
+      "evidence": "找到长路径行=True 悬浮提示含完整路径=True\n路径=大二上/数据结构与算法/第三次上机实验/实验报告以及源代码和测试数据的最终提交版本/附件/一个名字非常非常非常长的实验报告文件_最终版_不要删除_副本_2026.docx\n截图=/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261106/03_主窗口_长路径.png"
+    },
+    {
+      "id": "D3",
+      "title": "真实窗口「重新预览」按钮可重复生成计划",
+      "status": "通过",
+      "evidence": "新任务 seq 已启动=True 完成=True"
+    },
+    {
+      "id": "D4",
+      "title": "保护目录对话框显示原因与跳过数量",
+      "status": "通过",
+      "evidence": "对话框可见=True 截图=/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261106/04_保护目录对话框.png\n只读区文本片段=['[自动识别] <root>/项目', '    自动识别（VCS 目录 .git 存在）']"
+    },
+    {
+      "id": "D5",
+      "title": "执行确认与规则编辑对话框可正常显示",
+      "status": "通过",
+      "evidence": "截图=/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261106/05_执行确认对话框.png, /Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261106/06_课程规则对话框.png"
+    },
+    {
+      "id": "D6",
+      "title": "窗口缩放 900×600 / 1400×900 后关键控件仍可见",
+      "status": "通过",
+      "evidence": "截图=/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261106/07_窗口_900x600.png\n截图=/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261106/08_窗口_1400x900.png"
+    },
+    {
+      "id": "D7",
+      "title": "系统级屏幕截图",
+      "status": "通过",
+      "evidence": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261106/09_真实屏幕截图.png"
+    }
+  ]
+}

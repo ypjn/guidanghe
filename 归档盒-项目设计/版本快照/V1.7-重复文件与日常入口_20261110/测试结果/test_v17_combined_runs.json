@@ -1,0 +1,37 @@
+{
+  "script": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/tests/test_v17_combined.py",
+  "repeat": 2,
+  "runs": [
+    {
+      "run": 1,
+      "os_exit_code": 0,
+      "elapsed_s": 0.08,
+      "log": "/tmp/archive_isolated/test_v17_combined_run1.log",
+      "summary": {
+        "total": 1,
+        "pass": 1,
+        "fail": 0,
+        "untested": 0,
+        "reported_exit_code": 0
+      },
+      "crash_at_exit": false
+    },
+    {
+      "run": 2,
+      "os_exit_code": 0,
+      "elapsed_s": 0.07,
+      "log": "/tmp/archive_isolated/test_v17_combined_run2.log",
+      "summary": {
+        "total": 1,
+        "pass": 1,
+        "fail": 0,
+        "untested": 0,
+        "reported_exit_code": 0
+      },
+      "crash_at_exit": false
+    }
+  ],
+  "all_os_exit_zero": true,
+  "all_assertions_pass": true,
+  "overall_exit_code": 0
+}

@@ -1,0 +1,47 @@
+{
+  "suite": "launch_entry_check",
+  "ts": "2026-11-07 14:31:27",
+  "command": "QT_QPA_PLATFORM=offscreen .venv/bin/python tests/test_launch_entry.py",
+  "interpreter": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/bin/python",
+  "python": "3.14.8",
+  "entry": "/Users/ypjn/Desktop/NEU/大二上/aigc2/启动归档盒.command",
+  "elapsed_s": 4.1,
+  "exit_code": 0,
+  "counts": {
+    "total": 5,
+    "pass": 5,
+    "fail": 0
+  },
+  "results": [
+    {
+      "id": "L1",
+      "title": "启动脚本存在、可执行、zsh 语法检查通过",
+      "status": "通过",
+      "evidence": "路径=/Users/ypjn/Desktop/NEU/大二上/aigc2/启动归档盒.command；可执行=True；语法退出码=0"
+    },
+    {
+      "id": "L2",
+      "title": "缺源码目录：给出清楚说明并退出，不做任何安装/启动",
+      "status": "通过",
+      "evidence": "退出码=1；输出含「未找到源码目录」=True"
+    },
+    {
+      "id": "L3",
+      "title": "缺虚拟环境：给出 venv+requirements 修复指引，不自动升级或安装",
+      "status": "通过",
+      "evidence": "退出码=1；指引包含安装命令=True"
+    },
+    {
+      "id": "L4",
+      "title": "中文+空格路径：通过脚本真实启动主窗口（offscreen 子进程存活 4s）",
+      "status": "通过",
+      "evidence": "路径=/tmp/_v12r3_launch_check/试用 副本 目录；进程存活=True；启动横幅可见=True；结束时退出码=-15"
+    },
+    {
+      "id": "L5",
+      "title": "requirements.txt 声明与当前实际依赖一致（PySide6==6.12.0）",
+      "status": "通过",
+      "evidence": "实际版本=6.12.0；声明=True"
+    }
+  ]
+}

@@ -1,0 +1,85 @@
+{
+  "suite": "v11_manual_protect",
+  "ts": "2026-11-09 18:15:30",
+  "command": "QT_QPA_PLATFORM=offscreen .venv/bin/python tests/test_v11_manual_protect.py",
+  "interpreter": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/bin/python",
+  "python": "3.14.8",
+  "platform": "darwin",
+  "qt_platform": "offscreen",
+  "base": "/tmp/_v11_manual_protect_verify",
+  "exit_code": 0,
+  "counts": {
+    "total": 11,
+    "pass": 11,
+    "fail": 0,
+    "unverified": 0
+  },
+  "results": [
+    {
+      "id": "M1",
+      "title": "手动保护目录内文件被跳过，外部文件正常进入计划",
+      "status": "通过",
+      "evidence": "计划文件=['课程/作业.docx', '课程/讲义.pdf']\n保护跳过=2 原因=用户手动保护 类别=manual"
+    },
+    {
+      "id": "M2",
+      "title": "父子目录同时保护：深层文件仅计一次且全部跳过",
+      "status": "通过",
+      "evidence": "计划文件=['外部/d.txt'] 保护跳过=3（应 3）\n保护根=['父', '父/子']"
+    },
+    {
+      "id": "M3",
+      "title": "移除手动保护后重新扫描，文件重新进入计划",
+      "status": "通过",
+      "evidence": "保护时计划=['公开/b.txt']\n移除后计划=['公开/b.txt', '私有/a.txt']"
+    },
+    {
+      "id": "M4",
+      "title": "手动保护配置按根目录持久化，跨进程重启后恢复",
+      "status": "通过",
+      "evidence": "配置文件=/tmp/_v11_manual_protect_verify/m4/.organizer/protect_config.json\n同进程读回=['A', 'B']\n新进程读回=['A', 'B']\n子进程退出码=0"
+    },
+    {
+      "id": "M5",
+      "title": "默认保护（归档盒源码）不因移除手动保护而解除",
+      "status": "通过",
+      "evidence": "默认保护跳过=2 / 移除手动后跳过=2\n类别=default（应 default）\n计划=['普通资料/a.txt']"
+    },
+    {
+      "id": "M6",
+      "title": "只接受根目录内有效目录：拒绝根/外部/不存在/程序目录/符号链接，规范化并去重",
+      "status": "通过",
+      "evidence": "根目录自身: 拒绝 — 不能把整个根目录设为保护目录（这样没有文件可整理）\n根目录外: 拒绝 — 目录不在当前根目录内：/tmp/_v11_manual_protect_verify/m6_outside\n不存在: 拒绝 — 目录不存在或不是文件夹：/tmp/_v11_manual_protect_verify/m6/不存在\n.organizer: 拒绝 — 程序自身目录不能作为保护目录：.organizer\n符号链接目录: 拒绝 — 符号链接目录不参与整理，不能作为保护目录：/tmp/_v11_manual_protect_verify/m6/链接目录\n规范化=/tmp/_v11_manual_protect_verify/m6/内层\n去重后=['/tmp/_v11_manual_protect_verify/m6/内层']"
+    },
+    {
+      "id": "M7",
+      "title": "扫描结果区分默认/自动/手动保护，并显示跳过数量",
+      "status": "通过",
+      "evidence": "保护类别={'项目': 'auto', '默认保护': 'default', '手动保护': 'manual'}\n跳过文件数=3（应 3）\n  项目 → 自动识别（VCS 目录 .git 存在）\n  默认保护 → 默认保护（归档盒源码）\n  手动保护 → 用户手动保护"
+    },
+    {
+      "id": "M8",
+      "title": "按根目录隔离：A 的配置不会出现在 B",
+      "status": "通过",
+      "evidence": "A 配置=['/tmp/_v11_manual_protect_verify/m8_a/A']\nB 配置=[]"
+    },
+    {
+      "id": "M9",
+      "title": "界面可添加/移除手动保护目录（真实对话框控件）",
+      "status": "通过",
+      "evidence": "添加后=['/tmp/_v11_manual_protect_verify/m9_ui/私有']（应包含 /tmp/_v11_manual_protect_verify/m9_ui/私有）\n移除后=[]"
+    },
+    {
+      "id": "M10",
+      "title": "忙碌/关闭等待期间禁止修改保护配置",
+      "status": "通过",
+      "evidence": "忙碌时未打开对话框=True，关闭等待时未打开=True"
+    },
+    {
+      "id": "M11",
+      "title": "重启后恢复手动保护；修改保护配置后旧预览立即失效并要求重新扫描",
+      "status": "通过",
+      "evidence": "重启恢复=['/tmp/_v11_manual_protect_verify/m9_ui/私有']（应 [/tmp/_v11_manual_protect_verify/m9_ui/私有]）\n失效前可执行=True；失效后 scan_result/plan 清空、执行禁用、重新预览禁用、提示=⚠ 保护配置已更改：请重新扫描以生成正确预览"
+    }
+  ]
+}

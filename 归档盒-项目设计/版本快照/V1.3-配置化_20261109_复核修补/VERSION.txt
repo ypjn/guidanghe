@@ -1,0 +1,49 @@
+归档盒 V1.3 第一轮复核修补（2026-11-09）
+==========================================
+基线：V1.3-配置化_20261108（第一轮，未覆盖）
+修补前基线：../V1.3-配置化_20261108_复核修补前（取自第一轮冻结源码）
+ Python 3.14.8 / PySide6 6.12.0 / SQLite（stdlib）/ macOS arm64
+
+本轮修补四项：
+1. classification_config.py：类别留空目录命中关键词规则时，
+   direction 改为使用关键词规则的 direction（原为目录映射方向）。
+2. classification_config.py：新增 validate_config_payload()，在版本比较与
+   bool()/str() 转换之前按原始 JSON 类型严格校验；version 排除布尔值；
+   enabled 只接受 JSON 布尔；文本/数组/对象/关键词元素类型逐项校验；
+   错误指出数组第几项/字段；原文件保留；推荐模式阻止生成计划。
+3. config_dialog.py + main.py：试运行结果发布增加“所属主窗口关闭状态”校验；
+   关闭等待期间不弹预览/错误窗口、不恢复控件；线程结束后仍正常注销。
+4. config_dialog.py：reject() 改为协作取消 + 异步清理，不再 wait(5000)；
+   线程由主窗口登记表保活，finished 后回收；迟到结果/进度/失败被忽略。
+
+验证结果（2026-11-09，本轮实际运行）：
+- V1.3 配置化（C01-C18）：18/18 通过，退出码 0
+  tests/results_v13_config.json
+- V1.2 历史与任务：36/36，退出码 0
+- UI 状态机：10/10，退出码 0
+- V1.1 E2E：25/25，退出码 0
+- V1.0 回归：36/36，退出码 0
+- 手动保护：11/11，退出码 0
+- 空操作反例：4/4，退出码 0
+- 启动入口：5/5，退出码 0
+- 真实桌面 cocoa 程序化检查：R0-R3 4 项通过，R4 门控时序未在 cocoa 复现（记未测），
+  退出码 0；tests/results_desktop_check_v13r2.json
+  截图：../../验收截图_20261109_V13复核/（8 张）
+
+复跑方式（在 归档盒源码 目录）：
+  QT_QPA_PLATFORM=offscreen .venv/bin/python tests/test_v13_config.py
+  QT_QPA_PLATFORM=offscreen .venv/bin/python tests/test_v12_history_task.py
+  QT_QPA_PLATFORM=offscreen .venv/bin/python tests/test_v11_ui_state.py
+  QT_QPA_PLATFORM=offscreen .venv/bin/python tests/test_v11_e2e.py
+  QT_QPA_PLATFORM=offscreen .venv/bin/python tests/test_v10_regression.py
+  QT_QPA_PLATFORM=offscreen .venv/bin/python tests/test_v11_manual_protect.py
+  QT_QPA_PLATFORM=offscreen .venv/bin/python tests/_v12r2_noop_check.py
+  QT_QPA_PLATFORM=offscreen .venv/bin/python tests/test_launch_entry.py
+  .venv/bin/python tests/desktop_check_v13r2.py      # 真实桌面，勿加 offscreen
+
+已知限制：
+- 门控“成功信号已排队、线程未退出”的关闭时序只在 offscreen 测试中精确复现，
+  cocoa 桌面检查未复现该时序；
+- 桌面检查为程序化点击/截图，不等同于用户本人手工观察；
+- 试运行不计算 SHA-256，内容重复信息未核验；
+- 本轮未做 16 GB 整批移动，未扩展单文件改判/配置导入导出。

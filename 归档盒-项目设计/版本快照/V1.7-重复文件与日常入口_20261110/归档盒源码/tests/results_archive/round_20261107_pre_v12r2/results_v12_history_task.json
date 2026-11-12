@@ -1,0 +1,128 @@
+{
+  "suite": "v12_history_task",
+  "ts": "2026-11-07 13:32:18",
+  "command": "QT_QPA_PLATFORM=offscreen .venv/bin/python tests/test_v12_history_task.py",
+  "interpreter": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/bin/python",
+  "python": "3.14.8",
+  "platform": "darwin",
+  "qt_platform": "offscreen",
+  "base": "/tmp/_v12_verify",
+  "elapsed_s": 11.16,
+  "exit_code": 0,
+  "counts": {
+    "total": 18,
+    "pass": 18,
+    "fail": 0,
+    "unverified": 0
+  },
+  "results": [
+    {
+      "id": "H1",
+      "title": "空历史：无批次、撤销/恢复/导出均不可用",
+      "status": "通过",
+      "evidence": "批次行数=0；撤销=False；恢复=False；导出=False"
+    },
+    {
+      "id": "H2",
+      "title": "多批次列表：状态与各计数来自持久化实际记录（含混合状态）",
+      "status": "通过",
+      "evidence": "批次行数=1（表内 ['#1']，目标 #1）；选中：状态=部分完成，移动=7 跳过=1 失败=1 取消=1 注意=⚠ 需核对；DB 实际={'cancelled': 1, 'failed': 1, 'moved': 7, 'skipped': 1}"
+    },
+    {
+      "id": "H4",
+      "title": "搜索与状态筛选：关键词过滤、按状态过滤、失败原因可见",
+      "status": "通过",
+      "evidence": "全部 10 项；关键词「数据结构」3 项；失败筛选 1 项（应为 1）；失败原因示例=模拟移动失败：文件被占用"
+    },
+    {
+      "id": "H12",
+      "title": "逐项明细：原/目标相对路径、大小、悬浮显示完整绝对路径",
+      "status": "通过",
+      "evidence": "原位置=个人/密码学试卷.pdf；提示=/tmp/_v12_verify/rootA/个人/密码学试卷.pdf"
+    },
+    {
+      "id": "H5",
+      "title": "导出：CSV 与 JSON 内容与数据库逐项一致，保存位置由用户选择",
+      "status": "通过",
+      "evidence": "CSV 12 行（含 2 行头）= 动作 10+2；JSON batch_id=1，动作 10 条；文件=/tmp/_v12_verify/export.csv, /tmp/_v12_verify/export.json"
+    },
+    {
+      "id": "H7",
+      "title": "撤销边界：旧批次禁用并说明；点击撤销的是最近待撤销批次",
+      "status": "通过",
+      "evidence": "旧批次撤销禁用=True；提示=单批次场景；最近批次可撤销=True；单批次场景"
+    },
+    {
+      "id": "H3",
+      "title": "关闭重开后仍能查询：新窗口读到相同批次与明细",
+      "status": "通过",
+      "evidence": "历史窗口批次=1，数据库=1，明细行=10"
+    },
+    {
+      "id": "H8",
+      "title": "冲突撤销：原位置被占用时保留现状并显示具体冲突原因",
+      "status": "通过",
+      "evidence": "冲突项 1 个；原因=原路径已被占用（保留现状，请人工核对）；原位置文件保留=True"
+    },
+    {
+      "id": "H9",
+      "title": "中断批次：历史页「核对恢复」可用，恢复后按磁盘实际回滚",
+      "status": "通过",
+      "evidence": "恢复按钮可用=True；批次状态=recovered_partial；moved=1 undone=0；已确认项文件回到原位=True"
+    },
+    {
+      "id": "H11",
+      "title": "分页：超过 200 项分两页按需渲染",
+      "status": "通过",
+      "evidence": "第 1 页 200 行（第 1/2 页 · 共 255 项）；第 2 页 55 行（第 2/2 页 · 共 255 项）"
+    },
+    {
+      "id": "H11b",
+      "title": "在文件管理器中显示：调用系统定位（mock 验证参数）",
+      "status": "通过",
+      "evidence": "调用=['open', '-R', '/tmp/_v12_verify/rootE/_已整理/课程/大一下/高数/文档/讲义000.pdf']"
+    },
+    {
+      "id": "H6",
+      "title": "根目录隔离：不同根目录历史不混用；切换时旧窗口关闭",
+      "status": "通过",
+      "evidence": "rootB 历史 1 批（应 1）；切换后旧窗口关闭=True；rootA 历史 1 批（应 1）"
+    },
+    {
+      "id": "H10",
+      "title": "忙碌期间：历史页撤销/恢复/导出/刷新全部禁用；结束后恢复",
+      "status": "通过",
+      "evidence": "忙碌=True；忙碌时撤销/恢复/导出/刷新=False/False/False/False（应全 False）；完成后撤销可用=True"
+    },
+    {
+      "id": "H13",
+      "title": "历史刷新失败：只在历史页提示，不误报文件操作失败",
+      "status": "通过",
+      "evidence": "历史页错误提示=True；主窗口状态栏不变=True"
+    },
+    {
+      "id": "T1",
+      "title": "任务上下文流转：扫描→计划→执行→撤销的 kind/进度/描述全部正确",
+      "status": "通过",
+      "evidence": "空闲=True；扫描=True；计划(可取消,总进度=0)=True；执行进度汇报=True（运行中捕获总进度=5，应 5）；计划后空闲=True；撤销=True/True"
+    },
+    {
+      "id": "T2",
+      "title": "取消状态进入任务上下文：describe 显示「取消已请求」，结束后复位",
+      "status": "通过",
+      "evidence": "取消时 describe=生成计划中…［取消已请求］；结束后复位=True"
+    },
+    {
+      "id": "T3",
+      "title": "执行按钮：仅在计划有效且任务空闲时启用",
+      "status": "通过",
+      "evidence": "无效计划=False; 有效计划=True; 忙碌中=False"
+    },
+    {
+      "id": "T4",
+      "title": "闭环：历史页打开时撤销完成 → 批次状态自动刷新为真实撤销结果",
+      "status": "通过",
+      "evidence": "撤销前=已完成；撤销后=已撤销；明细首项状态=已撤销（应含“已撤销”）"
+    }
+  ]
+}

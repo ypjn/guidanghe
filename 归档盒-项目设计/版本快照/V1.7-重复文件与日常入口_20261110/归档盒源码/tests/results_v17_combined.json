@@ -1,0 +1,17 @@
+{
+  "suite": "test_v17_combined",
+  "ts": "2026-11-09 21:36:35",
+  "counts": {
+    "total": 1,
+    "pass": 1,
+    "fail": 0
+  },
+  "exit_code": 0,
+  "results": [
+    {
+      "id": "X01",
+      "status": "通过",
+      "evidence": "计划范围=['included/a.txt', 'included/sub/b.txt', 'outside/c.txt'] 范围正确=True\n重复组=1 份数=2 重复检查=True\n选中=['included/a.txt', 'outside/c.txt'] 移动=2\n历史动作=2 规则依据=True\n未纳入文件保持=True 撤销完成=True 内容/路径恢复=True"
+    }
+  ]
+}

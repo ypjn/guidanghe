@@ -1,0 +1,270 @@
+{
+  "suite": "v10_regression",
+  "ts": "20261109_142457",
+  "command": "QT_QPA_PLATFORM=offscreen .venv/bin/python tests/test_v10_regression.py",
+  "interpreter": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/bin/python",
+  "python": "3.14.8",
+  "platform": "darwin",
+  "base": "/tmp/归档盒V10回归",
+  "exit_code": 0,
+  "counts": {
+    "total": 36,
+    "pass": 36,
+    "fail": 0,
+    "unverified": 0
+  },
+  "results": [
+    {
+      "id": "A01a",
+      "title": "空目录扫描不崩溃",
+      "status": "通过",
+      "evidence": "files=0, errors=[]",
+      "steps": "cd 归档盒源码 && .venv/bin/python -c \"from scanner import scan_directory;r=scan_directory('/tmp/归档盒V10回归/s01_scan');print(r.summary())\""
+    },
+    {
+      "id": "A01b",
+      "title": "中文/空格文件名正常进入扫描结果",
+      "status": "通过",
+      "evidence": "命中 7 项：['下载/大写扩展.PDF', '下载/无扩展名文件', '下载/未知扩展名.zzz', '下载/课程资料/作业 第一版.docx']",
+      "steps": "cd 归档盒源码 && .venv/bin/python -c \"from scanner import scan_directory;r=scan_directory('/tmp/归档盒V10回归/s01_scan');print(r.summary())\""
+    },
+    {
+      "id": "A01c",
+      "title": "无扩展名归入「其他」",
+      "status": "通过",
+      "evidence": "[('无扩展名文件', '其他')]",
+      "steps": "cd 归档盒源码 && .venv/bin/python -c \"from scanner import scan_directory;r=scan_directory('/tmp/归档盒V10回归/s01_scan');print(r.summary())\""
+    },
+    {
+      "id": "A01d",
+      "title": "大小写不敏感：.PDF → 文档",
+      "status": "通过",
+      "evidence": "[('大写扩展.PDF', '文档')]",
+      "steps": "cd 归档盒源码 && .venv/bin/python -c \"from scanner import scan_directory;r=scan_directory('/tmp/归档盒V10回归/s01_scan');print(r.summary())\""
+    },
+    {
+      "id": "A01e",
+      "title": "未登记扩展名归入「其他」",
+      "status": "通过",
+      "evidence": "[('未知扩展名.zzz', '其他')]",
+      "steps": "cd 归档盒源码 && .venv/bin/python -c \"from scanner import scan_directory;r=scan_directory('/tmp/归档盒V10回归/s01_scan');print(r.summary())\""
+    },
+    {
+      "id": "A02",
+      "title": "多层子目录普通文件全部进入预览且源路径准确",
+      "status": "通过",
+      "evidence": "扫描总数=7，深层=['课程群/2026秋季/高数/第一章/笔记.md', '课程群/2026秋季/高数/第二章/习题.docx']",
+      "steps": "cd 归档盒源码 && .venv/bin/python -c \"from scanner import scan_directory;r=scan_directory('/tmp/归档盒V10回归/s01_scan');print(r.summary())\""
+    },
+    {
+      "id": "A16",
+      "title": "符号链接/隐藏文件/.git/_已整理 均不进入扫描结果",
+      "status": "通过",
+      "evidence": "hidden=1 symlink=2 git=1 skipdir=1 越界项=[]",
+      "steps": "cd 归档盒源码 && .venv/bin/python -c \"from scanner import scan_directory;r=scan_directory('/tmp/归档盒V10回归/s01_scan');print(r.summary())\""
+    },
+    {
+      "id": "A03",
+      "title": "同时命中两条规则时第一条（高数 order=1）生效并显示依据",
+      "status": "通过",
+      "evidence": "course=高等数学, rule=[1] 关键词「高数 / 高等数学 / calculus」→ 高等数学",
+      "steps": "cd 归档盒源码 && .venv/bin/python - <<'PY'\nfrom scanner import scan_directory\nfrom planner import generate_plan, MODE_BY_COURSE_THEN_TYPE, DEFAULT_COURSE_RULES\nsr=scan_directory('/tmp/归档盒V10回归/s02_plan')\np=generate_plan(sr, MODE_BY_COURSE_THEN_TYPE, DEFAULT_COURSE_RULES)\nfor i in p.items: print(i.file.rel_path,'->',i.target_rel_path,i.course,i.dup_group_id)\nPY"
+    },
+    {
+      "id": "A04",
+      "title": "5 份同名「实验报告.docx」全部保留，预览目标路径互不相同",
+      "status": "通过",
+      "evidence": "[('下载/实验报告.docx', '实验报告.docx'), ('实验/化学/实验报告.docx', '实验报告 (1).docx'), ('实验/物理/实验报告.docx', '实验报告 (2).docx'), ('项目A/实验报告.docx', '实验报告 (3).docx'), ('项目B/实验报告.docx', '实验报告 (4).docx')]",
+      "steps": "cd 归档盒源码 && .venv/bin/python - <<'PY'\nfrom scanner import scan_directory\nfrom planner import generate_plan, MODE_BY_COURSE_THEN_TYPE, DEFAULT_COURSE_RULES\nsr=scan_directory('/tmp/归档盒V10回归/s02_plan')\np=generate_plan(sr, MODE_BY_COURSE_THEN_TYPE, DEFAULT_COURSE_RULES)\nfor i in p.items: print(i.file.rel_path,'->',i.target_rel_path,i.course,i.dup_group_id)\nPY"
+    },
+    {
+      "id": "A05",
+      "title": "不同名同内容进入同一重复组且 dup_count=2",
+      "status": "通过",
+      "evidence": "gid=['g1', 'g1'] dup_count=[2, 2]",
+      "steps": "cd 归档盒源码 && .venv/bin/python - <<'PY'\nfrom scanner import scan_directory\nfrom planner import generate_plan, MODE_BY_COURSE_THEN_TYPE, DEFAULT_COURSE_RULES\nsr=scan_directory('/tmp/归档盒V10回归/s02_plan')\np=generate_plan(sr, MODE_BY_COURSE_THEN_TYPE, DEFAULT_COURSE_RULES)\nfor i in p.items: print(i.file.rel_path,'->',i.target_rel_path,i.course,i.dup_group_id)\nPY"
+    },
+    {
+      "id": "A06",
+      "title": "同名同大小但不同内容不误判为重复",
+      "status": "通过",
+      "evidence": "gid=[None, None] size=[60, 60]",
+      "steps": "cd 归档盒源码 && .venv/bin/python - <<'PY'\nfrom scanner import scan_directory\nfrom planner import generate_plan, MODE_BY_COURSE_THEN_TYPE, DEFAULT_COURSE_RULES\nsr=scan_directory('/tmp/归档盒V10回归/s02_plan')\np=generate_plan(sr, MODE_BY_COURSE_THEN_TYPE, DEFAULT_COURSE_RULES)\nfor i in p.items: print(i.file.rel_path,'->',i.target_rel_path,i.course,i.dup_group_id)\nPY"
+    },
+    {
+      "id": "A07",
+      "title": "整理前目标已存在同名文件 → 保留既有文件并分配唯一新名称",
+      "status": "通过",
+      "evidence": "target=预存文件 (1).pdf conflict=True",
+      "steps": "cd 归档盒源码 && .venv/bin/python - <<'PY'\nfrom scanner import scan_directory\nfrom planner import generate_plan, MODE_BY_COURSE_THEN_TYPE, DEFAULT_COURSE_RULES\nsr=scan_directory('/tmp/归档盒V10回归/s02_plan')\np=generate_plan(sr, MODE_BY_COURSE_THEN_TYPE, DEFAULT_COURSE_RULES)\nfor i in p.items: print(i.file.rel_path,'->',i.target_rel_path,i.course,i.dup_group_id)\nPY"
+    },
+    {
+      "id": "A02b",
+      "title": "生成计划零副作用：不创建目录/不移动文件",
+      "status": "通过",
+      "evidence": "计划生成前后指纹一致，无 .organizer 目录",
+      "steps": "cd 归档盒源码 && .venv/bin/python - <<'PY'\nfrom scanner import scan_directory\nfrom planner import generate_plan, MODE_BY_COURSE_THEN_TYPE, DEFAULT_COURSE_RULES\nsr=scan_directory('/tmp/归档盒V10回归/s02_plan')\np=generate_plan(sr, MODE_BY_COURSE_THEN_TYPE, DEFAULT_COURSE_RULES)\nfor i in p.items: print(i.file.rel_path,'->',i.target_rel_path,i.course,i.dup_group_id)\nPY"
+    },
+    {
+      "id": "A08a",
+      "title": "预览后源文件内容变化 → 该项跳过且原因明确",
+      "status": "通过",
+      "evidence": "status=skipped error=源文件内容已变化 同批 a.txt=moved",
+      "steps": "见 test_v10.py s03_preview_change()：计划后修改/删除源文件或占用目标，再 execute_plan"
+    },
+    {
+      "id": "A08b",
+      "title": "预览后源文件消失 → 该项跳过且原因明确",
+      "status": "通过",
+      "evidence": "status=skipped error=源文件已不存在",
+      "steps": "见 test_v10.py s03_preview_change()：计划后修改/删除源文件或占用目标，再 execute_plan"
+    },
+    {
+      "id": "A08c",
+      "title": "预览后目标出现新占用 → 跳过、不改名、不覆盖",
+      "status": "通过",
+      "evidence": "status=skipped error=目标路径已被占用 目标名未变=True 占用文件仍在=True",
+      "steps": "见 test_v10.py s03_preview_change()：计划后修改/删除源文件或占用目标，再 execute_plan"
+    },
+    {
+      "id": "A09",
+      "title": "整理 → 关闭程序 → 重新打开 → 撤销：路径与内容完全恢复",
+      "status": "通过",
+      "evidence": "第1轮：moved=7 撤销恢复=7 冲突=0 批次状态=undone 多重集合一致=True 路径映射一致=True 归档目录残留文件=0 撤销No-op=True\n第2轮：moved=7 撤销恢复=7 冲突=0 批次状态=undone 多重集合一致=True 路径映射一致=True 归档目录残留文件=0 撤销No-op=True",
+      "steps": "见 test_v10.py s04_e2e()：两轮 scan→plan→execute→(关闭)重开 Storage→undo，每轮比对 (size,sha256) 多重集合与「路径→内容」映射"
+    },
+    {
+      "id": "A09b",
+      "title": "对已完整撤销的批次再次撤销：无第二次移动/删除",
+      "status": "通过",
+      "evidence": "restored=0 errors=['没有可撤销的批次']",
+      "steps": "见 test_v10.py s04_e2e()：两轮 scan→plan→execute→(关闭)重开 Storage→undo，每轮比对 (size,sha256) 多重集合与「路径→内容」映射"
+    },
+    {
+      "id": "A18",
+      "title": "重复两轮「完整整理→撤销」结果稳定，历史状态真实（非统一虚假成功）",
+      "status": "通过",
+      "evidence": "第1轮：moved=7 撤销恢复=7 冲突=0 批次状态=undone 多重集合一致=True 路径映射一致=True 归档目录残留文件=0 撤销No-op=True\n第2轮：moved=7 撤销恢复=7 冲突=0 批次状态=undone 多重集合一致=True 路径映射一致=True 归档目录残留文件=0 撤销No-op=True",
+      "steps": "见 test_v10.py s04_e2e()：两轮 scan→plan→execute→(关闭)重开 Storage→undo，每轮比对 (size,sha256) 多重集合与「路径→内容」映射"
+    },
+    {
+      "id": "A10",
+      "title": "整理后在归档目录新建的文件及其所在目录被保留",
+      "status": "通过",
+      "evidence": "新文件存在=True；归档目录仍存在=True",
+      "steps": "见 test_v10.py s05_undo_conflict()：整理全部 6 项后，制造①归档目录新建文件 ②修改 1 个已移动目标 ③占用 1 个原路径 ④移走 1 个目标，再撤销"
+    },
+    {
+      "id": "A11",
+      "title": "整理后被修改的目标：撤销保留修改内容并标记冲突",
+      "status": "通过",
+      "evidence": "status=conflict error=目标内容已被修改 修改内容保留=True",
+      "steps": "见 test_v10.py s05_undo_conflict()：整理全部 6 项后，制造①归档目录新建文件 ②修改 1 个已移动目标 ③占用 1 个原路径 ④移走 1 个目标，再撤销"
+    },
+    {
+      "id": "A12a",
+      "title": "整理后原路径被新文件占用：不覆盖，标记冲突",
+      "status": "通过",
+      "evidence": "status=conflict error=原路径已被占用 占用文件未变=True",
+      "steps": "见 test_v10.py s05_undo_conflict()：整理全部 6 项后，制造①归档目录新建文件 ②修改 1 个已移动目标 ③占用 1 个原路径 ④移走 1 个目标，再撤销"
+    },
+    {
+      "id": "A12b",
+      "title": "整理后目标文件被移走：不猜测找回，标记冲突",
+      "status": "通过",
+      "evidence": "status=conflict error=目标文件已消失",
+      "steps": "见 test_v10.py s05_undo_conflict()：整理全部 6 项后，制造①归档目录新建文件 ②修改 1 个已移动目标 ③占用 1 个原路径 ④移走 1 个目标，再撤销"
+    },
+    {
+      "id": "A12c",
+      "title": "冲突场景下未受影响项仍按原路径/原内容恢复；批次显示「部分撤销」",
+      "status": "通过",
+      "evidence": "恢复项状态=['undone', 'undone', 'undone'] 内容一致=True 批次状态=partial_failed_undone 撤销汇总=部分撤销：恢复 3 / 冲突 3 / 错误 0",
+      "steps": "见 test_v10.py s05_undo_conflict()：整理全部 6 项后，制造①归档目录新建文件 ②修改 1 个已移动目标 ③占用 1 个原路径 ④移走 1 个目标，再撤销"
+    },
+    {
+      "id": "A12d",
+      "title": "冲突场景指纹核验：排除用户后改/新增项后，其余文件多重集合一致",
+      "status": "通过",
+      "evidence": "待比对项 前=3 后=3 一致=True",
+      "steps": "见 test_v10.py s05_undo_conflict()：整理全部 6 项后，制造①归档目录新建文件 ②修改 1 个已移动目标 ③占用 1 个原路径 ④移走 1 个目标，再撤销"
+    },
+    {
+      "id": "A10b",
+      "title": "撤销只清理空目录，不递归删除含新文件的目录",
+      "status": "通过",
+      "evidence": "归档目录存在=True，新文件存在=True",
+      "steps": "见 test_v10.py s05_undo_conflict()：整理全部 6 项后，制造①归档目录新建文件 ②修改 1 个已移动目标 ③占用 1 个原路径 ④移走 1 个目标，再撤销"
+    },
+    {
+      "id": "A13",
+      "title": "取消后：完成数与实际磁盘一致，剩余项标记 cancelled",
+      "status": "通过",
+      "evidence": "moved=3 cancelled=7 状态分布={'moved': 3, 'cancelled': 7} 批次=True",
+      "steps": "见 test_v10.py s06_cancel()：progress_cb 在第 3 项时 set cancel_event，execute_plan 应完成当前项后停止，剩余标记 cancelled"
+    },
+    {
+      "id": "A13b",
+      "title": "取消后仍可撤销已完成部分",
+      "status": "通过",
+      "evidence": "restored=3 conflict=0 errors=0",
+      "steps": "见 test_v10.py s06_cancel()：progress_cb 在第 3 项时 set cancel_event，execute_plan 应完成当前项后停止，剩余标记 cancelled"
+    },
+    {
+      "id": "A13c",
+      "title": "取消后未执行项仍留在原位置",
+      "status": "通过",
+      "evidence": "原目录剩余用户文件=10（应为 10）",
+      "steps": "见 test_v10.py s06_cancel()：progress_cb 在第 3 项时 set cancel_event，execute_plan 应完成当前项后停止，剩余标记 cancelled"
+    },
+    {
+      "id": "A14",
+      "title": "进程被强杀后重启：按磁盘实际状态核对未完成批次，不重复移动/不丢失",
+      "status": "通过",
+      "evidence": "子进程被中断=True；恢复报告：核对批次 #1 | 补记已移动 2 | 仍未执行 3 | 批次状态 → recovered_partial\n  [planned] hw_0.py → _已整理/代码/hw_0.py | B:src消失+target在+sha匹配 → 补记moved\n  [planned] hw_1.py → _已整理/代码/hw_1.py | B:src消失+target在+sha匹配 → 补记moved\n  [planned] hw_2.py → _已整理/代码/hw_2.py | A:src在+target不在 → 保持planned\n  [planned] hw_3.py → _已整理/代码/hw_3.py | A:src在+target不在 → 保持planned\n  [planned] hw_4.py → _已整理/代码/hw_4.py | A:src在+target不在 → 保持planned",
+      "steps": "见 test_v10.py s07_recovery()：子进程 _child_interrupt.py 移动前 2 项后 os._exit(9)，父进程重新打开 Storage 调 recover_batch()"
+    },
+    {
+      "id": "A15",
+      "title": "「已移动但结果未记录」的不确定状态被识别为 moved（未仅凭日志判为未移动）",
+      "status": "通过",
+      "evidence": "补记项=[('hw_0.py', 'moved', '[恢复补记] 进程中断后核对'), ('hw_1.py', 'moved', '[恢复补记] 进程中断后核对')]",
+      "steps": "见 test_v10.py s07_recovery()：子进程 _child_interrupt.py 移动前 2 项后 os._exit(9)，父进程重新打开 Storage 调 recover_batch()"
+    },
+    {
+      "id": "A14b",
+      "title": "恢复后不存在「源与目标同时存在」的重复副本",
+      "status": "通过",
+      "evidence": "重复项=[]",
+      "steps": "见 test_v10.py s07_recovery()：子进程 _child_interrupt.py 移动前 2 项后 os._exit(9)，父进程重新打开 Storage 调 recover_batch()"
+    },
+    {
+      "id": "A14c",
+      "title": "磁盘状态不明确的 C/D/E/F 四类均暂停人工处理（不盲目重放）",
+      "status": "通过",
+      "evidence": "状态=['paused', 'paused', 'paused', 'paused'] 报告=核对批次 #1 | 暂停待人工确认 4 | 批次状态 → recovered_partial 批次状态=recovered_partial",
+      "steps": "见 test_v10.py s07b_cases()：子进程中断后，用磁盘改造构造 C/D/E/F 四类异常状态，recover_batch() 应全部标为 paused 并给出原因"
+    },
+    {
+      "id": "A17a",
+      "title": "存在未恢复批次时能被检测到（提示应先处理当前任务）",
+      "status": "通过",
+      "evidence": "pending=#1 status=executing has_unrecovered=True",
+      "steps": "见 test_v10.py s08_multi_batch()：用子进程留下一个 executing 未恢复批次，检查 has_unrecovered_batch，并尝试再启动一次整理"
+    },
+    {
+      "id": "A17b",
+      "title": "未恢复批次存在时再次开始整理：不产生重叠批次",
+      "status": "通过",
+      "evidence": "批次数=1 状态=['executing'] 第二次执行=成功 0",
+      "steps": "见 test_v10.py s08_multi_batch()：用子进程留下一个 executing 未恢复批次，检查 has_unrecovered_batch，并尝试再启动一次整理"
+    },
+    {
+      "id": "A17c",
+      "title": "对同一计划连续执行两次：不产生重叠的「执行中」批次",
+      "status": "通过",
+      "evidence": "两次执行=成功 3 / 成功 0/跳过 3 批次状态=['partial', 'done']",
+      "steps": "见 test_v10.py s08_multi_batch()：用子进程留下一个 executing 未恢复批次，检查 has_unrecovered_batch，并尝试再启动一次整理"
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "suite": "desktop_check_v16_scheme_preview",
+  "ts": "2026-11-09 20:53:47",
+  "platform": "cocoa",
+  "screenshot_dir": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261109_V16方案与预览",
+  "counts": {
+    "total": 6,
+    "pass": 6,
+    "fail": 0
+  },
+  "exit_code": 0,
+  "results": [
+    {
+      "id": "V0",
+      "status": "通过",
+      "evidence": "platform=cocoa；screen=True"
+    },
+    {
+      "id": "V1",
+      "status": "通过",
+      "evidence": "计数=计划 4｜可见 4｜已勾选 4｜隐藏但仍勾选 0"
+    },
+    {
+      "id": "V2",
+      "status": "通过",
+      "evidence": "可见=2；计数=计划 4｜可见 2｜已勾选 2｜隐藏但仍勾选 2"
+    },
+    {
+      "id": "V3",
+      "status": "通过",
+      "evidence": "顶层节点=1"
+    },
+    {
+      "id": "V4",
+      "status": "通过",
+      "evidence": "方案行数=2"
+    },
+    {
+      "id": "V5",
+      "status": "通过",
+      "evidence": "计划=None；提示='⚠ 分类配置已更新：旧预览已失效，请点击「重新预览」重新生成'"
+    }
+  ]
+}

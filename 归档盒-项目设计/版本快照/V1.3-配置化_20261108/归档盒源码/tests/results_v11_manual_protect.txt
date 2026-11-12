@@ -1,0 +1,61 @@
+归档盒 V1.1 手动保护目录验证 — 结果清单
+时间: 2026-11-08 11:34:22
+命令: QT_QPA_PLATFORM=offscreen .venv/bin/python tests/test_v11_manual_protect.py
+解释器: /Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/bin/python  Python 3.14.8
+合计 11 项：通过 11 / 未通过 0 / 未验证 0
+退出码: 0
+
+[通过] M1  手动保护目录内文件被跳过，外部文件正常进入计划
+    计划文件=['课程/作业.docx', '课程/讲义.pdf']
+    保护跳过=2 原因=用户手动保护 类别=manual
+
+[通过] M2  父子目录同时保护：深层文件仅计一次且全部跳过
+    计划文件=['外部/d.txt'] 保护跳过=3（应 3）
+    保护根=['父', '父/子']
+
+[通过] M3  移除手动保护后重新扫描，文件重新进入计划
+    保护时计划=['公开/b.txt']
+    移除后计划=['公开/b.txt', '私有/a.txt']
+
+[通过] M4  手动保护配置按根目录持久化，跨进程重启后恢复
+    配置文件=/tmp/_v11_manual_protect_verify/m4/.organizer/protect_config.json
+    同进程读回=['A', 'B']
+    新进程读回=['A', 'B']
+    子进程退出码=0
+
+[通过] M5  默认保护（归档盒源码）不因移除手动保护而解除
+    默认保护跳过=2 / 移除手动后跳过=2
+    类别=default（应 default）
+    计划=['普通资料/a.txt']
+
+[通过] M6  只接受根目录内有效目录：拒绝根/外部/不存在/程序目录/符号链接，规范化并去重
+    根目录自身: 拒绝 — 不能把整个根目录设为保护目录（这样没有文件可整理）
+    根目录外: 拒绝 — 目录不在当前根目录内：/tmp/_v11_manual_protect_verify/m6_outside
+    不存在: 拒绝 — 目录不存在或不是文件夹：/tmp/_v11_manual_protect_verify/m6/不存在
+    .organizer: 拒绝 — 程序自身目录不能作为保护目录：.organizer
+    符号链接目录: 拒绝 — 符号链接目录不参与整理，不能作为保护目录：/tmp/_v11_manual_protect_verify/m6/链接目录
+    规范化=/tmp/_v11_manual_protect_verify/m6/内层
+    去重后=['/tmp/_v11_manual_protect_verify/m6/内层']
+
+[通过] M7  扫描结果区分默认/自动/手动保护，并显示跳过数量
+    保护类别={'项目': 'auto', '默认保护': 'default', '手动保护': 'manual'}
+    跳过文件数=3（应 3）
+      项目 → 自动识别（VCS 目录 .git 存在）
+      默认保护 → 默认保护（归档盒源码）
+      手动保护 → 用户手动保护
+
+[通过] M8  按根目录隔离：A 的配置不会出现在 B
+    A 配置=['/tmp/_v11_manual_protect_verify/m8_a/A']
+    B 配置=[]
+
+[通过] M9  界面可添加/移除手动保护目录（真实对话框控件）
+    添加后=['/tmp/_v11_manual_protect_verify/m9_ui/私有']（应包含 /tmp/_v11_manual_protect_verify/m9_ui/私有）
+    移除后=[]
+
+[通过] M10  忙碌/关闭等待期间禁止修改保护配置
+    忙碌时未打开对话框=True，关闭等待时未打开=True
+
+[通过] M11  重启后恢复手动保护；修改保护配置后旧预览立即失效并要求重新扫描
+    重启恢复=['/tmp/_v11_manual_protect_verify/m9_ui/私有']（应 [/tmp/_v11_manual_protect_verify/m9_ui/私有]）
+    失效前可执行=True；失效后 scan_result/plan 清空、执行禁用、重新预览禁用、提示=⚠ 保护配置已更改：请重新扫描以生成正确预览
+

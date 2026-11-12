@@ -1,0 +1,8 @@
+[PASS] X01 组合演练：范围→方案→重复→修正→执行→历史→撤销
+        计划范围=['included/a.txt', 'included/sub/b.txt', 'outside/c.txt'] 范围正确=True
+        重复组=1 份数=2 重复检查=True
+        选中=['included/a.txt', 'outside/c.txt'] 移动=2
+        历史动作=2 规则依据=True
+        未纳入文件保持=True 撤销完成=True 内容/路径恢复=True
+
+合计 1 项：通过 1 / 未通过 0；退出码 0

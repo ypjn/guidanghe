@@ -1,0 +1,102 @@
+qt.qpa.fonts: Populating font family aliases took 19 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+[PASS] T01  临时修正只在当前计划生效，不写配置、重扫后消失
+        计划内生效=True；配置无长期规则=True；重扫恢复自动=True；配置来源=default
+[PASS] T02  由手动修正生成长期规则 → 保存 → 重新生成后自动命中
+        写入配置=True；来源=custom；规则数=1
+        rule_key=long_term:lt-f97794c7d7dc
+        方向=项目 内部=作业
+        目标=_已整理/项目/数据大创/作业/a.pdf
+[PASS] T03  长期规则覆盖已命中「学期内目录」映射的文件
+        原依据=semester_dir:大二上/数据结构
+        原目标=_已整理/课程/大二上/数据结构/文档/作业/a.pdf
+        新依据=long_term:lt-0541dd91fa57
+        新目标=_已整理/项目/数据大创/作业/a.pdf
+        保留内部路径=作业
+[PASS] T04  精确路径匹配只改变目标文件，同目录其他文件不受影响
+        a 依据=long_term:lt-t04 方向=项目
+        b 依据=semester_dir:大二上/数据结构 方向=课程
+[PASS] T05  目录范围：仅本级 / 含子目录 / 路径边界不误匹配
+        本级目录直接子文件命中=long_term:lt-2c48b1373206
+        仅本级模式下子目录文件=semester_dir:大二上/数据结构
+        含子目录模式下子目录文件=long_term:lt-31f274800283
+        相似目录（数据结构实验）=semester_dir:大二上/数据结构实验
+[PASS] T06  文件名关键词命中，且限定目录之外的同名关键词不命中
+        目录内+关键词=long_term:lt-t06
+        目录内但无关键词=semester_dir:大二上/数据结构
+        目录外但有关键词=semester_dir:大二上/C++程序设计
+[PASS] T07  重叠规则按顺序取第一条；排序/启停/删除实际改变计划；标识稳定
+        A在前=long_term:lt-a
+        B在前=long_term:lt-b
+        禁用A=long_term:lt-b
+        删除A=long_term:lt-b
+        rule_id 不随行号变化=True
+[PASS] T08  试运行与正式计划的命中数/目标变化/依据完全一致
+        试运行命中=3 变化=3 冲突=0
+        正式计划实际变化=3
+        样本依据一致=True 不一致项=[]
+[PASS] T09  保存→重启→规则恢复；不同根目录互不串用
+        root1 来源=custom 规则数=1 名称=root1 专属
+        root2 来源=default 规则数=0
+        root1 命中=long_term:lt-4fb9fca84125；root2 命中=semester_dir:大二上/数据结构
+[PASS] T10  取消/非法配置/保存失败不破坏既有配置
+        空名称错误数=1；路径逃逸错误数=1
+        非法保存被拒绝=True；原文件字节不变=True
+[PASS] T11  同名目标自动分配唯一名，执行后两份副本都保留
+        计划目标文件名=['dup (1).txt', 'dup.txt']
+        同一目标目录=True
+        实际文件=['dup (1).txt', 'dup.txt']
+        内容=['same-name-a', 'same-name-b']
+[PASS] T12  真实整理→重开→历史保留长期规则标识/依据→撤销恢复内容
+        移动=2/2
+        全部记录 rule_key=long_term:lt-t12 → True
+        依据含规则名 → True
+        批次配置快照含该规则 → True
+        撤销后源文件与 SHA 恢复 → True (2/2)
+[PASS] T13  先单文件修正，再做规则试运行，最后关闭窗口，生命周期正常
+        临时修正已应用=True
+        试运行命中=2 错误=''
+        关闭后无后台计划任务=True
+[PASS] T14  历史明细显示「长期规则」并带规则依据；CSV/JSON 导出含规则标识与依据
+        分类来源列=['长期规则', '长期规则']
+        悬浮提示='命中长期修正规则\n规则标识：long_term:lt-t14\n命中依据：长期规则「数据结构归项目」：来源目录「大二上/数据结构」（含子目录） → 项目/历史展示'
+        批次注意列='⚑ 长期规则×2'
+        JSON 字段=True（rule_key=long_term:lt-t14）
+        CSV 表头含规则列=True
+[PASS] T15  试运行在后台线程执行：界面不阻塞、运行中可关闭、迟到结果丢弃、线程回收
+        调用返回耗时=0.001s（应 <0.25s）
+        0.35s 内事件心跳=57 次（应 >30）
+        中途仍在运行=True
+        关闭返回耗时=0.000s（应 <0.2s）
+        关闭后迟到结果被忽略=True
+        线程已回收=True（registry 剩余=0）
+
+合计 15 项：通过 15 / 未通过 0 / 未测 0；退出码 0
+结果已保存: /Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/tests/results_v15_long_term_rules.json
+Fatal Python error: Segmentation fault
+
+Current thread 0x00000001fe365300 (most recent call first):
+  <no Python frame>
+
+Current thread's C stack trace (most recent call first):
+  Binary file "/Users/ypjn/.local/share/uv/python/cpython-3.14.8-macos-aarch64-none/bin/python3.14", at _Py_DumpStack+0x48 [0x104f107a4]
+  Binary file "/Users/ypjn/.local/share/uv/python/cpython-3.14.8-macos-aarch64-none/bin/python3.14", at faulthandler_dump_c_stack+0x58 [0x104f8a21c]
+  Binary file "/Users/ypjn/.local/share/uv/python/cpython-3.14.8-macos-aarch64-none/bin/python3.14", at faulthandler_fatal_error+0x17c [0x104f8a15c]
+  Binary file "/usr/lib/system/libsystem_platform.dylib", at _sigtramp+0x38 [0x196086144]
+  Binary file "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/lib/python3.14/site-packages/PySide6/Qt/lib/QtCore.framework/Versions/A/QtCore", at _ZN7QObjectD2Ev+0x600 [0x10b36f568]
+  Binary file "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/lib/python3.14/site-packages/PySide6/Qt/lib/QtWidgets.framework/Versions/A/QtWidgets", at _ZN7QWidgetD2Ev+0x540 [0x10c420074]
+  Binary file "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/lib/python3.14/site-packages/PySide6/QtWidgets.abi3.so", at _ZN18QPushButtonWrapperD0Ev+0x50 [0x10bcc5d38]
+  Binary file "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/lib/python3.14/site-packages/PySide6/libpyside6.abi3.6.12.dylib", at _ZN6PySideL18destructionVisitorEP9SbkObjectPv+0x88 [0x10aa083b8]
+  Binary file "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/lib/python3.14/site-packages/shiboken6/libshiboken6.abi3.6.12.dylib", at _ZN8Shiboken14BindingManager17visitAllPyObjectsEPFvP9SbkObjectPvES3_+0x48 [0x10a87c758]
+  Binary file "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/lib/python3.14/site-packages/PySide6/libpyside6.abi3.6.12.dylib", at _ZN6PySide23destroyQCoreApplicationEv+0x68 [0x10aa082a8]
+  Binary file "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/lib/python3.14/site-packages/PySide6/libpyside6.abi3.6.12.dylib", at _ZN6PySide19runCleanupFunctionsEv+0x5c [0x10aa0820c]
+  Binary file "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/lib/python3.14/site-packages/PySide6/QtCore.abi3.so", at _ZL32SbkQtCoreModule___moduleShutdownP7_object+0x1c [0x10ff880d8]
+  Binary file "/Users/ypjn/.local/share/uv/python/cpython-3.14.8-macos-aarch64-none/bin/python3.14", at atexit_callfuncs+0x84 [0x104798b70]
+  Binary file "/Users/ypjn/.local/share/uv/python/cpython-3.14.8-macos-aarch64-none/bin/python3.14", at _Py_Finalize+0xb4 [0x1047973d8]
+  Binary file "/Users/ypjn/.local/share/uv/python/cpython-3.14.8-macos-aarch64-none/bin/python3.14", at Py_RunMain+0x204 [0x10475e70c]
+  Binary file "/Users/ypjn/.local/share/uv/python/cpython-3.14.8-macos-aarch64-none/bin/python3.14", at pymain_main+0x1e0 [0x10475d468]
+  Binary file "/Users/ypjn/.local/share/uv/python/cpython-3.14.8-macos-aarch64-none/bin/python3.14", at main+0x2c [0x10475d27c]
+  Binary file "/usr/lib/dyld", at start+0x19fc [0x190fe8d7c]
+
+Extension modules: shiboken6.Shiboken, PySide6.QtCore, PySide6.QtGui, PySide6.QtWidgets (total: 4)

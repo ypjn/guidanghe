@@ -1,0 +1,49 @@
+{
+  "suite": "desktop_check_v17_daily",
+  "ts": "2026-11-09 22:51:55",
+  "platform": "cocoa",
+  "screenshot_dir": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261110_V17集中验收",
+  "counts": {
+    "total": 7,
+    "pass": 7,
+    "fail": 0
+  },
+  "exit_code": 0,
+  "results": [
+    {
+      "id": "V0",
+      "status": "通过",
+      "evidence": "platform=cocoa"
+    },
+    {
+      "id": "V1",
+      "status": "通过",
+      "evidence": "范围标签='本次范围：整个整理空间（尚未扫描）'"
+    },
+    {
+      "id": "V2",
+      "status": "通过",
+      "evidence": "清单行数=2"
+    },
+    {
+      "id": "V3",
+      "status": "通过",
+      "evidence": "行数=2 缺失标记=True"
+    },
+    {
+      "id": "V4",
+      "status": "通过",
+      "evidence": "分组=[('content', 2), ('same_name_diff', 2), ('unverified', 1)]"
+    },
+    {
+      "id": "V5",
+      "status": "通过",
+      "evidence": "搜索 a.txt 后可见组=1"
+    },
+    {
+      "id": "V6",
+      "status": "通过",
+      "evidence": "完成=True 计划=['included/a.txt', 'included/sub/b.txt', 'outside/c.txt'] 范围外文件=True"
+    }
+  ]
+}

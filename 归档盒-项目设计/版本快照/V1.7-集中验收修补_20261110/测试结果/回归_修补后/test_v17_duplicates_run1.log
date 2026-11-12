@@ -1,0 +1,31 @@
+qt.qpa.fonts: Populating font family aliases took 100 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+[PASS] D01 同内容不同名称归入同一内容重复组
+        内容组=1 文件份数=2
+[PASS] D02 同名但内容不同归入「同名不同内容」，不误判为内容重复
+        分组=[('same_name_diff', 2)]
+[PASS] D03 三份以上副本的组内份数正确
+        内容组=1 份数=3
+[PASS] D04 缺失/不可读文件标记核对失败，不被当作重复证据
+        失败=1 分组=['unverified']
+[PASS] D05 扫描后文件变化时旧指纹作废并重新核对
+        重新核对=True 状态=verified 指纹变化=True
+[PASS] D06 取消核对时不生成结论
+        返回值=True
+[PASS] D07 窗口分组、类型筛选与 CSV/JSON 导出统计一致
+        分组=2 筛选后内容组=1 CSV行=5/5
+[PASS] D08 打开/定位/复制路径不改变文件内容与副本数量
+        内容不变=True 副本数=2
+[PASS] D09 主窗口后台核对、缓存复用；切换目录后旧结果失效
+        完成=True 内容组=1 缓存复用=True 切换后清理=True
+[PASS] D10 重开窗口检测文件变化：只重核变化项，复用未变化指纹
+        首次内容组=1 变化后内容组=0 重算指纹次数=1（应 1）
+
+合计 10 项：通过 10 / 未通过 0；退出码 0

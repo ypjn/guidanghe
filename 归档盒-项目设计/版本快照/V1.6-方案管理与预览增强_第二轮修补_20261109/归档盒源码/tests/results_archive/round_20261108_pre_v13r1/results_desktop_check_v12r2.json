@@ -1,0 +1,44 @@
+{
+  "suite": "desktop_check_v12r2",
+  "ts": "2026-11-07 14:00:09",
+  "command": ".venv/bin/python tests/desktop_check_v12r2.py",
+  "interpreter": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/bin/python",
+  "python": "3.14.8",
+  "platform": "darwin",
+  "qt_platform": "cocoa",
+  "shots_dir": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒-项目设计/验收截图_20261107_V12R2",
+  "elapsed_s": 7.25,
+  "exit_code": 0,
+  "counts": {
+    "total": 4,
+    "pass": 3,
+    "fail": 0,
+    "unverified": 1
+  },
+  "results": [
+    {
+      "id": "D1",
+      "title": "真实桌面：历史关闭期间撤销，重开后明细为最新（已撤销）",
+      "status": "通过",
+      "evidence": "关闭前明细=已移动；重开后批次=已撤销，明细=已撤销；数据库=undone；截图=d1_历史_撤销前明细已移动.png, d1_历史_重开后明细已撤销.png"
+    },
+    {
+      "id": "D2",
+      "title": "真实桌面：后台核对恢复——运行中界面响应，补记/未执行如实记录",
+      "status": "通过",
+      "evidence": "运行中状态栏=正在核对 [0/5]（按待核对动作数统计） /tmp/_v12r2_desktop_verify/d2_root/大二上/软工/规格说明0.pdf；结果=核对完成（补记已移动，其余仍未执行）：核对批次 #1 | 补记已移动 3 | 仍未执行 2 | 批次状态 → recovered_partial；批次=recovered_partial；明细：已移动 3 / 未执行 2；截图=d2_恢复运行中_界面响应.png, d2_恢复后历史明细.png"
+    },
+    {
+      "id": "D3",
+      "title": "真实桌面：恢复运行中关闭——关闭等待、无阻塞弹窗、随后自动关闭",
+      "status": "通过",
+      "evidence": "关闭等待=True（窗口保持可见等待线程结束）；自动关闭=True；数据库最后关闭=True；恢复仍真实完成=True；关闭等待期间业务弹窗=0（应 0）；截图=d3_恢复中关闭_等待后台结束.png"
+    },
+    {
+      "id": "D4",
+      "title": "人工观察：逐张查看截图，确认布局与中文显示正常",
+      "status": "未测",
+      "evidence": "请人工查看以下截图（本轮桌面检查产物）：\n    d1_历史_撤销前明细已移动.png\n    d1_历史_重开后明细已撤销.png\n    d2_恢复后历史明细.png\n    d2_恢复运行中_界面响应.png\n    d3_恢复中关闭_等待后台结束.png\n观察点：撤销前明细=已移动、重开后=已撤销；恢复运行中主窗口进度与状态栏；关闭等待提示文案；历史明细中文状态。"
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "suite": "v11_ui_state",
+  "ts": "2026-11-09 14:25:01",
+  "command": "QT_QPA_PLATFORM=offscreen .venv/bin/python tests/test_v11_ui_state.py",
+  "interpreter": "/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/bin/python",
+  "python": "3.14.8",
+  "platform": "darwin",
+  "qt_platform": "offscreen",
+  "base": "/tmp/_v11_ui_verify",
+  "exit_code": 0,
+  "counts": {
+    "total": 10,
+    "pass": 10,
+    "fail": 0,
+    "unverified": 0
+  },
+  "results": [
+    {
+      "id": "P1",
+      "title": "扫描结束清理不覆盖计划线程：取消按钮保持、浏览/扫描禁用；完成后恢复",
+      "status": "通过",
+      "evidence": "计划线程已启动=True\n模拟扫描结束清理后：\n  _plan_working=True（应 True）\n  取消按钮 visible/enabled=True/True\n  浏览/扫描禁用=True/True（应 True/True）\n  进度条 visible/max=True/320（应 True/320，即当前任务文件数）\n  扫描结束清理未覆盖进度最大值=True\n计划完成后：valid=True cancel_hidden=True 执行/浏览/扫描 enabled=True/True/True"
+    },
+    {
+      "id": "P2",
+      "title": "取消重新生成：旧计划清空、执行禁用、取消按钮恢复隐藏",
+      "status": "通过",
+      "evidence": "取消前旧计划可执行=True\n二次生成已启动=True\n启动瞬间旧计划失效=True\n取消请求标记=True，取消按钮禁点=True\n线程已停=True\n取消后 current_plan is None=True\n  _plan_valid=False（应 False）\n  执行按钮 enabled=False（应 False）\n  无效标签 visible=True\n  取消按钮 visible=False（应 False）\n  重新预览 enabled=True"
+    },
+    {
+      "id": "P3",
+      "title": "旧 seq 的 finished/progress/failed/cancelled/finished_seq 全部被丢弃；当前 seq 只接受本任务计划对象",
+      "status": "通过",
+      "evidence": "伪造 seq=101 信号后：\n  计划未被覆盖=True\n  _plan_valid 仍 True=True\n  未弹窗=True\n  状态栏未被进度污染=True\n  _plan_working 仍 True=True\n  取消按钮仍可见=True\nseq=102 信号：计划被接受=True 接收对象就是本任务计划=True 模式匹配=True 条目数匹配=True\n结束后 _plan_working=False=True 执行可用=True"
+    },
+    {
+      "id": "P4",
+      "title": "计划生成失败：清空计划、禁用执行、显示错误、允许重新生成",
+      "status": "通过",
+      "evidence": "current_plan is None=True\n_plan_valid=False\n执行按钮 enabled=False（应 False）\n无效标签 visible=True\n取消按钮 visible=False（应 False）\n重新预览 enabled=True\n错误弹窗已触发=True"
+    },
+    {
+      "id": "P5",
+      "title": "关闭请求被拒绝，窗口与数据库保持到线程结束，随后自动关闭；独立数据库实际写入/读回并确认关闭后不可用",
+      "status": "通过",
+      "evidence": "closeEvent accepted=False（应 False）\n窗口仍可见=True\n_storage 仍存活=True，窗口数据库仍可读=True\n独立数据库写入批次 #1 并读回=True（动作 1 条）\n独立数据库 close() 后继续使用会抛错=True\n线程结束后窗口自动关闭且数据库已正确关闭=True"
+    },
+    {
+      "id": "P6",
+      "title": "正常流程回归：扫描 → 自动生成计划 → 按钮状态正确",
+      "status": "通过",
+      "evidence": "扫描完成=True，计划完成=True，计划有效=True\n执行 enabled=True，取消按钮隐藏=True，浏览 enabled=True"
+    },
+    {
+      "id": "P7",
+      "title": "线程已结束但成功结果未交付时点击取消：取消被接受、计划不发布、执行禁用、结束后可重新预览",
+      "status": "通过",
+      "evidence": "真实 PlanWorker 已停止=True，界面仍处于生成相位=True\n取消按钮可见可点=True\n点击后取消被接受=True，取消按钮禁用=True\n排队的成功结果被拒绝=True（current_plan=None, valid=False）\n结束回调后：非生成相位/执行禁用/可重新预览=True"
+    },
+    {
+      "id": "P8",
+      "title": "成功回调已处理、结束回调未处理时点击取消：已发布计划立即失效、执行禁用",
+      "status": "通过",
+      "evidence": "取消前计划已发布且有效=True（生成相位中执行按钮本就禁用）\n取消后计划已撤下/无效/执行禁用=True，界面仍处生成相位=True\n结束回调后：非生成相位且可重新预览=True"
+    },
+    {
+      "id": "P9",
+      "title": "扫描中请求关闭：等待扫描结束、不启动新计划任务、不重开数据库、自动关闭",
+      "status": "通过",
+      "evidence": "真实 ScanWorker 已启动=True\n关闭请求被拒绝=True，进入关闭等待=True\n浏览/扫描/执行/保护配置全部禁用=True\n关闭等待期间窗口可见=True，数据库保持=True\n放行扫描后：扫描结果已记录=True，未启动 PlanWorker=True（seq 0，worker=None）\n线程结束后自动关闭且数据库已关闭=True"
+    },
+    {
+      "id": "P10",
+      "title": "界面整理与撤销走真实后台线程：独立 SQLite 连接可用、记录可撤销",
+      "status": "通过",
+      "evidence": "执行按钮可用=True，执行线程正常结束=True\n批次 #1，已移动 8 / 计划 8\n撤销线程正常结束=True，已撤销 8 项\n撤销后源文件回到原位 8 / 8"
+    }
+  ]
+}
