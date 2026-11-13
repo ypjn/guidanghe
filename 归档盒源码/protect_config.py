@@ -43,8 +43,8 @@ class ProtectConfigError(ValueError):
 
 
 def _norm_key(path: str) -> str:
-    """用于比较/去重的路径键（Windows 路径大小写不敏感）。"""
-    return os.path.normcase(os.path.abspath(path))
+    """用于比较/去重的路径键。大小写不敏感，Mac 上 normcase 不会折叠大小写。"""
+    return os.path.normcase(os.path.abspath(path)).casefold()
 
 
 def _within(root_abs: str, p: str) -> bool:

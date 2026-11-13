@@ -90,7 +90,7 @@ class DuplicateDialog(QDialog):
         self.info = QLabel("")
         self.info.setWordWrap(True)
         self.info.setStyleSheet(
-            "padding:6px;background:#ECEFF1;border-radius:4px;")
+            "padding:6px;background:#ECEFF1;color:#0F172A;border-radius:4px;")
         lay.addWidget(self.info)
 
         self.progress = QProgressBar()
@@ -192,11 +192,12 @@ class DuplicateDialog(QDialog):
         self.progress.setVisible(False)
         self.progress_label.setText("")
         self.info.setText(
+            "<span style='color:#0F172A;'>"
             f"<b>范围：</b>{report.scope_note}<br>"
             f"<b>根目录：</b>{report.root}<br>"
             f"<b>核对时间：</b>{report.generated_at}<br>"
             f"<b>统计：</b>{report.group_count_text}；{report.status_text}<br>"
-            "<span style='color:#37474F;'>只读视图：不会删除、合并或移动文件；"
+            "只读视图：不会删除、合并或移动文件；"
             "大小合计不代表可回收磁盘空间。</span>")
         self._populate()
         self._set_actions_enabled(True)

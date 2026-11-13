@@ -547,7 +547,18 @@ def _backup_files(root: str) -> List[str]:
     return [os.path.join(d, n) for n in names]
 
 
-def create_backup(root: str, keep: int = MAX_BACKUPS) -> str:
+def _backup_payload_readable(path: str) -> bool:
+    """备份文件至少能读出一份 custom/default 记录。损坏的 JSON 不算。"""
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return False
+    return isinstance(data, dict) and data.get("state") in ("custom", "default")
+
+
+def create_backup(root: str, keep: int = MAX_BACKUPS,
+                  protect_paths=None) -> str:
     """在应用新配置前，把当前配置（或默认/损坏状态）备份一份。
 
     备份失败会抛出 ClassificationConfigError：调用方必须停止应用，
@@ -589,9 +600,20 @@ def create_backup(root: str, keep: int = MAX_BACKUPS) -> str:
     except ClassificationConfigError as e:
         raise ClassificationConfigError(
             f"备份当前配置失败，已停止应用（原配置保持不变）：\n{e}")
-    # 只保留最近 keep 份；清理失败不影响本次备份可用性
+    # 只保留最近 keep 份。最新的 keep 份如果全都读不了，
+    # 留下更早的那份还能用的备份，避免恢复时把唯一好备份裁掉。
+    protected = {os.path.abspath(path) for path in (protect_paths or []) if path}
     files = _backup_files(root)
-    for old in files[keep:]:
+    newest, older = files[:keep], files[keep:]
+    newest_readable = any(_backup_payload_readable(path) for path in newest)
+    kept_older_readable = False
+    for old in older:
+        if os.path.abspath(old) in protected:
+            continue
+        if (not newest_readable and not kept_older_readable
+                and _backup_payload_readable(old)):
+            kept_older_readable = True
+            continue
         try:
             os.remove(old)
         except OSError:
@@ -616,10 +638,12 @@ def list_backups(root: str) -> List[BackupInfo]:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
         except (OSError, ValueError) as e:
+            info.valid = False
             info.error = f"备份无法读取：{e}"
             out.append(info)
             continue
         if not isinstance(data, dict):
+            info.valid = False
             info.error = "备份格式不正确"
             out.append(info)
             continue
@@ -669,8 +693,9 @@ def restore_latest_backup(root: str) -> Tuple[str, str]:
         raise ClassificationConfigError(
             "所有配置备份都无法作为有效配置启用（原始文件全部保留）：\n"
             + "\n".join(f"  {i.path}\n    {i.error}" for i in infos))
-    # S1-09：恢复前先备份当前配置；备份失败则中止，不做任何改动
-    new_backup_path = create_backup(root)
+    # S1-09：恢复前先备份当前配置；备份失败则中止，不做任何改动。
+    # 正在使用的那份备份不参与裁剪，避免最新几份都损坏时把它删掉。
+    new_backup_path = create_backup(root, protect_paths=[info.path])
     path = config_path(root)
     if info.state == "default":
         if os.path.exists(path):

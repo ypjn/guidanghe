@@ -78,17 +78,25 @@ class UndoResult:
     batch_id: int = 0
     # S1-02/S1-03：批次状态未确定（planning/executing/planned/paused）时拒绝撤销
     refused: bool = False
+    # 用户中途停止：已恢复的留下，未处理的仍是 moved，批次不能标成 undone
+    was_cancelled: bool = False
+    remaining: int = 0
 
     @property
     def is_complete(self) -> bool:
-        # S1-02/S1-03：完整撤销必须满足——没有拒绝、没有冲突/错误，
-        # 并且确实有恢复。恢复 0 项不能叫完整成功。
-        return (not self.refused and self.restored > 0
+        # 完整撤销必须没有拒绝、没有中途停止、没有冲突/错误，并且确实有恢复。
+        # 恢复 0 项、或只恢复了一部分就停下，都不能叫完整成功。
+        return (not self.refused and not self.was_cancelled
+                and self.restored > 0 and self.remaining == 0
                 and self.conflict == 0 and self.errors == 0)
 
     def summary(self) -> str:
         if self.refused:
             return "撤销未执行（已拒绝）"
+        if self.was_cancelled:
+            total = self.restored + self.remaining
+            return (f"已停止：恢复 {self.restored}/{total}，"
+                    f"剩余 {self.remaining} 项可以继续撤销")
         if self.is_complete:
             return f"完整撤销：恢复 {self.restored} 项"
         if self.restored == 0 and self.conflict == 0 and self.errors == 0:
@@ -382,8 +390,11 @@ def undo_latest_batch(
     for idx, action in enumerate(recoverables):
         # S3 / guia F-06：撤销可协作取消（当前文件操作完成后停止）
         if cancel_event is not None and cancel_event.is_set():
+            result.was_cancelled = True
+            result.remaining = len(recoverables) - idx
             result.errors_list.append(
-                f"撤销已取消：已完成 {result.restored} 项，剩余项目保持原状态。")
+                f"撤销已停止：已恢复 {result.restored} 项，"
+                f"剩余 {result.remaining} 项仍在整理目录，可以继续撤销。")
             break
         target_abs = os.path.join(root, action.target_rel)
         source_abs = os.path.join(root, action.source_rel)
@@ -456,10 +467,16 @@ def undo_latest_batch(
     # 清理本批次创建且当前为空的目录（含父级，直到整理空间根）
     _cleanup_empty_dirs(root, batch.created_dirs)
 
-    # ---- 批次最终状态（S1-02/S1-03：不得假成功）----
+    # ---- 批次最终状态（不得假成功，中途停止也不能写成 undone）----
     if db_write_failed:
         # 写库失败的批次保持原状态（未撤销），不标记 undone
         pass
+    elif result.was_cancelled:
+        # 停下时已恢复的保持 undone，没处理的保持 moved。
+        # 批次用 partial_undone，下次「撤销」还能继续，不写完成时间。
+        if result.restored > 0 or result.conflict > 0 or result.errors > 0:
+            storage.update_batch_status(
+                batch.batch_id, BATCH_PARTIAL_UNDONE, finished_at=False)
     elif result.conflict == 0 and result.errors == 0 and result.restored > 0:
         storage.update_batch_status(batch.batch_id, BATCH_UNDONE, finished_at=True)
     elif result.restored == 0 and result.conflict == 0 and result.errors == 0:
@@ -681,7 +698,9 @@ def recover_batch(storage: Storage, batch_id: Optional[int] = None,
     else:
         final_status = BATCH_CANCELLED_CLEAN
 
-    storage.update_batch_status(batch_id, final_status, finished_at=True)
+    # 仍有 planned/paused 的批次没有结束，不写 finished_at，避免和后续执行交错
+    storage.update_batch_status(
+        batch_id, final_status, finished_at=_batch_is_finished(final_status))
     result.batch_status_after = final_status
 
     storage.conn.execute(
@@ -758,6 +777,18 @@ def acknowledge_batch_handled(storage: Storage, batch_id: int) -> None:
     storage.acknowledge_conflict_batch(batch_id)
 
 
+def _batch_is_finished(status: str) -> bool:
+    """只有这次操作已经收束的批次才写完成时间。
+
+    planning / executing / recovered_partial / partial_undone 还可能继续，
+    写上完成时间会让下一次整理和旧批次分不清先后。
+    """
+    return status in (
+        BATCH_DONE, BATCH_UNDONE, BATCH_PARTIAL, BATCH_CANCELLED,
+        BATCH_CANCELLED_CLEAN, BATCH_PARTIAL_FAILED_UNDONE,
+    )
+
+
 def _copy_then_replace(src_path: str, dst_path: str) -> tuple[bool, str, bool]:
     """S1-04：os.rename 失败后的"不覆盖"移动兜底，替代 shutil.move。
 
@@ -780,16 +811,33 @@ def _copy_then_replace(src_path: str, dst_path: str) -> tuple[bool, str, bool]:
     except OSError as e:
         return False, f"复制到临时文件失败：{e}", False
 
-    if os.path.exists(win_long_path(dst_path)):
+    dst_long = win_long_path(dst_path)
+    # 先独占创建目标名，挡住「检查时不存在、替换前被别人建出来」的覆盖窗口。
+    # 创建出来的空文件马上被同目录的临时副本原子替换。
+    try:
+        exclusive = os.open(dst_long, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
         try:
             os.unlink(win_long_path(tmp_path))
         except OSError:
             pass
         return False, "目标路径已存在，为避免覆盖未移动", True
+    except OSError as e:
+        try:
+            os.unlink(win_long_path(tmp_path))
+        except OSError:
+            pass
+        return False, f"无法独占创建目标：{e}", False
+    else:
+        os.close(exclusive)
 
     try:
-        os.replace(win_long_path(tmp_path), win_long_path(dst_path))
+        os.replace(win_long_path(tmp_path), dst_long)
     except OSError as e:
+        try:
+            os.unlink(dst_long)
+        except OSError:
+            pass
         try:
             os.unlink(win_long_path(tmp_path))
         except OSError:
@@ -799,12 +847,16 @@ def _copy_then_replace(src_path: str, dst_path: str) -> tuple[bool, str, bool]:
     try:
         os.unlink(win_long_path(src_path))
     except OSError as e:
-        # 源删除失败：回滚目标，保留源，宁可不动也不留两份
+        # 源删除失败：回滚目标，保留源。回滚也失败时两份都还在，必须照实说明。
         try:
-            os.unlink(win_long_path(dst_path))
-        except OSError:
-            pass
-        return False, f"已复制但删除源失败（已回滚，源文件保留）：{e}", False
+            os.unlink(dst_long)
+        except OSError as rollback_err:
+            return False, (
+                f"删除源失败，回滚目标也失败。源文件仍在：{src_path}；"
+                f"目标副本仍在：{dst_path}。"
+                f"（删除源：{e}；删除副本：{rollback_err}）"
+            ), False
+        return False, f"已复制但删除源失败（已回滚目标副本，源文件保留）：{e}", False
     return True, "", False
 
 

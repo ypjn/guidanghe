@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -183,7 +184,8 @@ def _is_junction_or_reparse(path: str) -> bool:
 
 
 def _find_all_project_roots(root_dir: str,
-                            on_error=None) -> Dict[str, str]:
+                            on_error=None,
+                            result: Optional["ScanResult"] = None) -> Dict[str, str]:
     """扫描 root_dir 下所有目录，返回所有像项目根的目录。
 
     不再做"最深优先"互斥——父目录有 .git、子目录有 package.json，两个都保护。
@@ -194,6 +196,7 @@ def _find_all_project_roots(root_dir: str,
     junction / 重解析点同样不进入。
     """
     roots: Dict[str, str] = {}
+    root_key = os.path.normcase(os.path.abspath(strip_long_prefix(root_dir)))
     try:
         for dirpath, dirnames, _filenames in os.walk(
                 win_long_path(root_dir), followlinks=False, onerror=on_error):
@@ -207,8 +210,16 @@ def _find_all_project_roots(root_dir: str,
                 kept.append(name)
             dirnames[:] = kept
             reason = _looks_like_project_root(dirpath)
-            if reason is not None:
-                roots[strip_long_prefix(dirpath)] = reason
+            if reason is None:
+                continue
+            logical = strip_long_prefix(dirpath)
+            # 学生常把课程资料和 requirements.txt 放在同一个根目录。
+            # 根自身不保护，否则计划会变成 0 项且没有继续整理的入口。
+            if os.path.normcase(os.path.abspath(logical)) == root_key:
+                if result is not None:
+                    result.root_project_marker = reason
+                continue
+            roots[logical] = reason
     except OSError:
         return roots
     return roots
@@ -248,6 +259,8 @@ class ScanResult:
     protected_kinds: Dict[str, str] = field(default_factory=dict)  # {绝对路径: default/auto/manual 组合}
     protected_count: int = 0  # 被保护跳过的文件数
     junction_dirs: List[str] = field(default_factory=list)
+    # 扫描根自身命中了项目标记。根不整体保护，只提示。
+    root_project_marker: str = ""
     # S3 / filesafe F-12：跳过目录的完整路径与原因（不能只给一个数字）
     skipped_dirs: List[Tuple[str, str]] = field(default_factory=list)
     # S3 / filesafe F-16：os.walk 权限/路径错误（onerror）
@@ -378,6 +391,16 @@ def _consider_file(result: "ScanResult", root: str, full_path: str) -> None:
     import stat as st_mod
 
     fname = os.path.basename(full_path)
+    if ".archivetmp" in fname.lower():
+        # 跨盘复制中断留下的临时副本：超过一天就删掉，任何时候都不进计划。
+        try:
+            stat = os.stat(win_long_path(full_path), follow_symlinks=False)
+            if time.time() - stat.st_mtime > 86400:
+                os.unlink(win_long_path(full_path))
+        except OSError:
+            pass
+        result.skipdir_count += 1
+        return
     if os.path.islink(full_path):
         result.symlink_count += 1
         result.skipped.append(FileEntry(
@@ -551,7 +574,7 @@ def scan_directory(
     detected: Dict[str, str] = {}
     if detect_project_roots:
         detected = _find_all_project_roots(
-            root, on_error=lambda e: _walk_error(result, e))
+            root, on_error=lambda e: _walk_error(result, e), result=result)
     _apply_protection(result, root, protect_dirs, detected)
     result.files.sort(key=lambda e: e.rel_path.lower())
     result.skipped.sort(key=lambda e: e.abs_path.lower())
@@ -652,8 +675,12 @@ def scan_paths(
     if detect_project_roots:
         for directory in checked_dirs:
             reason = _looks_like_project_root(directory)
-            if reason:
-                detected[directory] = reason
+            if not reason:
+                continue
+            if os.path.normcase(os.path.abspath(directory)) == root_key:
+                result.root_project_marker = reason
+                continue
+            detected[directory] = reason
     _apply_protection(result, root, protect_dirs, detected)
     result.files.sort(key=lambda e: e.rel_path.lower())
     result.skipped.sort(key=lambda e: e.abs_path.lower())

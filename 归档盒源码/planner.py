@@ -372,8 +372,9 @@ def detect_duplicates(
         if cancel_event and cancel_event.is_set():
             break
 
-        if len(bucket) < 2:
-            # 只有一个文件的桶不可能有重复，但仍记录 SHA（executor 用）
+        if size == 0 or len(bucket) < 2:
+            # 0 字节文件内容都一样，不算内容重复。
+            # 只有一个文件的桶也不可能有重复，但仍记录 SHA（executor 用）。
             f = bucket[0]
             if cancel_event and cancel_event.is_set():
                 break
@@ -414,6 +415,8 @@ _NEIGHBOR_GENERIC = {
     "图片", "照片", "截图", "图像", "新建文件夹", "未命名", "副本", "其他",
     "下载", "文档", "资料", "附件", "压缩", "备份", "课程", "竞赛", "项目",
     "校园事务", "待定",
+    "实验报告", "作业", "笔记", "课件", "习题", "试卷", "答案", "复习",
+    "报告", "论文", "期末", "期中", "课程论文",
 }
 _CJK_RUN = re.compile(r"[\u4e00-\u9fff]{4,12}")
 _CAMERA_NAME = re.compile(
@@ -532,9 +535,9 @@ def _group_unregistered_with_neighbors(items: List[PlanItem], root: str) -> None
             inner = os.sep.join(parts[:-1])
             reason = (
                 f"{item.rule_applied}。与旁边的「{best_sample}」重合「{best_token}」，"
-                f"归入{direction}"
+                f"建议归入{direction}"
                 + (f"/{semester}" if semester else "")
-                + f"/{category}"
+                + f"/{category}。建议，未自动勾选"
             )
             item.direction = direction
             item.semester = semester or None
@@ -549,6 +552,7 @@ def _group_unregistered_with_neighbors(items: List[PlanItem], root: str) -> None
             item.auto_inner_path = item.inner_path
             item.auto_rule_key = item.rule_key
             item.auto_rule_applied = reason
+            item.selected = False
             target_dir = _build_target_dir_v2(direction, semester, category, item.file_type)
             if inner:
                 target_dir = os.path.join(target_dir, inner)
@@ -712,9 +716,10 @@ def classify_entries(
 
     if mode == MODE_BY_DIRECTION_SEMESTER:
         for item in items:
-            # 规则没判断出来、仍停在「待定」的项默认不勾选。
-            # 邻居归组或长期规则改判之后 rule_key 不再是 fallback，保持勾选。
-            if (item.rule_key == "fallback"
+            # 待定项默认不勾选。邻居只是建议，同样不自动勾选。
+            if item.rule_key.startswith("neighbor:"):
+                item.selected = False
+            elif (item.rule_key == "fallback"
                     and (item.direction or "") == PENDING_DIRECTION):
                 item.selected = False
 

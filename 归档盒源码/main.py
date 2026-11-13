@@ -554,11 +554,17 @@ class ExecuteConfirmDialog(QDialog):
             f"<b>根目录：</b>{root}<br>"
             f"<b>分类模式：</b>{MODE_LABELS.get(plan.mode, plan.mode)}<br>"
             f"<b>已选文件：</b>{plan.selected_count} / {plan.total}"
-            f"{extra_lines}{scope_html}<br>"
+            f"{extra_lines}{scope_html}"
+            + (
+                f"<br><b>将跳过：</b>{plan.total - plan.selected_count} 个未勾选文件"
+                if plan.total > plan.selected_count else ""
+            )
+            + "<br>"
             f"<b>目标目录：</b>{os.path.join(root, '_已整理')}/…<br>"
         )
         info_label.setWordWrap(True)
         info_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        info_label.setStyleSheet("color:#0F172A; background:#FFFFFF;")
         layout.addWidget(info_label)
 
         if plan.conflict_count:
@@ -858,7 +864,8 @@ class HistoryDialog(QDialog):
             self.batch_table.setColumnWidth(col, 60)
         self.batch_table.setColumnWidth(9, 240)
         self.batch_table.itemSelectionChanged.connect(self._on_batch_selected)
-        lay.addWidget(self.batch_table, 2)
+        self.batch_table.setMaximumHeight(160)
+        lay.addWidget(self.batch_table, 0)
 
         # V1.3：显示选中批次实际使用的分类配置快照（历史可解释）
         self.batch_config_label = QLabel("")
@@ -926,7 +933,7 @@ class HistoryDialog(QDialog):
         self.item_table.itemSelectionChanged.connect(
             self._on_item_selection_changed)
         self.item_table.doubleClicked.connect(self._on_reveal)
-        lay.addWidget(self.item_table, 3)
+        lay.addWidget(self.item_table, 1)
 
         page_row = QHBoxLayout()
         self.btn_prev = QPushButton("上一页")
@@ -1680,65 +1687,14 @@ class MainWindow(QMainWindow):
         self.storage_tree = StorageTree()
         self.storage_tree.folderHighlighted.connect(self._preview_sidebar_folder)
         self.storage_tree.folderActivated.connect(self._open_sidebar_space)
+        self.storage_tree.setMinimumHeight(96)
+        self.storage_tree.setMaximumHeight(160)
         side_lay.addWidget(self.storage_tree)
         folder_hint = QLabel("双击文件夹，设为这次要整理的位置")
         folder_hint.setWordWrap(True)
         folder_hint.setStyleSheet(
             "color:#64748B;font-size:11px;padding:2px 8px 8px 8px;")
         side_lay.addWidget(folder_hint)
-
-        self.btn_recent = nav(QPushButton("最近打开"))
-        self.btn_recent.setToolTip("打开最近用过的文件夹，也可以固定或移除记录")
-        self.btn_recent.clicked.connect(self.on_recent_spaces)
-        side_lay.addWidget(self.btn_recent)
-
-        side_lay.addWidget(side_heading("这次"))
-        self.btn_intake = nav(QPushButton("待整理清单"))
-        self.btn_intake.setToolTip(
-            "登记这次要整理的文件和文件夹。这里只登记，不移动文件")
-        self.btn_intake.clicked.connect(self.on_intake_dialog)
-        side_lay.addWidget(self.btn_intake)
-
-        self.btn_scan_intake = nav(QPushButton("只扫描清单"))
-        self.btn_scan_intake.setToolTip(
-            "只扫描「待整理清单」里登记的文件和文件夹；\n"
-            "清单以外的文件不会进入预览")
-        self.btn_scan_intake.setEnabled(False)
-        self.btn_scan_intake.clicked.connect(self.on_scan_intake)
-        side_lay.addWidget(self.btn_scan_intake)
-
-        self.btn_duplicates = nav(QPushButton("查看重复文件"))
-        self.btn_duplicates.setToolTip(
-            "查看内容相同、以及文件名相同但内容不同的文件。\n"
-            "这里只查看，不删除、不合并、不移动")
-        self.btn_duplicates.setEnabled(False)
-        self.btn_duplicates.clicked.connect(self.on_show_duplicates)
-        side_lay.addWidget(self.btn_duplicates)
-
-        side_lay.addWidget(side_heading("整理"))
-        self.btn_undo = nav(QPushButton("撤销上一次"))
-        self.btn_undo.setToolTip("把最近一次整理移走的文件放回原位置")
-        self.btn_undo.setEnabled(False)
-        self.btn_undo.clicked.connect(self.on_undo)
-        side_lay.addWidget(self.btn_undo)
-
-        self.btn_history = nav(QPushButton("操作历史"))
-        self.btn_history.setToolTip(
-            "查看这个文件夹以往的整理记录，也可以从这里撤销或核对中断的批次")
-        self.btn_history.setEnabled(False)
-        self.btn_history.clicked.connect(self.on_history)
-        side_lay.addWidget(self.btn_history)
-
-        self.btn_target_tree = nav(QPushButton("将生成的目录"))
-        self.btn_target_tree.setToolTip("按当前预览，查看整理后会生成哪些文件夹")
-        self.btn_target_tree.clicked.connect(self.on_show_target_tree)
-        side_lay.addWidget(self.btn_target_tree)
-
-        self.btn_edit_protect = nav(QPushButton("不整理的目录"))
-        self.btn_edit_protect.setToolTip(
-            "指定哪些文件夹不参与整理。项目目录默认跳过，这里可以再手动增减")
-        self.btn_edit_protect.clicked.connect(self.on_edit_protect)
-        side_lay.addWidget(self.btn_edit_protect)
 
         side_lay.addWidget(side_heading("分类"))
         self.mode_combo = QComboBox()
@@ -1828,6 +1784,59 @@ class MainWindow(QMainWindow):
         self.btn_invert_visible.clicked.connect(
             lambda: self._set_visible_checked(None, invert=True))
         side_lay.addWidget(self.btn_invert_visible)
+        self.btn_recent = nav(QPushButton("最近打开"))
+        self.btn_recent.setToolTip("打开最近用过的文件夹，也可以固定或移除记录")
+        self.btn_recent.clicked.connect(self.on_recent_spaces)
+        side_lay.addWidget(self.btn_recent)
+
+        side_lay.addWidget(side_heading("这次"))
+        self.btn_intake = nav(QPushButton("待整理清单"))
+        self.btn_intake.setToolTip(
+            "登记这次要整理的文件和文件夹。这里只登记，不移动文件")
+        self.btn_intake.clicked.connect(self.on_intake_dialog)
+        side_lay.addWidget(self.btn_intake)
+
+        self.btn_scan_intake = nav(QPushButton("只扫描清单"))
+        self.btn_scan_intake.setToolTip(
+            "只扫描「待整理清单」里登记的文件和文件夹；\n"
+            "清单以外的文件不会进入预览")
+        self.btn_scan_intake.setEnabled(False)
+        self.btn_scan_intake.clicked.connect(self.on_scan_intake)
+        side_lay.addWidget(self.btn_scan_intake)
+
+        self.btn_duplicates = nav(QPushButton("查看重复文件"))
+        self.btn_duplicates.setToolTip(
+            "查看内容相同、以及文件名相同但内容不同的文件。\n"
+            "这里只查看，不删除、不合并、不移动")
+        self.btn_duplicates.setEnabled(False)
+        self.btn_duplicates.clicked.connect(self.on_show_duplicates)
+        side_lay.addWidget(self.btn_duplicates)
+
+        side_lay.addWidget(side_heading("整理"))
+        self.btn_undo = nav(QPushButton("撤销上一次"))
+        self.btn_undo.setToolTip("把最近一次整理移走的文件放回原位置")
+        self.btn_undo.setEnabled(False)
+        self.btn_undo.clicked.connect(self.on_undo)
+        side_lay.addWidget(self.btn_undo)
+
+        self.btn_history = nav(QPushButton("操作历史"))
+        self.btn_history.setToolTip(
+            "查看这个文件夹以往的整理记录，也可以从这里撤销或核对中断的批次")
+        self.btn_history.setEnabled(False)
+        self.btn_history.clicked.connect(self.on_history)
+        side_lay.addWidget(self.btn_history)
+
+        self.btn_target_tree = nav(QPushButton("将生成的目录"))
+        self.btn_target_tree.setToolTip("按当前预览，查看整理后会生成哪些文件夹")
+        self.btn_target_tree.clicked.connect(self.on_show_target_tree)
+        side_lay.addWidget(self.btn_target_tree)
+
+        self.btn_edit_protect = nav(QPushButton("不整理的目录"))
+        self.btn_edit_protect.setToolTip(
+            "指定哪些文件夹不参与整理。项目目录默认跳过，这里可以再手动增减")
+        self.btn_edit_protect.clicked.connect(self.on_edit_protect)
+        side_lay.addWidget(self.btn_edit_protect)
+
         side_lay.addStretch(1)
 
         side_scroll = QScrollArea()
@@ -1925,6 +1934,13 @@ class MainWindow(QMainWindow):
             "color:#B45309;background:#FFFBEB;padding:6px 10px;border-radius:6px;")
         self.invalid_label.hide()
         center.addWidget(self.invalid_label)
+
+        self.plan_hint = QLabel("")
+        self.plan_hint.setWordWrap(True)
+        self.plan_hint.setStyleSheet(
+            "color:#0F172A;background:#FFF7ED;padding:6px 10px;border-radius:6px;")
+        self.plan_hint.hide()
+        center.addWidget(self.plan_hint)
 
         self.protect_label = QLabel("")
         self.protect_label.setWordWrap(True)
@@ -2075,13 +2091,14 @@ class MainWindow(QMainWindow):
         insp_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         fill_panel(insp_scroll, "#FFFFFF")
         insp_scroll.setWidget(insp_inner)
-        insp_scroll.setMinimumWidth(240)
+        insp_scroll.setMinimumWidth(0)
         insp_scroll.setMaximumWidth(480)
         splitter.addWidget(insp_scroll)
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 0)
-        splitter.setSizes([side_need, 720, 280])
+        splitter.setSizes([side_need, 960, 0])
+        self.main_splitter = splitter
         outer.addWidget(splitter, stretch=1)
 
         self.setStatusBar(QStatusBar())
@@ -2175,7 +2192,9 @@ class MainWindow(QMainWindow):
             self.inspector_ocr_cap.hide()
             self.inspector_ocr.hide()
             self.inspector_note.hide()
+            self._set_inspector_open(len(rows) > 1)
             return
+        self._set_inspector_open(True)
         self.inspector_title.setText(item.file.filename)
         folder = os.path.dirname(item.file.rel_path) or "所在文件夹的根目录"
         self.inspector_meta.setText(f"{folder} · {item.file.size_display}")
@@ -2190,6 +2209,26 @@ class MainWindow(QMainWindow):
             self.inspector_note.show()
         else:
             self.inspector_note.hide()
+
+    def _set_inspector_open(self, open_pane: bool):
+        """没选中文件时把右侧说明让给表格；选中后再展开。"""
+        splitter = getattr(self, "main_splitter", None)
+        if splitter is None:
+            return
+        sizes = splitter.sizes()
+        if len(sizes) < 3:
+            return
+        if open_pane:
+            if sizes[2] >= 200:
+                return
+            give = min(280, max(160, sizes[1] // 4))
+            sizes[1] = max(240, sizes[1] - give)
+            sizes[2] = give
+            splitter.setSizes(sizes)
+        elif sizes[2]:
+            sizes[1] += sizes[2]
+            sizes[2] = 0
+            splitter.setSizes(sizes)
 
     def _show_inspector_ocr(self, item):
         if item.file.file_type != "图片":
@@ -2474,6 +2513,13 @@ class MainWindow(QMainWindow):
         self._generate_and_show_plan()
 
         notices: list[str] = []
+        if result.root_project_marker and not quiet_drop:
+            notices.append(
+                "根目录含有项目标记（"
+                + result.root_project_marker
+                + "），没有把整个文件夹当成项目。\n"
+                "子目录里的项目仍会跳过。根目录里的课程文件会进入预览。"
+            )
         if result.protected_roots and not quiet_drop:
             protect_lines = []
             for proot, reason in result.protected_roots.items():
@@ -2500,13 +2546,19 @@ class MainWindow(QMainWindow):
                 + "\n\n如需整理这些位置，请对链接目标的真实目录单独扫描。")
 
         # S3 / filesafe F-12：跳过目录必须给出路径，不能只给一个数字
-        if result.skipped_dirs:
+        user_skips = []
+        for path, why in result.skipped_dirs:
+            base = os.path.basename(str(path).rstrip("\\/"))
+            if why == "保留目录名" and base.lower() in {".organizer", "_已整理"}:
+                continue
+            user_skips.append((path, why))
+        if user_skips:
             notices.append(
-                f"以下 {len(result.skipped_dirs)} 个目录/文件被跳过"
+                f"以下 {len(user_skips)} 个目录/文件被跳过"
                 "（不会进入整理计划）：\n\n"
                 + "\n".join(f"  • {p}（{why}）"
-                           for p, why in result.skipped_dirs[:40])
-                + ("\n  …" if len(result.skipped_dirs) > 40 else ""))
+                           for p, why in user_skips[:40])
+                + ("\n  …" if len(user_skips) > 40 else ""))
 
         if result.permission_errors:
             notices.append(
@@ -3710,9 +3762,12 @@ class MainWindow(QMainWindow):
                 ocr_msg = "（没有可识别的图片）"
         if plan.ai_note:
             ocr_msg += plan.ai_note
-        self.statusBar().showMessage(
-            f"✓ {plan.summary()}{ocr_msg}（仍可更改，点击「开始整理」才会移动文件）"
-        )
+        if plan.total == 0:
+            self.statusBar().showMessage(self._empty_plan_text())
+        else:
+            self.statusBar().showMessage(
+                f"✓ {plan.summary()}{ocr_msg}（仍可更改，点击「开始整理」才会移动文件）"
+            )
         self._apply_pending_drop_select()
 
     def _on_plan_cancelled(self, seq: int):
@@ -3817,7 +3872,9 @@ class MainWindow(QMainWindow):
             # 会让每行每列都产生一个 Qt 代理对象，在主线程 GC 与预览
             # 线程并发时放大 shiboken6 mainThreadDeletionHandler 崩溃面。
             manual = item.is_manual_overridden
+            # 只给手动修正整行上色。待定只标状态格，避免大表每一格都建代理对象。
             row_color = QColor("#FFF9C4") if manual else None
+            pending = (item.direction or "") == "待定"
             cb = QCheckBox()
             cb.setChecked(item.selected)
             cb.stateChanged.connect(
@@ -3828,13 +3885,14 @@ class MainWindow(QMainWindow):
             cl.setAlignment(Qt.AlignCenter)
             cl.setContentsMargins(0, 0, 0, 0)
             self.table.setCellWidget(row, 0, cell_widget)
-            if manual:
-                cell_widget.setStyleSheet("background:#FFF9C4;")
+            if row_color is not None:
+                cell_widget.setStyleSheet(f"background:{row_color.name()};")
 
             orig = QTableWidgetItem(item.file.rel_path)
             orig.setToolTip(f"源文件：{item.file.abs_path}")
-            if manual:
+            if row_color is not None:
                 orig.setBackground(row_color)
+            if manual:
                 orig.setText("✎ " + item.file.rel_path)
                 orig.setToolTip(
                     "手动修正过的文件：\n"
@@ -3844,7 +3902,7 @@ class MainWindow(QMainWindow):
             self.table.setItem(row, 1, orig)
 
             tgt = QTableWidgetItem(item.target_rel_path)
-            if manual:
+            if row_color is not None:
                 tgt.setBackground(row_color)
             # S3 / guib F-10：目标位置始终有完整路径 tooltip
             if item.conflict_with_existing:
@@ -3858,24 +3916,23 @@ class MainWindow(QMainWindow):
 
             reason = QTableWidgetItem(item.rule_applied)
             reason.setToolTip(item.rule_applied)
-            if manual:
+            if row_color is not None:
                 reason.setBackground(row_color)
             self.table.setItem(row, 3, reason)
 
-            if item.conflict_with_existing:
-                status_text = "目标已存在"
-            else:
-                status_text = "正常"
+            status_text = self._plan_row_status(item)
             st = QTableWidgetItem(status_text)
-            if manual:
+            if row_color is not None:
                 st.setBackground(row_color)
+            elif pending:
+                st.setBackground(QColor("#FFF7ED"))
             if item.conflict_with_existing:
                 st.setForeground(Qt.red)
             self.table.setItem(row, 4, st)
 
             size_item = QTableWidgetItem(item.file.size_display)
             size_item.setData(Qt.UserRole, item.file.size)
-            if manual:
+            if row_color is not None:
                 size_item.setBackground(row_color)
             self.table.setItem(row, 5, size_item)
         self._suppress_cell_signals = False
@@ -3922,6 +3979,9 @@ class MainWindow(QMainWindow):
         self.current_plan.items[row].selected = (
             Qt.CheckState(state) == Qt.CheckState.Checked)
         self._update_plan_counts()
+        status_item = self.table.item(row, 4)
+        if status_item is not None:
+            status_item.setText(self._plan_row_status(self.current_plan.items[row]))
         self._update_button_states()
 
     # ============== 预览搜索 / 筛选 / 批量勾选（V1.6） ==============
@@ -4410,6 +4470,7 @@ class MainWindow(QMainWindow):
             self._set_preview_controls_enabled(False)
             self._mark_next_action()
             self._sync_intake_label()
+            self._refresh_plan_hint()
             self._update_inspector()
             return
 
@@ -4467,10 +4528,76 @@ class MainWindow(QMainWindow):
         self.btn_duplicates.setEnabled(idle and self.scan_result is not None)
         self._set_preview_controls_enabled(idle and has_plan)
         # V1.2 第三轮：任务状态变化同步已打开的历史窗口（轻量按钮刷新）
+        self._refresh_undo_button_label()
         self._notify_history_gating()
         self._mark_next_action()
         self._sync_intake_label()
+        self._refresh_plan_hint()
         self._update_inspector()
+
+    def _empty_plan_text(self) -> str:
+        scan = self.scan_result
+        if scan is not None and scan.total_files == 0 and scan.protected_count:
+            return f"没有可整理的文件：{scan.protected_count} 个文件在保护目录里。"
+        return "这个文件夹里没有可整理的文件。换一个文件夹，或把文件拖进来。"
+
+    def _refresh_plan_hint(self):
+        label = getattr(self, "plan_hint", None)
+        if label is None:
+            return
+        plan = self.current_plan if self._plan_valid else None
+        if plan is None:
+            label.hide()
+            return
+        if plan.total == 0:
+            label.setText(self._empty_plan_text())
+            label.show()
+            return
+        pending = sum(1 for item in plan.items if (item.direction or "") == "待定")
+        unselected = plan.total - plan.selected_count
+        if pending or unselected:
+            label.setText(
+                f"未分类 {pending}，已选 {plan.selected_count} / {plan.total}。"
+                "未勾选的不会移动。")
+            label.show()
+        else:
+            label.hide()
+
+    def _plan_row_status(self, item) -> str:
+        if item.conflict_with_existing:
+            return "将改名"
+        if item.is_manual_overridden:
+            return "手动修正"
+        if (item.direction or "") == "待定":
+            return "待定"
+        if not item.selected:
+            return "未勾选"
+        return "将移动"
+
+    def _refresh_undo_button_label(self):
+        if not hasattr(self, "btn_undo"):
+            return
+        batch = None
+        if self._storage is not None:
+            try:
+                batch = self._storage.get_undoable_batch()
+            except Exception:
+                batch = None
+        if batch is None:
+            self.btn_undo.setText("撤销上一次")
+            return
+        latest = batch.batch_id
+        try:
+            row = self._storage.conn.execute(
+                "SELECT MAX(id) FROM batches").fetchone()
+            if row and row[0] is not None:
+                latest = row[0]
+        except Exception:
+            pass
+        if batch.batch_id != latest:
+            self.btn_undo.setText(f"撤销批次 #{batch.batch_id}")
+        else:
+            self.btn_undo.setText("撤销上一次")
 
     def _set_preview_controls_enabled(self, enabled: bool):
         for w in (self.plan_search, self.type_filter, self.dir_filter,
@@ -4791,9 +4918,24 @@ class MainWindow(QMainWindow):
             return
 
         # 确认
+        undo_batch = self._storage.get_undoable_batch()
+        moved_n = 0
+        when = ""
+        batch_no = "?"
+        if undo_batch is not None:
+            batch_no = str(undo_batch.batch_id)
+            when = undo_batch.created_at or undo_batch.finished_at or ""
+            try:
+                actions = self._storage.get_actions(undo_batch.batch_id)
+                moved_n = sum(1 for action in actions
+                              if action.status in ("moved", "conflict"))
+            except Exception:
+                moved_n = 0
         reply = QMessageBox.question(
             self, "归档盒",
-            "将撤销最近一个尚未完全撤销的整理批次。\n\n"
+            f"将撤销批次 #{batch_no}"
+            + (f"（{when}）" if when else "")
+            + f"，共 {moved_n} 个文件。\n\n"
             "⚠ 注意：\n"
             "• 如果某些目标文件后来被你修改过，撤销时会保留你的修改\n"
             "• 如果原路径现在有新文件，撤销不会覆盖新文件\n"
@@ -4849,6 +4991,10 @@ class MainWindow(QMainWindow):
 
         if result.refused:
             QMessageBox.warning(self, "归档盒", msg)
+        elif result.was_cancelled:
+            QMessageBox.information(
+                self, "归档盒",
+                msg + "\n\n已停止。剩余文件可以再次撤销。")
         elif result.is_complete:
             QMessageBox.information(self, "归档盒", msg + "\n\n✓ 完整撤销成功！")
         elif result.restored > 0:
@@ -5233,9 +5379,10 @@ class MainWindow(QMainWindow):
                 f"正在等待：{self.task.describe()}\n"
                 f"已等待：{elapsed} 秒\n\n"
                 "现在强制退出吗？\n\n"
-                "强制退出不会丢失已经移动的文件：整理记录已写入 "
-                ".organizer/history.db，下次打开目录会提示核对恢复。\n"
-                "仍在进行的单个文件操作会先完成再退出。",
+                "强制退出会立刻结束程序。已经移动完的文件留在新位置，"
+                "记录在 .organizer/history.db。\n"
+                "正在复制的那一个文件可能同时留下源文件和未完成的临时副本"
+                "（.archivetmp）。下次打开这个文件夹可以核对。",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No,
             )
@@ -5396,6 +5543,20 @@ def main():
     app = QApplication(sys.argv)
     _install_qt_chinese(app)
     app.setStyle("Fusion")
+    # 界面是浅色。系统深色主题会把勾选框和说明变成白字或黑块，这里固定浅色调色板。
+    light = app.palette()
+    light.setColor(QPalette.ColorRole.Window, QColor("#F8FAFC"))
+    light.setColor(QPalette.ColorRole.WindowText, QColor("#0F172A"))
+    light.setColor(QPalette.ColorRole.Base, QColor("#FFFFFF"))
+    light.setColor(QPalette.ColorRole.AlternateBase, QColor("#F8FAFC"))
+    light.setColor(QPalette.ColorRole.Text, QColor("#0F172A"))
+    light.setColor(QPalette.ColorRole.Button, QColor("#FFFFFF"))
+    light.setColor(QPalette.ColorRole.ButtonText, QColor("#0F172A"))
+    light.setColor(QPalette.ColorRole.ToolTipBase, QColor("#FFFFFF"))
+    light.setColor(QPalette.ColorRole.ToolTipText, QColor("#0F172A"))
+    light.setColor(QPalette.ColorRole.Highlight, QColor("#DBEAFE"))
+    light.setColor(QPalette.ColorRole.HighlightedText, QColor("#0F172A"))
+    app.setPalette(light)
     ui_font = QFont()
     ui_font.setFamilies(["PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC"])
     app.setFont(ui_font)
@@ -5525,7 +5686,23 @@ def main():
         QSplitter#mainSplit::handle { background: #E2E8F0; }
         QSplitter#mainSplit::handle:hover { background: #93C5FD; }
         QStatusBar { background: #F5F5F5; color: #616161; }
-        QCheckBox { padding: 4px; }
+        QCheckBox, QLabel, QRadioButton { color: #0F172A; }
+        QCheckBox { padding: 4px; spacing: 6px; }
+        QCheckBox::indicator {
+            width: 16px;
+            height: 16px;
+            border: 1px solid #64748B;
+            border-radius: 3px;
+            background: #FFFFFF;
+        }
+        QCheckBox::indicator:checked {
+            background: #1D4ED8;
+            border: 1px solid #1D4ED8;
+        }
+        QListWidget, QTreeView, QTextEdit, QPlainTextEdit {
+            background: #FFFFFF;
+            color: #0F172A;
+        }
     """.replace("__COMBO_ARROW__", _combo_arrow_url()))
 
     win = MainWindow()

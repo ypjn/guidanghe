@@ -1158,8 +1158,10 @@ _CJK_RE = re.compile(r"[\u3400-\u9fff]")
 _SEMESTER_NAME_RE = re.compile(
     r"^(?:"
     r"20\d{2}\s*[-_—~至]\s*20\d{2}\s*[-_]\s*[12]"
+    r"|20\d{2}\s*[-_—~至]\s*20\d{2}\s*(?:学年)?\s*(?:第)?\s*[一二12]\s*学期"
     r"|20\d{2}\s*[-_—~]?\s*20\d{2}\s*学年\s*(?:第)?\s*[一二12]\s*学期"
     r"|20\d{2}\s*学年?\s*(?:第)?\s*[一二12]\s*学期"
+    r"|20\d{2}\s*[春秋]季(?:学期)?"
     r"|20\d{2}\s*[春秋]\s*(?:学期)?"
     r"|20\d{2}\s*[-_]\s*[12]\s*(?:学期)?"
     r"|大[一二三四]\s*[上下]"
@@ -1429,6 +1431,68 @@ def _project_output_match(rel_path: str, compiled: CompiledConfig):
     )
 
 
+def _course_hit_for_dirname(compiled: CompiledConfig, dirname: str):
+    """目录名本身是不是一门课。只看这一段目录，不看文件名。
+
+    返回 (方向, 类别, 说明)；对不上则 None。多个关键词同时命中时取最长的。
+    """
+    borrowed = _unique_semester_dir(compiled, dirname)
+    if borrowed is not None and borrowed.category:
+        return (borrowed.direction, borrowed.category,
+                f"与已登记目录「{dirname}」相同")
+    text = (dirname or "").lower()
+    if not text:
+        return None
+    best = None
+    rules = list(compiled.keyword_unmatched) + list(compiled.keyword_subdir)
+    for index, rule in enumerate(rules):
+        if not rule.target:
+            continue
+        for kw in rule.keywords:
+            if not keyword_matches(text, kw):
+                continue
+            cand = (len(kw.strip()), -index, rule.direction, rule.target, kw)
+            if best is None or cand > best:
+                best = cand
+    if best is None:
+        return None
+    _length, _order, direction, target, kw = best
+    return direction, target, f"含课程关键词「{kw}」"
+
+
+def _directory_course_lock(compiled: CompiledConfig,
+                           rel_path: str) -> Optional[ContextMatch]:
+    """路径里已经有课程目录时，以该目录为准。
+
+    文件名里的「论文」「英语作业」不再把这一夹拆到别的课或「项目」。
+    锚点落在课程目录上，后面的子目录留在目标路径里。
+    """
+    parts = [part for part in rel_path.split(os.sep) if part]
+    if len(parts) < 2:
+        return None
+    dirs = parts[:-1]
+    chosen = None
+    for index, name in enumerate(dirs):
+        hit = _course_hit_for_dirname(compiled, name)
+        if hit is not None:
+            chosen = (index, name, hit)
+    if chosen is None:
+        return None
+    index, name, (direction, category, evidence) = chosen
+    semester = ""
+    for earlier in dirs[:index]:
+        rule = compiled.semester_by_source.get(earlier.casefold())
+        if rule is not None:
+            semester = rule.semester
+        elif looks_like_semester(earlier):
+            semester = earlier.strip()
+    return ContextMatch(
+        direction, semester, category, index,
+        f"目录「{name}」{evidence}，按该目录归类，文件名不再改判",
+        f"dir_course:{name}",
+    )
+
+
 def _unmatched_fallback(compiled: CompiledConfig, rel_path: str,
                         filename: str, base_reason: str,
                         semester: str = "", anchor: int = -1,
@@ -1442,8 +1506,12 @@ def _unmatched_fallback(compiled: CompiledConfig, rel_path: str,
 
     S2-16：已经落在某个已识别目录（anchor >= 0，例如学期内的课程目录）下时，
     不再被「软著/专利/论文」的项目输出规则抢走——否则同一课程目录会被
-    拆到「项目/论文」和「课程」两处。只有还没有目录锚点的文件才做项目识别。
+    拆到「项目/论文」和「课程」两处。    只有还没有目录锚点的文件才做项目识别。
+    路径里已经有课程目录时，目录优先于文件名和项目输出。
     """
+    locked = _directory_course_lock(compiled, rel_path)
+    if locked is not None:
+        return locked
     if anchor < 0:
         output = _project_output_match(rel_path, compiled)
         if output is not None:
