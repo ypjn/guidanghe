@@ -19,6 +19,7 @@ from classification_config import (
     INNER_KEEP, INNER_CLEAR,
     default_config, DEFAULT_SEMESTER_MAP, DEFAULT_TOP_DIRECTION,
     DEFAULT_SEMESTER_DIRS, DEFAULT_KEYWORD_TO_COURSE, DEFAULT_GENERIC_DIR,
+    PENDING_DIRECTION,
 )
 
 
@@ -460,6 +461,14 @@ def classify_entries(
             auto_rule_applied=rule_desc,
         )
         item = _assign_unique_names(items, root, item)
+        # S2-49：方向只是兜底判成「待定」（rule_key == "fallback"）的项
+        # 默认不勾选——无法判断的文件不能一键全部搬进 _已整理\待定\。
+        # 用户显式配置的 unmatched 关键词规则、长期规则即使指向「待定」，
+        # 也算明确分类命中，保持默认勾选。
+        if (mode == MODE_BY_DIRECTION_SEMESTER
+                and direction == PENDING_DIRECTION
+                and rule_key == "fallback"):
+            item.selected = False
         items.append(item)
 
         if progress_cb and total > 0:

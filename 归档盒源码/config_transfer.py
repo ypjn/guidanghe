@@ -642,19 +642,25 @@ def list_backups(root: str) -> List[BackupInfo]:
 
 
 def restore_latest_backup(root: str) -> Tuple[str, str]:
-    """恢复最近一次备份（恢复后该备份被消费）。
+    """恢复最近一次备份（S1-09：不再一次性消费）。
 
     返回 (state, message)。state 为 default / custom。
     备份损坏时抛 ClassificationConfigError，且不消费备份文件。
+    - 恢复前先把当前配置备份一份（备份失败则拒绝恢复，不做任何改动）；
+    - 恢复后不删除所用备份。
     """
     infos = list_backups(root)
     if not infos:
         raise ClassificationConfigError("该目录没有可用的配置备份。")
+    # 先取"恢复所用"的备份（再备份当前配置会生成更新的备份文件，
+    # 必须在备份当前配置之前确定要恢复哪一份）
     info = infos[0]
     if not info.valid:
         raise ClassificationConfigError(
             "最近一次备份无法作为有效配置启用（原始文件仍保留）：\n"
             f"{info.path}\n{info.error}")
+    # S1-09：恢复前先备份当前配置；备份失败则中止，不做任何改动
+    new_backup_path = create_backup(root)
     path = config_path(root)
     if info.state == "default":
         if os.path.exists(path):
@@ -678,10 +684,10 @@ def restore_latest_backup(root: str) -> Tuple[str, str]:
         payload.update(config_to_dict(cfg))
         _atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=2))
         message = "已恢复上一次应用的配置。"
-    try:
-        os.remove(info.path)
-    except OSError:
-        pass
+    # S1-09：不再删除所用备份；告知用户当前配置已另存为新备份
+    message += (
+        f"\n恢复前的当前配置已备份为 {os.path.basename(new_backup_path)}；"
+        f"本次使用的备份 {os.path.basename(info.path)} 已保留。")
     return info.state, message
 
 

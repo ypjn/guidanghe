@@ -24,6 +24,8 @@ import os
 import subprocess
 import sys
 import threading
+import time
+import traceback
 
 from PySide6.QtCore import Qt, QThread, Signal, QTimer, QCoreApplication, QEvent
 from PySide6.QtGui import QColor
@@ -441,13 +443,18 @@ class ExecuteConfirmDialog(QDialog):
                 "（仅本次计划的临时修正，不写回配置）"
             )
         scope_html = (f"<br><b>本次范围：</b>{scope_note}" if scope_note else "")
-        layout.addWidget(QLabel(
+        # S3-01：根目录显示完整路径——wordWrap + 可选中，
+        # 长路径换行而不是被对话框宽度裁掉。
+        info_label = QLabel(
             f"<b>根目录：</b>{root}<br>"
             f"<b>分类模式：</b>{MODE_LABELS.get(plan.mode, plan.mode)}<br>"
             f"<b>已选文件：</b>{plan.selected_count} / {plan.total}"
             f"{extra_lines}{scope_html}<br>"
-            f"<b>目标目录：</b>{os.path.basename(root)}/_已整理/…<br>"
-        ))
+            f"<b>目标目录：</b>{os.path.join(root, '_已整理')}/…<br>"
+        )
+        info_label.setWordWrap(True)
+        info_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        layout.addWidget(info_label)
 
         if plan.conflict_count:
             warn = QLabel(f"<span style='color:#E65100;'>⚠ 注意：有 {plan.conflict_count} 个目标路径磁盘上已存在同名文件，计划已自动分配唯一名称。</span>")
@@ -473,11 +480,34 @@ class ExecuteConfirmDialog(QDialog):
         btns = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel
         )
-        btns.button(QDialogButtonBox.Ok).setText("确认开始整理")
-        btns.button(QDialogButtonBox.Cancel).setText("取消")
+        ok_btn = btns.button(QDialogButtonBox.Ok)
+        ok_btn.setText("确认开始整理")
+        # S3-01：确认按钮用危险色，且不成为默认按钮（回车不会触发移动）
+        ok_btn.setStyleSheet(
+            "QPushButton{background:#C62828;color:#FFFFFF;font-weight:600;"
+            "padding:4px 14px;border:1px solid #8E0000;border-radius:4px;}"
+            "QPushButton:hover{background:#D32F2F;}"
+            "QPushButton:pressed{background:#8E0000;}"
+            "QPushButton:disabled{background:#E0A0A0;color:#FFFFFF;}"
+        )
+        ok_btn.setAutoDefault(False)
+        ok_btn.setDefault(False)
+        cancel_btn = btns.button(QDialogButtonBox.Cancel)
+        cancel_btn.setText("取消")
+        # 默认按钮与初始焦点都放在「取消」上
+        cancel_btn.setAutoDefault(True)
+        cancel_btn.setDefault(True)
+        cancel_btn.setFocus()
+        self._cancel_btn = cancel_btn
         btns.accepted.connect(self.accept)
         btns.rejected.connect(self.reject)
         layout.addWidget(btns)
+
+    def showEvent(self, event):
+        # S3-01：对话框显示时 Qt 会把焦点给第一个可聚焦控件（确认按钮），
+        # 这里显式把初始焦点拉回「取消」，保证回车不会触发移动。
+        super().showEvent(event)
+        self._cancel_btn.setFocus(Qt.OtherFocusReason)
 
 
 # ======================== 保护目录对话框 ========================
@@ -1747,8 +1777,10 @@ class MainWindow(QMainWindow):
             return
 
         pending = self._storage.get_pending_batch()
-        if pending is not None:
+        # S2-09：状态已是 done 的批次不算「未完成」，打开目录时不再弹撤销建议。
+        if pending is not None and pending.status != "done":
             self.btn_undo.setEnabled(True)
+            # S2-09：不再默认建议撤销——默认按钮改为「否」。
             reply = QMessageBox.question(
                 self, "归档盒",
                 f"检测到该目录存在一个未完成的整理批次（#{pending.batch_id}，"
@@ -1756,7 +1788,7 @@ class MainWindow(QMainWindow):
                 f"可以选择继续扫描、或者先撤销该批次。\n\n"
                 f"是否现在尝试撤销？",
                 QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes,
+                QMessageBox.No,
             )
             if reply == QMessageBox.Yes:
                 self.on_undo()
@@ -1795,6 +1827,11 @@ class MainWindow(QMainWindow):
     def _start_scan(self, root: str):
         # 已有计划任务在跑时，先让它全部过期，避免旧结果落到新扫描上
         self._abandon_plan_generation()
+
+        # S1-06：新扫描一开始就作废旧计划——扫描期间/扫描失败后，
+        # 旧预览都不能再被执行（空表上点「开始整理」会真的移动文件）。
+        if self.current_plan is not None or self._plan_valid:
+            self._discard_plan("正在重新扫描，旧预览已失效；扫描完成后会重新生成计划")
 
         self.table.setRowCount(0)
         self.task.begin("scan", root, phase="扫描中……")
@@ -1867,6 +1904,18 @@ class MainWindow(QMainWindow):
                 + "\n".join(protect_lines)
             )
 
+        # S1-01：junction / 重解析点被整体跳过——要告诉用户具体是哪些路径，
+        # 不能只给一个计数（用户需要知道链接目标里的文件没有被动过）。
+        if result.junction_dirs:
+            QMessageBox.information(
+                self, "归档盒",
+                "以下目录是 junction / 重解析点（指向其他位置的链接目录），"
+                "已整体跳过，其中的文件不会进入整理计划：\n\n"
+                + "\n".join(f"  • {p}" for p in result.junction_dirs[:20])
+                + ("\n  …" if len(result.junction_dirs) > 20 else "")
+                + "\n\n如需整理这些位置，请对链接目标的真实目录单独扫描。"
+            )
+
         self._generate_and_show_plan()
 
         if result.permission_errors:
@@ -1902,7 +1951,11 @@ class MainWindow(QMainWindow):
         self.protect_label.show()
 
     def _on_scan_failed(self, err: str):
-        self.statusBar().showMessage("扫描失败")
+        # S1-06：扫描失败后旧计划必须彻底失效——不能留下「可执行但预览已清空」的
+        # 状态，否则在空表上点「开始整理」会按旧计划移动文件。
+        self._discard_plan(
+            "扫描失败，旧预览已失效；请排除问题后重新扫描生成新预览")
+        self.statusBar().showMessage("扫描失败：旧预览已失效")
         if self._close_pending or self._closing:
             return
         QMessageBox.critical(self, "归档盒", f"扫描时发生异常：\n{err}")
@@ -3415,6 +3468,10 @@ class MainWindow(QMainWindow):
             return
         # 文件已移动：旧重复核对结果与目标位置均失效
         self._invalidate_duplicate_cache(close=True)
+        # S1-05：执行结束（成功或失败）作废当前计划——不重新扫描生成预览
+        # 就不能再执行，避免对同一计划重复执行出「成功 0」的空批次。
+        self._discard_plan(
+            "整理已结束，本次预览已失效；如需再次整理请重新扫描生成预览")
         # 刷新按钮状态（撤销现在应该可用）
         self._update_button_states()
 
@@ -3453,6 +3510,9 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "归档盒", "\n".join(msg_lines))
 
     def _on_execute_failed(self, err: str):
+        # S1-05：执行异常同样作废当前计划，未重新预览不允许再执行
+        self._discard_plan(
+            "整理失败，本次预览已失效；请排查后重新扫描生成预览")
         self.statusBar().showMessage("整理失败")
         if self._close_pending or self._closing:
             return
@@ -3518,14 +3578,18 @@ class MainWindow(QMainWindow):
         if result.errors_list:
             msg += "\n\n冲突/错误详情：\n" + "\n".join(result.errors_list[:20])
 
-        if result.is_complete:
+        # S1-02/S1-03：撤销被拒绝（批次状态未确定 / 仍有 planned、paused）时，
+        # 明确说明原因，不弹「完整撤销成功」。
+        if result.refused:
+            QMessageBox.warning(self, "归档盒", msg)
+        elif result.is_complete:
             QMessageBox.information(self, "归档盒", msg + "\n\n✓ 完整撤销成功！")
         elif result.restored > 0:
             QMessageBox.warning(self, "归档盒",
                                 msg + "\n\n⚠ 部分撤销完成，有文件因冲突未恢复。")
         else:
             QMessageBox.warning(self, "归档盒",
-                                msg + "\n\n⚠ 没有任何文件被恢复，可能已全部撤销过。")
+                                msg + "\n\n⚠ 没有任何文件被恢复，不能算完整撤销。")
 
     def _on_undo_failed(self, err: str):
         self.statusBar().showMessage("撤销失败")
@@ -3918,18 +3982,90 @@ class MainWindow(QMainWindow):
         self.close()
 
 
+# ======================== 启动日志 / 未捕获异常（S1-11） ========================
+
+def startup_log_path() -> str:
+    """免安装包的「启动日志.txt」路径。
+
+    包结构为 <包>/app/main.py + <包>/runtime/…，日志在包根目录，
+    与启动器写入的是同一个文件。源码运行时退化为源码目录下的同名文件；
+    都不可写时退到系统临时目录，保证异常信息不会完全丢失。
+    """
+    app_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(os.path.dirname(app_dir), "启动日志.txt"),
+        os.path.join(app_dir, "启动日志.txt"),
+    ]
+    for path in candidates:
+        try:
+            parent = os.path.dirname(path)
+            if os.path.isdir(parent) and os.access(parent, os.W_OK):
+                return path
+        except OSError:
+            continue
+    return os.path.join(os.environ.get("TEMP") or os.getcwd(),
+                        "归档盒-启动日志.txt")
+
+
+def append_startup_log(text: str) -> None:
+    """尽力追加一行启动日志；写不进去也不能影响程序运行。"""
+    try:
+        with open(startup_log_path(), "a", encoding="utf-8") as f:
+            f.write(text)
+            if not text.endswith("\n"):
+                f.write("\n")
+    except OSError:
+        pass
+
+
+def _install_crash_logging() -> None:
+    """把未捕获异常写进启动日志（含时间），再交回默认处理。
+
+    S1-11：启动日志以前是 0 字节，无法区分「没启动」和「启动后异常」。
+    pythonw.exe 没有控制台，未捕获异常默认完全不可见，这里落盘到启动日志。
+    """
+    def _excepthook(exc_type, exc_value, exc_tb):
+        append_startup_log(
+            f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 未捕获异常：\n"
+            + "".join(traceback.format_exception(exc_type, exc_value, exc_tb)))
+        sys.__excepthook__(exc_type, exc_value, exc_tb)
+
+    def _thread_excepthook(args):
+        if args.exc_type is SystemExit:
+            return
+        append_startup_log(
+            f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 线程未捕获异常"
+            f"（{getattr(args.thread, 'name', '?')}）：\n"
+            + "".join(traceback.format_exception(
+                args.exc_type, args.exc_value, args.exc_traceback)))
+
+    sys.excepthook = _excepthook
+    threading.excepthook = _thread_excepthook
+
+
 # ======================== 入口 ========================
 
 def main():
+    _install_crash_logging()
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     app.setStyleSheet("""
         QMainWindow { background: #FAFAFA; }
         QTableWidget {
             background: white;
+            color: #212121;
             border: 1px solid #E0E0E0;
             border-radius: 4px;
             gridline-color: #EEEEEE;
+        }
+        /* S1-10：表格背景被刷成白色，必须显式给条目设深色文字；
+           深色 Windows 调色板的默认文字是白色，白底白字会让预览行只剩勾选框。 */
+        QTableWidget::item {
+            color: #212121;
+        }
+        QTableWidget::item:selected {
+            color: #FFFFFF;
+            background: #1E88E5;
         }
         QHeaderView::section {
             background: #F5F5F5;
@@ -3953,6 +4089,10 @@ def main():
 
     win = MainWindow()
     win.show()
+    # S1-11：启动日志不再留 0 字节——正常启动留一行时间戳，
+    # 异常时由 excepthook 追加堆栈，两者都能与「启动器根本没运行」区分开。
+    append_startup_log(
+        f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 归档盒已启动，进入事件循环")
     code = app.exec()
     shutdown_widgets()
     sys.exit(code)

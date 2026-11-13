@@ -693,7 +693,9 @@ class SchemeCenterDialog(QDialog):
         if QMessageBox.question(
                 self, "恢复上一次配置",
                 "将恢复最近一次应用方案前的分类配置（只改变配置，"
-                "不会移动或撤销文件）。\n继续吗？",
+                "不会移动或撤销文件）。\n"
+                "⚠ 当前配置会被覆盖：恢复前会自动生成一份当前配置的新备份，"
+                "本次使用的备份文件也会保留。\n继续吗？",
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
             return
         try:

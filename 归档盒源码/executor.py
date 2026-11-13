@@ -70,14 +70,23 @@ class UndoResult:
     errors: int = 0
     errors_list: List[str] = field(default_factory=list)
     batch_id: int = 0
+    # S1-02/S1-03：批次状态未确定（planning/executing/planned/paused）时拒绝撤销
+    refused: bool = False
 
     @property
     def is_complete(self) -> bool:
-        return self.conflict == 0 and self.errors == 0
+        # S1-02/S1-03：完整撤销必须满足——没有拒绝、没有冲突/错误，
+        # 并且确实有恢复。恢复 0 项不能叫完整成功。
+        return (not self.refused and self.restored > 0
+                and self.conflict == 0 and self.errors == 0)
 
     def summary(self) -> str:
+        if self.refused:
+            return "撤销未执行（已拒绝）"
         if self.is_complete:
             return f"完整撤销：恢复 {self.restored} 项"
+        if self.restored == 0 and self.conflict == 0 and self.errors == 0:
+            return "未恢复任何文件"
         return f"部分撤销：恢复 {self.restored} / 冲突 {self.conflict} / 错误 {self.errors}"
 
 
@@ -134,15 +143,39 @@ def execute_plan(
     result.batch_id = storage.create_batch(plan, f"待执行 {len(selected_items)} 项")
 
     # 步骤 2：先持久化所有执行意图
+    # S1-02：意图写库失败时立刻中止——批次留在 planning（未完成），
+    # 之后会被「核对恢复」流程接手，绝不能在记录不全的情况下继续移动文件。
     for idx, item in enumerate(selected_items):
         src_path = os.path.join(root, item.file.rel_path)
         sha = item.source_sha256 or sha256_file(src_path) or ""
-        storage.create_action(result.batch_id, item, idx, sha)
-
+        try:
+            storage.create_action(result.batch_id, item, idx, sha)
+        except Exception as e:
+            result.errors.append(
+                f"写入执行意图失败（{item.file.rel_path}），已中止整理：{e}")
+            try:
+                storage.update_batch_status(result.batch_id, BATCH_PLANNING)
+                storage.conn.commit()
+            except Exception:
+                pass
+            return result
     storage.update_batch_status(result.batch_id, BATCH_EXECUTING)
 
     # 步骤 3-4：逐项执行
     created_dirs: set[str] = set()
+    # S1-02：单项写库失败不能让异常穿透整个执行循环——记录下来，
+    # 循环结束后把批次明确标成未完成并提交。
+    db_write_failed = False
+
+    def _record(action_idx: int, status: str, error: str = "") -> None:
+        nonlocal db_write_failed
+        try:
+            storage.update_action(result.batch_id, action_idx, status,
+                                  error=error)
+        except Exception as e:
+            db_write_failed = True
+            result.errors.append(
+                f"写入整理记录失败（第 {action_idx + 1} 项，状态 {status}）：{e}")
 
     for idx, item in enumerate(selected_items):
         # ---- 取消检查（在每个文件操作前/后）----
@@ -151,8 +184,7 @@ def execute_plan(
             remaining = selected_items[idx:]
             for remaining_idx, _ in enumerate(remaining):
                 real_idx = idx + remaining_idx
-                storage.update_action(result.batch_id, real_idx, STATUS_CANCELLED,
-                                      error="用户取消")
+                _record(real_idx, STATUS_CANCELLED, error="用户取消")
                 result.cancelled += 1
             result.was_cancelled = True
             break
@@ -166,8 +198,7 @@ def execute_plan(
 
         # ---- 核验 ----
         if not os.path.isfile(src_path):
-            storage.update_action(result.batch_id, idx, STATUS_SKIPPED,
-                                  error="源文件已不存在")
+            _record(idx, STATUS_SKIPPED, error="源文件已不存在")
             result.skipped += 1
             continue
 
@@ -178,14 +209,12 @@ def execute_plan(
                 break
         current_sha = sha256_file(src_path)
         if stored_sha and current_sha and stored_sha != current_sha:
-            storage.update_action(result.batch_id, idx, STATUS_SKIPPED,
-                                  error="源文件内容已变化")
+            _record(idx, STATUS_SKIPPED, error="源文件内容已变化")
             result.skipped += 1
             continue
 
         if os.path.exists(target_path):
-            storage.update_action(result.batch_id, idx, STATUS_SKIPPED,
-                                  error="目标路径已被占用")
+            _record(idx, STATUS_SKIPPED, error="目标路径已被占用")
             result.skipped += 1
             continue
 
@@ -198,29 +227,37 @@ def execute_plan(
                     storage.record_created_dir(result.batch_id, rel_dir)
                     created_dirs.add(rel_dir)
             except OSError as e:
-                storage.update_action(result.batch_id, idx, STATUS_FAILED,
-                                      error=f"创建目录失败：{e}")
+                _record(idx, STATUS_FAILED, error=f"创建目录失败：{e}")
                 result.failed += 1
                 continue
 
         # ---- 移动（原子操作，不中断）----
         try:
             os.rename(src_path, target_path)
-            storage.update_action(result.batch_id, idx, STATUS_MOVED)
-            result.moved += 1
-        except OSError as e:
-            try:
-                shutil.move(src_path, target_path)
-                storage.update_action(result.batch_id, idx, STATUS_MOVED)
-                result.moved += 1
-            except OSError as e2:
-                storage.update_action(result.batch_id, idx, STATUS_FAILED,
-                                      error=f"移动失败：{e2}")
-                result.failed += 1
-                result.errors.append(f"移动失败：{item.file.rel_path} → {e2}")
+        except OSError:
+            # S1-04：不再用 shutil.move 兜底——它在目标已存在时会静默覆盖。
+            # 改为：复制到临时名 → 再次确认目标不存在 → 原子替换 → 删源。
+            # 目标已存在时跳过：不覆盖、不删源。
+            moved_ok, move_err, is_conflict = _copy_then_replace(
+                src_path, target_path)
+            if not moved_ok:
+                if is_conflict:
+                    _record(idx, STATUS_SKIPPED, error=f"未移动：{move_err}")
+                    result.skipped += 1
+                else:
+                    _record(idx, STATUS_FAILED, error=f"移动失败：{move_err}")
+                    result.failed += 1
+                result.errors.append(
+                    f"移动失败（保留源文件）：{item.file.rel_path} → {move_err}")
+                continue
+        _record(idx, STATUS_MOVED)
+        result.moved += 1
 
     # ---- 批次最终状态 ----
-    _finalize_batch(storage, result.batch_id, result)
+    # S1-02：写库失败过的批次必须标成未完成并提交，
+    # 不允许以 done 收尾导致撤销/核对恢复流程被跳过。
+    _finalize_batch(storage, result.batch_id, result,
+                    force_unfinished=db_write_failed)
     return result
 
 
@@ -230,7 +267,14 @@ def undo_latest_batch(
     storage: Storage,
     progress_cb: Optional[Callable[[int, int, str], None]] = None,
 ) -> UndoResult:
-    """撤销最近批次。支持 conflict 状态重试（V0.4）。"""
+    """撤销最近批次。支持 conflict 状态重试（V0.4）。
+
+    S1-02/S1-03：撤销不能再报假成功——
+    - 批次还在 planning/executing，或仍有 planned/paused 条目时，拒绝撤销
+      （这些项的实际状态未确定，需要先「核对恢复」）；
+    - 「完整撤销」要求确实恢复了至少 1 项，且没有冲突/错误；
+    - 恢复 0 项时不把批次标成 undone，不算完整成功。
+    """
     result = UndoResult()
     batch = storage.get_pending_batch()
     if batch is None:
@@ -240,7 +284,31 @@ def undo_latest_batch(
     result.batch_id = batch.batch_id
     root = os.path.abspath(batch.root)
 
+    # ---- 拒绝条件 1：批次本身状态未确定（还在 planning/executing）----
+    if batch.status in (BATCH_PLANNING, BATCH_EXECUTING):
+        result.refused = True
+        result.errors_list.append(
+            f"批次 #{batch.batch_id} 的状态还是「{batch.status}」"
+            "（执行过程未确认结束），撤销被拒绝。\n"
+            "请先通过「核对恢复」确认每项的真实状态，再决定是否撤销。")
+        return result
+
     actions = storage.get_actions(batch.batch_id)
+
+    # ---- 拒绝条件 2：仍有 planned / paused 条目（单项状态未确定）----
+    unfinished = [a for a in actions
+                  if a.status in (STATUS_PLANNED, STATUS_PAUSED)]
+    if unfinished:
+        result.refused = True
+        result.errors_list.append(
+            f"批次 #{batch.batch_id} 还有 {len(unfinished)} 个状态未确定的条目"
+            "（planned/paused），撤销被拒绝：\n"
+            "  " + "\n  ".join(a.source_rel for a in unfinished[:10])
+            + ("…" if len(unfinished) > 10 else "")
+            + "\n请先「核对恢复」或人工处理这些条目，再执行撤销。")
+        return result
+
+    db_write_failed = False
     recoverables = [a for a in actions if a.status in (STATUS_MOVED, STATUS_CONFLICT)]
 
     for idx, action in enumerate(recoverables):
@@ -251,21 +319,33 @@ def undo_latest_batch(
             progress_cb(idx + 1, len(recoverables), action.source_rel)
 
         if not os.path.isfile(target_abs):
-            storage.update_action(batch.batch_id, action.action_index, STATUS_CONFLICT,
-                                  error="目标文件已消失")
+            try:
+                storage.update_action(batch.batch_id, action.action_index,
+                                      STATUS_CONFLICT, error="目标文件已消失")
+            except Exception as e:
+                db_write_failed = True
+                result.errors_list.append(f"写库失败（目标文件已消失）：{e}")
             result.conflict += 1
             continue
 
         current_sha = sha256_file(target_abs)
         if current_sha != action.source_sha256:
-            storage.update_action(batch.batch_id, action.action_index, STATUS_CONFLICT,
-                                  error="目标内容已被修改")
+            try:
+                storage.update_action(batch.batch_id, action.action_index,
+                                      STATUS_CONFLICT, error="目标内容已被修改")
+            except Exception as e:
+                db_write_failed = True
+                result.errors_list.append(f"写库失败（目标内容已被修改）：{e}")
             result.conflict += 1
             continue
 
         if os.path.exists(source_abs):
-            storage.update_action(batch.batch_id, action.action_index, STATUS_CONFLICT,
-                                  error="原路径已被占用")
+            try:
+                storage.update_action(batch.batch_id, action.action_index,
+                                      STATUS_CONFLICT, error="原路径已被占用")
+            except Exception as e:
+                db_write_failed = True
+                result.errors_list.append(f"写库失败（原路径已被占用）：{e}")
             result.conflict += 1
             continue
 
@@ -274,18 +354,32 @@ def undo_latest_batch(
             if source_dir:
                 os.makedirs(source_dir, exist_ok=True)
             os.rename(target_abs, source_abs)
-            storage.update_action(batch.batch_id, action.action_index, STATUS_UNDONE)
-            result.restored += 1
         except OSError:
-            try:
-                shutil.move(target_abs, source_abs)
-                storage.update_action(batch.batch_id, action.action_index, STATUS_UNDONE)
-                result.restored += 1
-            except OSError as e2:
-                storage.update_action(batch.batch_id, action.action_index, STATUS_CONFLICT,
-                                      error=f"恢复失败：{e2}")
+            # S1-04：同执行器——shutil.move 兜底会静默覆盖，改为
+            # 复制到临时名 → 确认原位置为空 → 原子替换 → 删目标。
+            moved_ok, move_err, _is_conflict = _copy_then_replace(
+                target_abs, source_abs)
+            if not moved_ok:
+                try:
+                    storage.update_action(
+                        batch.batch_id, action.action_index, STATUS_CONFLICT,
+                        error=f"恢复失败：{move_err}")
+                except Exception as e:
+                    db_write_failed = True
                 result.errors += 1
-                result.errors_list.append(f"恢复失败：{action.source_rel} ← {e2}")
+                result.errors_list.append(
+                    f"恢复失败：{action.source_rel} ← {move_err}")
+                continue
+        try:
+            storage.update_action(batch.batch_id, action.action_index, STATUS_UNDONE)
+        except Exception as e:
+            # 文件已恢复但写库失败：不能假装撤销完成，批次保持未撤销状态，
+            # 记录错误供人工核对（此时文件在源位置，重试撤销会按冲突处理）。
+            db_write_failed = True
+            result.errors += 1
+            result.errors_list.append(
+                f"文件已恢复但写入记录失败（{action.source_rel}）：{e}")
+        result.restored += 1
 
     # 清理本批次创建且当前为空的目录
     for rel_dir in batch.created_dirs:
@@ -297,12 +391,20 @@ def undo_latest_batch(
             except OSError:
                 pass
 
-    if result.conflict == 0 and result.errors == 0 and result.restored > 0:
+    # ---- 批次最终状态（S1-02/S1-03：不得假成功）----
+    if db_write_failed:
+        # 写库失败的批次保持原状态（未撤销），不标记 undone
+        pass
+    elif result.conflict == 0 and result.errors == 0 and result.restored > 0:
         storage.update_batch_status(batch.batch_id, BATCH_UNDONE, finished_at=True)
+    elif result.restored == 0 and result.conflict == 0 and result.errors == 0:
+        # 没有任何项被恢复：不标记 undone、不算完整成功，批次保持原状态
+        result.errors_list.append(
+            "没有恢复任何文件（可能已全部撤销过，或本批次没有可恢复的移动项），"
+            "批次保持原状态，未标记为已撤销。")
     elif result.conflict > 0 or result.errors > 0:
-        storage.update_batch_status(batch.batch_id, BATCH_PARTIAL_FAILED_UNDONE, finished_at=True)
-    else:
-        storage.update_batch_status(batch.batch_id, BATCH_UNDONE, finished_at=True)
+        storage.update_batch_status(batch.batch_id, BATCH_PARTIAL_FAILED_UNDONE,
+                                    finished_at=True)
 
     storage.conn.execute(
         "UPDATE batches SET summary = ? WHERE id = ?",
@@ -503,9 +605,66 @@ def recover_batch(storage: Storage, batch_id: Optional[int] = None,
 
 # ======================== 辅助 ========================
 
-def _finalize_batch(storage: Storage, batch_id: int, result: ExecuteResult):
-    """根据执行结果更新批次最终状态。"""
-    if result.was_cancelled:
+def _copy_then_replace(src_path: str, dst_path: str) -> tuple[bool, str, bool]:
+    """S1-04：os.rename 失败后的"不覆盖"移动兜底，替代 shutil.move。
+
+    shutil.move 在目标已存在时会静默覆盖用户文件。这里改为：
+      1) 复制源文件到目标同目录下的临时名（copy2 保留元数据）；
+      2) 再次确认目标不存在——存在则记冲突：不覆盖、不删源、清掉临时副本；
+      3) os.replace 原子替换（临时名与目标同目录，同文件系统，原子有效）；
+      4) 删除源文件；删除失败则回滚目标，保留源，报错（宁可没移动，
+         也不留两份或丢文件）。
+
+    返回 (是否成功, 错误说明, 是否为"目标已存在"冲突)。
+    """
+    tmp_path = dst_path + ".archivetmp"
+    counter = 0
+    while os.path.exists(tmp_path):
+        counter += 1
+        tmp_path = f"{dst_path}.archivetmp{counter}"
+    try:
+        shutil.copy2(src_path, tmp_path)
+    except OSError as e:
+        return False, f"复制到临时文件失败：{e}", False
+
+    if os.path.exists(dst_path):
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        return False, "目标路径已存在，为避免覆盖未移动", True
+
+    try:
+        os.replace(tmp_path, dst_path)
+    except OSError as e:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        return False, f"原子替换目标失败：{e}", False
+
+    try:
+        os.unlink(src_path)
+    except OSError as e:
+        # 源删除失败：回滚目标，保留源，宁可不动也不留两份
+        try:
+            os.unlink(dst_path)
+        except OSError:
+            pass
+        return False, f"已复制但删除源失败（已回滚，源文件保留）：{e}", False
+    return True, "", False
+
+
+def _finalize_batch(storage: Storage, batch_id: int, result: ExecuteResult,
+                    force_unfinished: bool = False):
+    """根据执行结果更新批次最终状态。
+
+    S1-02：force_unfinished=True（执行期间发生过写库失败）时，
+    批次必须落在"未完成"状态并提交，绝不能标成 done。
+    """
+    if force_unfinished:
+        final_status = BATCH_CANCELLED if result.was_cancelled else BATCH_PARTIAL
+    elif result.was_cancelled:
         if result.moved == 0 and result.skipped == 0 and result.failed == 0:
             final_status = BATCH_CANCELLED_CLEAN
         else:
@@ -515,15 +674,27 @@ def _finalize_batch(storage: Storage, batch_id: int, result: ExecuteResult):
     else:
         final_status = BATCH_PARTIAL
 
-    storage.update_batch_status(batch_id, final_status, finished_at=True)
-
-    storage.conn.execute(
-        "UPDATE batches SET summary = ? WHERE id = ?",
-        (f"移动 {result.moved} / 跳过 {result.skipped} / 失败 {result.failed}"
-         f" / 取消 {result.cancelled}",
-         batch_id),
-    )
-    storage.conn.commit()
+    try:
+        storage.update_batch_status(batch_id, final_status, finished_at=True)
+        storage.conn.execute(
+            "UPDATE batches SET summary = ? WHERE id = ?",
+            (f"移动 {result.moved} / 跳过 {result.skipped} / 失败 {result.failed}"
+             f" / 取消 {result.cancelled}"
+             + ("（含写库失败，批次未完成）" if force_unfinished else ""),
+             batch_id),
+        )
+        storage.conn.commit()
+    except Exception as e:
+        # 连最终状态都写不进去：尽力直接提交状态，至少不再静默吞掉
+        try:
+            storage.conn.execute(
+                "UPDATE batches SET status = ? WHERE id = ?",
+                (BATCH_PARTIAL, batch_id),
+            )
+            storage.conn.commit()
+        except Exception:
+            pass
+        result.errors.append(f"标记批次最终状态失败：{e}")
 
 
 def undo_is_available(storage: Storage) -> bool:

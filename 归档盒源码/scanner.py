@@ -155,6 +155,26 @@ def _looks_like_project_root(dirpath: str) -> Optional[str]:
     return None
 
 
+def _is_junction_or_reparse(path: str) -> bool:
+    """判断目录是否为 NTFS junction / 其他重解析点（不含普通符号链接）。
+
+    S1-01：Windows 上 os.path.islink() 对 junction（目录联接）返回 False，
+    但 os.walk(followlinks=False) 仍会走进去，导致链接目标里的真实文件
+    被当成扫描根内的普通文件整理走。判断依据：
+    - Python 3.12+：优先 os.path.isjunction；
+    - 旧版本：stat.st_reparse_tag != 0（symlink 也有 tag，调用方需先排除
+      islink，本函数只用于"不是符号链接但仍是重解析点"的场景）。
+    非 Windows 平台上 st_reparse_tag 不存在，恒返回 False。
+    """
+    if hasattr(os.path, "isjunction") and os.path.isjunction(path):
+        return True
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return False
+    return getattr(st, "st_reparse_tag", 0) != 0
+
+
 def _find_all_project_roots(root_dir: str) -> Dict[str, str]:
     """扫描 root_dir 下所有目录，返回所有像项目根的目录。
 
@@ -163,15 +183,21 @@ def _find_all_project_roots(root_dir: str) -> Dict[str, str]:
 
     walk 时仍跳过隐藏目录（.git/.venv 等）——不需要进入它们内部来识别项目根，
     _looks_like_project_root 只看当前层的直接子项（listdir）。
+    S1-01：junction / 重解析点目录同样不进入（walk 会跟随 junction）。
     """
     roots: Dict[str, str] = {}
     try:
         for dirpath, dirnames, _filenames in os.walk(root_dir, followlinks=False):
-            # 跳过隐藏目录（.git/.venv 等）和明确的 skip 目录
-            dirnames[:] = [
-                d for d in dirnames
-                if not d.startswith(".") and d.lower() not in SKIP_DIRS
-            ]
+            # 跳过隐藏目录（.git/.venv 等）、明确的 skip 目录和 junction/重解析点
+            kept = []
+            for d in dirnames:
+                if d.startswith(".") or d.lower() in SKIP_DIRS:
+                    continue
+                full = os.path.join(dirpath, d)
+                if not os.path.islink(full) and _is_junction_or_reparse(full):
+                    continue
+                kept.append(d)
+            dirnames[:] = kept
             reason = _looks_like_project_root(dirpath)
             if reason is not None:
                 roots[dirpath] = reason
@@ -213,6 +239,8 @@ class ScanResult:
     protected_roots: Dict[str, str] = field(default_factory=dict)  # {绝对路径: 保护原因}
     protected_kinds: Dict[str, str] = field(default_factory=dict)  # {绝对路径: default/auto/manual 组合}
     protected_count: int = 0  # 被保护跳过的文件数
+    # S1-01：被跳过的 junction / 重解析点目录（绝对路径，含告知用户用的）
+    junction_dirs: List[str] = field(default_factory=list)
 
     @property
     def total_files(self) -> int:
@@ -235,6 +263,8 @@ class ScanResult:
             parts.append(f"跳过保留目录 {self.skipdir_count}")
         if self.protected_count:
             parts.append(f"项目保护 {self.protected_count}（{len(self.protected_roots)} 个根）")
+        if self.junction_dirs:
+            parts.append(f"跳过 junction/重解析点 {len(self.junction_dirs)}")
         if self.permission_errors:
             parts.append(f"权限错误 {self.permission_errors}")
         if self.empty_dirs:
@@ -313,6 +343,13 @@ def scan_directory(
             # 1. 符号链接目录
             if os.path.islink(full):
                 result.symlink_count += 1
+                dirs_to_remove.append(d)
+                continue
+            # 1b. junction / 重解析点目录（S1-01）
+            # Windows 上 islink() 对 junction 为 False，但 os.walk 仍会走进去；
+            # 整个跳过并记录路径告知用户，不整理链接目标里的真实文件。
+            if _is_junction_or_reparse(full):
+                result.junction_dirs.append(full)
                 dirs_to_remove.append(d)
                 continue
             # 2. 显式跳过的目录名（大小写不敏感）
