@@ -664,8 +664,12 @@ def _check_component(value, where: str, errors: List[str],
         errors.append(f"{where}：不能是绝对路径（当前：{value!r}）")
     if len(v) >= 2 and v[1] == ":":
         errors.append(f"{where}：不能是盘符路径（当前：{value!r}）")
-    if "\x00" in v:
-        errors.append(f"{where}：包含非法控制字符")
+    if _has_control_char(v):
+        errors.append(f"{where}：包含非法控制字符（不可见字符，无法作为目录名）")
+    if len(v) > 120:
+        errors.append(
+            f"{where}：名称过长（{len(v)} 个字符，最多 120），"
+            "保存后可能无法创建目录")
 
 
 def _check_rel_path(value, where: str, errors: List[str],
@@ -688,14 +692,17 @@ def _check_rel_path(value, where: str, errors: List[str],
         errors.append(f"{where}：不能以 ~ 开头（禁止家目录路径）")
     if len(v) >= 2 and v[1] == ":":
         errors.append(f"{where}：不能是盘符路径（当前：{value!r}）")
-    if "\x00" in v:
-        errors.append(f"{where}：包含非法控制字符")
+    if _has_control_char(v):
+        errors.append(f"{where}：包含非法控制字符（不可见字符，无法作为目录名）")
     segs = re.split(r"[/\\]", v)
     if any(not s for s in segs):
         errors.append(f"{where}：不能包含空目录段（如 // 或首尾分隔符）")
     for s in segs:
         if s in (".", ".."):
             errors.append(f"{where}：不能包含 . 或 .. 段（路径逃逸）")
+        if len(s) > 120:
+            errors.append(
+                f"{where}：目录段「{s[:20]}…」过长（{len(s)} 个字符，最多 120）")
 
 
 def validate_config(cfg: ClassificationConfig) -> List[str]:
@@ -705,6 +712,23 @@ def validate_config(cfg: ClassificationConfig) -> List[str]:
         errors.append(
             f"配置版本：仅支持 version={CONFIG_VERSION}，当前为 {cfg.version!r}")
         return errors
+
+    # S4 / planner F-14：两个不同类别名经 sanitize 后可能变成同一个目录，
+    # 必须在保存时就说清楚，而不是执行时才悄悄合并。
+    sanitize_buckets: dict = {}
+
+    def _check_sanitized(direction: str, group: str, raw, where: str) -> None:
+        if not isinstance(raw, str) or not raw.strip():
+            return
+        value = raw.strip()
+        key = (direction, group or "", sanitize_component_name(value).casefold())
+        prev = sanitize_buckets.get(key)
+        if prev is not None and prev[0] != value:
+            errors.append(
+                f"{where}：类别「{value}」与「{prev[0]}」整理后会变成"
+                f"同一个目录「{sanitize_component_name(value)}」，请改名区分")
+        else:
+            sanitize_buckets[key] = (value, where)
 
     # ---- 学期映射 ----
     seen_sem = set()
@@ -743,6 +767,7 @@ def validate_config(cfg: ClassificationConfig) -> List[str]:
         _check_component(r.source, f"{where} 目录名", errors)
         _check_component(r.category, f"{where} 类别/课程", errors,
                          allow_empty=True)
+        _check_sanitized(r.direction, f"semester:{r.semester}", r.category, where)
         if r.direction not in DIRECTIONS:
             errors.append(
                 f"{where}：方向必须是 {'/'.join(DIRECTIONS)}（当前：{r.direction!r}）")
@@ -763,6 +788,7 @@ def validate_config(cfg: ClassificationConfig) -> List[str]:
         where = f"通用目录前缀第 {i} 条"
         _check_component(r.prefix, f"{where} 目录名前缀", errors)
         _check_component(r.category, f"{where} 类别", errors)
+        _check_sanitized(r.direction, "", r.category, where)
         if r.direction not in DIRECTIONS:
             errors.append(
                 f"{where}：方向必须是 {'/'.join(DIRECTIONS)}（当前：{r.direction!r}）")
@@ -782,12 +808,15 @@ def validate_config(cfg: ClassificationConfig) -> List[str]:
             for kw in r.keywords:
                 if not isinstance(kw, str) or not kw.strip():
                     errors.append(f"{where}：关键词不能为空")
+                else:
+                    _keyword_quality_errors(kw, where, errors)
             normalized = tuple(sorted(k.strip().lower()
                                      for k in r.keywords if isinstance(k, str)))
             if normalized and normalized in seen_kw:
                 errors.append(f"{where}：关键词组合「{'/'.join(r.keywords)}」重复")
             seen_kw.add(normalized)
         _check_component(r.target, f"{where} 目标类别", errors)
+        _check_sanitized(r.direction, "", r.target, where)
         if r.direction not in DIRECTIONS:
             errors.append(
                 f"{where}：方向必须是 {'/'.join(DIRECTIONS)}（当前：{r.direction!r}）")
@@ -830,6 +859,9 @@ def validate_config(cfg: ClassificationConfig) -> List[str]:
         elif r.semester:
             errors.append(f"{where}：非课程方向的学期必须留空")
         _check_component(r.category, f"{where} 类别", errors, allow_empty=True)
+        _check_sanitized(r.direction,
+                         f"semester:{r.semester}" if r.direction == "课程" else "",
+                         r.category, where)
         if r.inner_mode not in INNER_MODE_LABELS:
             errors.append(
                 f"{where}：内部路径方式必须是 keep/replace/clear"
@@ -861,6 +893,8 @@ def validate_config(cfg: ClassificationConfig) -> List[str]:
                         errors.append(
                             f"{where}：文件名关键词不能包含路径分隔符"
                             f"（当前：{kw!r}）")
+                    else:
+                        _keyword_quality_errors(kw, where, errors)
 
     return errors
 
@@ -879,8 +913,53 @@ def config_path(root: str) -> str:
 
 
 def _norm_root(path: str) -> str:
-    """根目录规范化：abspath + realpath；不做大小写变换、不用前缀比较。"""
-    return os.path.realpath(os.path.abspath(path))
+    """根目录规范化：abspath + realpath + normcase（Windows 大小写不敏感）。"""
+    return os.path.normcase(os.path.realpath(os.path.abspath(path)))
+
+
+def sanitize_component_name(value: str) -> str:
+    """把类别/目录名转成可落盘的目录名（与 planner 的 sanitize 规则一致）。
+
+    只做字符替换与长度截断；用于保存规则时提前发现“两个类别会撞成同一个目录”。
+    """
+    text = str(value or "")
+    for ch in '<>:"/\\|?*':
+        text = text.replace(ch, "_")
+    text = "".join("_" if ord(c) < 32 or ord(c) == 127 else c for c in text)
+    text = text.rstrip(" .")
+    if not text:
+        text = "_"
+    if len(text) > 120:
+        text = text[:120].rstrip(" .") or "_"
+    return text
+
+
+def _has_control_char(value: str) -> bool:
+    return any(ord(c) < 32 or ord(c) == 127 for c in value)
+
+
+def _keyword_quality_errors(keyword, where: str, errors: List[str]) -> None:
+    """关键词过宽校验（S4 / planner F-21）。
+
+    "."、"("、"-" 这类纯符号关键词会命中几乎全部文件；单个 ASCII 字符
+    同样过宽。中文单字允许（如「数」「英」），但仍要求至少有一个
+    文字/数字字符。
+    """
+    if not isinstance(keyword, str):
+        return
+    kw = keyword.strip()
+    if not kw:
+        return
+    if not any(ch.isalnum() for ch in kw):
+        errors.append(
+            f"{where}：关键词「{keyword}」只包含符号，会命中几乎所有文件，"
+            "请换成更具体的词组")
+        return
+    if len(kw) == 1 and kw.isascii():
+        errors.append(
+            f"{where}：关键词「{keyword}」只有一个字符，范围过宽，"
+            "请至少写两个字符")
+
 
 
 def load_config(root: str) -> Tuple[ClassificationConfig, str]:
@@ -1548,16 +1627,25 @@ def _classify_context_impl(rel_path: str, compiled: CompiledConfig,
 
 
 def _circ_to_jizu(rel_path: str, match: ContextMatch) -> ContextMatch:
-    """Logisim 电路文件直接归计算机组成原理。
+    """Logisim 电路文件归计算机组成原理——仅在没有更具体的目录规则时。
 
-    已经由「计组」目录认出的文件保持原锚点，子目录不会被打平。
-    其余 .circ 使用路径里的学期；路径里没有学期时用大二上。
+    S4 / planner F-20：已经由学期内目录、顶层方向、通用前缀或关键词
+    认出来的文件保持原分类；只有完全兜底（rule_key == "fallback"）时才
+    改判计组。路径里已有学期就沿用那个学期，没有学期才用「大二上」。
     """
     filename = os.path.basename(rel_path)
     if not filename.lower().endswith(".circ"):
         return match
-    if (match.rule_key.startswith("semester_dir:")
-            and match.category == "计算机组成原理"):
+    if match.category == "计算机组成原理":
+        return match
+    # 只有“配置里真正登记的规则”才算更具体；generic_fallback /
+    # semester_dir_unmatched 只是目录锚定兜底，.circ 仍应归计组。
+    fallback_keys = (
+        "fallback",
+    )
+    if (match.rule_key not in fallback_keys
+            and not match.rule_key.startswith("generic_fallback:")
+            and not match.rule_key.startswith("semester_dir_unmatched:")):
         return match
     parent = os.path.dirname(rel_path)
     if parent in ("", "."):

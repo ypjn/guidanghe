@@ -15,6 +15,7 @@ import importlib.util
 import os
 import sys
 import threading
+import time
 
 # 位图。矢量图、动图和图标不读。
 OCR_EXTENSIONS = {
@@ -30,11 +31,21 @@ _WINDOWS_MODULES = (
     "winrt.windows.globalization",
 )
 
+# S4 / misc F-30：识别缓存必须有上限，避免整个会话累积所有图片文字。
+CACHE_LIMIT = 512
+# S4 / misc F-34：临时失败只在冷却期内跳过，过期后允许重试。
+ENGINE_RETRY_SECONDS = 300
+
 _cache: dict[tuple, str] = {}
+_cache_order: list[tuple] = []
 _cache_lock = threading.Lock()
-_unavailable: set[str] = set()
+_unavailable: dict[str, float] = {}
 _rapid_engine = None
 _rapid_lock = threading.Lock()
+
+NO_ENGINE_MESSAGE = (
+    "没有可用的文字识别组件。请确认安装的是完整版归档盒；"
+    "本程序不会要求你在命令行安装依赖。")
 
 
 class OcrError(RuntimeError):
@@ -114,6 +125,25 @@ def model_cache_dir() -> str:
     return path
 
 
+def _engine_skippable(name: str) -> bool:
+    """该引擎是否处于失败冷却期内（过期后允许重试）。"""
+    until = _unavailable.get(name, 0.0)
+    if until <= time.time():
+        _unavailable.pop(name, None)
+        return False
+    return True
+
+
+def _cache_put(key: tuple, value: str) -> None:
+    with _cache_lock:
+        if key not in _cache:
+            _cache_order.append(key)
+        _cache[key] = value
+        while len(_cache_order) > CACHE_LIMIT:
+            old = _cache_order.pop(0)
+            _cache.pop(old, None)
+
+
 def recognize_image(path: str, engine: str | None = None) -> str:
     """返回图片中的文字。没有文字时返回空字符串。失败抛出 OcrError。
 
@@ -125,7 +155,7 @@ def recognize_image(path: str, engine: str | None = None) -> str:
         raise OcrError(f"未知识别组件：{engine}")
     failures: list[str] = []
     for name in order:
-        if engine is None and name in _unavailable:
+        if engine is None and _engine_skippable(name):
             continue
         try:
             if name == "vision":
@@ -137,9 +167,10 @@ def recognize_image(path: str, engine: str | None = None) -> str:
             return text[:MAX_CHARS]
         except EngineUnavailable as exc:
             if engine is None:
-                _unavailable.add(name)
+                # 冷却后再试，不把整个会话永久标成不可用
+                _unavailable[name] = time.time() + ENGINE_RETRY_SECONDS
             failures.append(str(exc))
-    detail = "没有可用的文字识别组件。请安装依赖：pip install -r requirements.txt"
+    detail = NO_ENGINE_MESSAGE
     if failures:
         detail += "\n" + "\n".join(failures)
     raise OcrError(detail)
@@ -287,8 +318,7 @@ def collect_image_text(files, cancel_event=None, progress_cb=None):
     if not candidates:
         return texts, errors
     if not ocr_supported():
-        raise OcrError(
-            "没有可用的文字识别组件。请安装依赖：pip install -r requirements.txt")
+        raise OcrError(NO_ENGINE_MESSAGE)
 
     total = len(candidates)
     for index, entry in enumerate(candidates, start=1):
@@ -305,7 +335,6 @@ def collect_image_text(files, cancel_event=None, progress_cb=None):
             except OcrError as exc:
                 errors[entry.rel_path] = str(exc)
                 continue
-            with _cache_lock:
-                _cache[key] = cached
+            _cache_put(key, cached)
         texts[entry.rel_path] = cached
     return texts, errors

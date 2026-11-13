@@ -10,7 +10,9 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional, Tuple
+
+from utils import win_long_path, strip_long_prefix
 
 
 # 扫描时跳过的目录名（全小写匹配 + 显式保留）
@@ -39,9 +41,19 @@ SKIP_DIRS = {
 
 # 扫描时跳过的文件名（精确匹配，大小写不敏感）
 SKIP_FILENAMES = {
-    "icon", ".ds_store", "thumbs.db",
+    "icon", ".ds_store", "thumbs.db", "desktop.ini",
     ".gitignore", ".gitmodules", ".env.example", ".clang-format", ".editorconfig",
 }
+
+# Windows 隐藏/系统目录：不进入整理计划（S3 / filesafe F-13）
+WINDOWS_SYSTEM_DIRS = {
+    "$recycle.bin", "system volume information", "recycler", "$windows.~bt",
+    "$windows.~ws", "recovery",
+}
+
+# Windows 文件属性位
+FILE_ATTRIBUTE_HIDDEN = 0x2
+FILE_ATTRIBUTE_SYSTEM = 0x4
 
 # 文件扩展名 → 类型 映射（小写，key 带点）
 EXT_TYPE_MAP = {
@@ -124,7 +136,7 @@ def _looks_like_project_root(dirpath: str) -> Optional[str]:
     返回：命中原因（字符串）；None 表示不是项目根。
     """
     try:
-        entries = set(os.listdir(dirpath))
+        entries = set(os.listdir(win_long_path(dirpath)))
     except OSError:
         return None
     lower = {e.lower(): e for e in entries}
@@ -170,7 +182,8 @@ def _is_junction_or_reparse(path: str) -> bool:
     return getattr(st, "st_reparse_tag", 0) != 0
 
 
-def _find_all_project_roots(root_dir: str) -> Dict[str, str]:
+def _find_all_project_roots(root_dir: str,
+                            on_error=None) -> Dict[str, str]:
     """扫描 root_dir 下所有目录，返回所有像项目根的目录。
 
     不再做"最深优先"互斥——父目录有 .git、子目录有 package.json，两个都保护。
@@ -182,7 +195,8 @@ def _find_all_project_roots(root_dir: str) -> Dict[str, str]:
     """
     roots: Dict[str, str] = {}
     try:
-        for dirpath, dirnames, _filenames in os.walk(root_dir, followlinks=False):
+        for dirpath, dirnames, _filenames in os.walk(
+                win_long_path(root_dir), followlinks=False, onerror=on_error):
             kept = []
             for name in dirnames:
                 if name.startswith(".") or name.lower() in SKIP_DIRS:
@@ -194,7 +208,7 @@ def _find_all_project_roots(root_dir: str) -> Dict[str, str]:
             dirnames[:] = kept
             reason = _looks_like_project_root(dirpath)
             if reason is not None:
-                roots[dirpath] = reason
+                roots[strip_long_prefix(dirpath)] = reason
     except OSError:
         return roots
     return roots
@@ -234,6 +248,13 @@ class ScanResult:
     protected_kinds: Dict[str, str] = field(default_factory=dict)  # {绝对路径: default/auto/manual 组合}
     protected_count: int = 0  # 被保护跳过的文件数
     junction_dirs: List[str] = field(default_factory=list)
+    # S3 / filesafe F-12：跳过目录的完整路径与原因（不能只给一个数字）
+    skipped_dirs: List[Tuple[str, str]] = field(default_factory=list)
+    # S3 / filesafe F-16：os.walk 权限/路径错误（onerror）
+    walk_errors: List[str] = field(default_factory=list)
+
+    def add_skipped_dir(self, path: str, reason: str) -> None:
+        self.skipped_dirs.append((strip_long_prefix(path), reason))
 
     @property
     def total_files(self) -> int:
@@ -264,6 +285,14 @@ class ScanResult:
             parts.append(f"空目录 {self.empty_dirs}")
         return "，".join(parts)
 
+    @property
+    def skipped_paths_text(self, limit: int = 20) -> str:
+        """跳过目录/文件的路径清单（供界面与日志展示）。"""
+        lines = [f"{p}（{reason}）" for p, reason in self.skipped_dirs[:limit]]
+        if len(self.skipped_dirs) > limit:
+            lines.append(f"… 另有 {len(self.skipped_dirs) - limit} 个跳过目录未列出")
+        return "\n".join(lines)
+
 
 def classify_type(filename: str) -> str:
     """根据文件名扩展名返回分类类型，大小写不敏感。"""
@@ -289,6 +318,25 @@ def format_size(size_bytes: int) -> str:
         return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
 
 
+def _file_attributes(path: str) -> int:
+    """返回 Windows 文件属性位；其他平台或读取失败返回 0。"""
+    try:
+        st = os.lstat(win_long_path(path))
+    except OSError:
+        return 0
+    return int(getattr(st, "st_file_attributes", 0) or 0)
+
+
+def _walk_error(result: "ScanResult", err: OSError) -> None:
+    """os.walk 的 onerror：权限/路径错误进入扫描结果，不静默少扫。"""
+    path = getattr(err, "filename", "") or ""
+    msg = f"扫描目录失败（{path}）：{getattr(err, 'strerror', '') or err}"
+    result.walk_errors.append(msg)
+    result.errors.append(msg)
+    result.permission_errors += 1
+    result.add_skipped_dir(path or "（未知目录）", "无法读取")
+
+
 def _prune_dirnames(result: "ScanResult", dirpath: str, dirnames: List[str]) -> None:
     """按扫描规则就地去掉不应进入的子目录。"""
     kept = []
@@ -296,18 +344,30 @@ def _prune_dirnames(result: "ScanResult", dirpath: str, dirnames: List[str]) -> 
         full = os.path.join(dirpath, name)
         if os.path.islink(full):
             result.symlink_count += 1
+            result.add_skipped_dir(full, "符号链接")
             continue
         if _is_junction_or_reparse(full):
-            result.junction_dirs.append(full)
+            result.junction_dirs.append(strip_long_prefix(full))
+            result.add_skipped_dir(full, "junction / 重解析点（目录联接）")
             continue
         if name.lower() in SKIP_DIRS:
             if name.lower() == ".git":
                 result.git_count += 1
             else:
                 result.skipdir_count += 1
+            result.add_skipped_dir(full, "保留目录名")
+            continue
+        if name.lower() in WINDOWS_SYSTEM_DIRS:
+            result.skipdir_count += 1
+            result.add_skipped_dir(full, "Windows 隐藏/系统目录")
+            continue
+        if _file_attributes(full) & FILE_ATTRIBUTE_SYSTEM:
+            result.skipdir_count += 1
+            result.add_skipped_dir(full, "Windows 系统目录（系统属性）")
             continue
         if name.startswith("."):
             result.hidden_count += 1
+            result.add_skipped_dir(full, "隐藏目录（点号开头）")
             continue
         kept.append(name)
     dirnames[:] = kept
@@ -321,7 +381,7 @@ def _consider_file(result: "ScanResult", root: str, full_path: str) -> None:
     if os.path.islink(full_path):
         result.symlink_count += 1
         result.skipped.append(FileEntry(
-            abs_path=full_path, rel_path="", filename=fname,
+            abs_path=strip_long_prefix(full_path), rel_path="", filename=fname,
             file_type="", size=0, size_display="",
             skipped_reason="符号链接",
         ))
@@ -331,25 +391,33 @@ def _consider_file(result: "ScanResult", root: str, full_path: str) -> None:
         return
     if fname.lower() in SKIP_FILENAMES:
         result.skipdir_count += 1
+        result.add_skipped_dir(full_path, "Windows/系统保留文件名")
         return
-    if not os.access(full_path, os.R_OK):
+    attrs = _file_attributes(full_path)
+    if attrs & FILE_ATTRIBUTE_SYSTEM:
+        result.skipdir_count += 1
+        result.add_skipped_dir(full_path, "Windows 系统文件")
+        return
+    if not os.access(win_long_path(full_path), os.R_OK):
         result.permission_errors += 1
         result.skipped.append(FileEntry(
-            abs_path=full_path, rel_path="", filename=fname,
+            abs_path=strip_long_prefix(full_path), rel_path="", filename=fname,
             file_type="", size=0, size_display="",
             skipped_reason="无读取权限",
         ))
         return
     try:
-        stat = os.stat(full_path, follow_symlinks=False)
+        stat = os.stat(win_long_path(full_path), follow_symlinks=False)
     except OSError as e:
-        result.errors.append(f"stat 失败 {full_path}: {e}")
+        msg = f"stat 失败 {strip_long_prefix(full_path)}: {e}"
+        result.errors.append(msg)
+        result.permission_errors += 1
         return
     if not st_mod.S_ISREG(stat.st_mode):
         return
     result.files.append(FileEntry(
-        abs_path=full_path,
-        rel_path=os.path.relpath(full_path, root),
+        abs_path=strip_long_prefix(full_path),
+        rel_path=os.path.relpath(full_path, win_long_path(root)),
         filename=fname,
         file_type=classify_type(fname),
         size=stat.st_size,
@@ -360,7 +428,12 @@ def _consider_file(result: "ScanResult", root: str, full_path: str) -> None:
 
 def _apply_protection(result: "ScanResult", root: str,
                       protect_dirs, detected: Dict[str, str]) -> None:
-    """把显式保护和自动识别的项目目录从可整理文件里剔除。"""
+    """把显式保护和自动识别的项目目录从可整理文件里剔除。
+
+    S3 / filesafe F-15：Windows 路径大小写不敏感，所有"是否在根内"的
+    比较统一先 normcase，避免合法子目录被误报为"不在根内"。
+    """
+    root_key = os.path.normcase(os.path.abspath(root))
     explicit: Dict[str, tuple] = {}
     for p in protect_dirs or []:
         if not p:
@@ -376,7 +449,9 @@ def _apply_protection(result: "ScanResult", root: str,
         if not path_part:
             continue
         ap = os.path.abspath(path_part)
-        if os.path.isdir(ap) and (ap == root or ap.startswith(root + os.sep)):
+        ap_key = os.path.normcase(ap)
+        if os.path.isdir(win_long_path(ap)) and (
+                ap_key == root_key or ap_key.startswith(root_key + os.sep)):
             explicit[ap] = (kind, label)
 
     merged: Dict[str, dict] = {}
@@ -400,11 +475,13 @@ def _apply_protection(result: "ScanResult", root: str,
     }
     if not merged:
         return
-    protected_abs_set = set(merged.keys())
+    protected_abs_set = {os.path.normcase(os.path.abspath(p)): p
+                         for p in merged.keys()}
     new_files: List[FileEntry] = []
     for entry in result.files:
-        hit = [p for p in protected_abs_set
-               if entry.abs_path == p or entry.abs_path.startswith(p + os.sep)]
+        entry_key = os.path.normcase(os.path.abspath(entry.abs_path))
+        hit = [p for key, p in protected_abs_set.items()
+               if entry_key == key or entry_key.startswith(key + os.sep)]
         if not hit:
             new_files.append(entry)
             continue
@@ -420,6 +497,7 @@ def scan_directory(
     root_path: str,
     protect_dirs: Optional[List[str]] = None,
     detect_project_roots: bool = True,
+    cancel_event=None,
 ) -> ScanResult:
     """
     递归扫描目录，返回普通文件列表。
@@ -439,21 +517,29 @@ def scan_directory(
     result = ScanResult(root=root)
     protect_dirs = protect_dirs or []
 
-    if not os.path.exists(root):
+    if not os.path.exists(win_long_path(root)):
         result.errors.append(f"路径不存在: {root}")
         return result
-    if not os.path.isdir(root):
+    if not os.path.isdir(win_long_path(root)):
         result.errors.append(f"路径不是目录: {root}")
         return result
-    if not os.access(root, os.R_OK):
+    if not os.access(win_long_path(root), os.R_OK):
         result.errors.append(f"无读取权限: {root}")
         result.permission_errors += 1
         return result
 
     # 使用 os.walk；对 skipdirs 设置 topdown 过滤
-    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+    # S3 / filesafe F-16/F-22：onerror 记录权限错误；walk 根使用 \\?\ 长路径前缀。
+    walk_root = win_long_path(root)
+    for dirpath, dirnames, filenames in os.walk(
+            walk_root, followlinks=False,
+            onerror=lambda e: _walk_error(result, e)):
+        # S3 / guia F-06：扫描可协作取消
+        if cancel_event is not None and cancel_event.is_set():
+            result.errors.append("扫描已取消（结果不完整）")
+            break
         # 计算当前路径相对于 root 的层级，以决定跳过规则
-        rel_dir = os.path.relpath(dirpath, root)
+        rel_dir = os.path.relpath(dirpath, walk_root)
         depth = 0 if rel_dir == "." else rel_dir.count(os.sep) + 1
 
         _prune_dirnames(result, dirpath, dirnames)
@@ -464,7 +550,8 @@ def scan_directory(
 
     detected: Dict[str, str] = {}
     if detect_project_roots:
-        detected = _find_all_project_roots(root)
+        detected = _find_all_project_roots(
+            root, on_error=lambda e: _walk_error(result, e))
     _apply_protection(result, root, protect_dirs, detected)
     result.files.sort(key=lambda e: e.rel_path.lower())
     result.skipped.sort(key=lambda e: e.abs_path.lower())
@@ -472,15 +559,17 @@ def scan_directory(
 
 
 def _ancestors_within(path: str, root: str) -> List[str]:
-    """从 path 的所在目录向上，直到 root（含）。"""
+    """从 path 的所在目录向上，直到 root（含）。比较统一 normcase。"""
     root = os.path.abspath(root)
-    current = path if os.path.isdir(path) else os.path.dirname(path)
+    root_key = os.path.normcase(root)
+    current = path if os.path.isdir(win_long_path(path)) else os.path.dirname(path)
     current = os.path.abspath(current)
     found = []
     while True:
-        if current == root or current.startswith(root + os.sep):
+        key = os.path.normcase(current)
+        if key == root_key or key.startswith(root_key + os.sep):
             found.append(current)
-        if current == root:
+        if key == root_key:
             break
         parent = os.path.dirname(current)
         if parent == current:
@@ -494,6 +583,7 @@ def scan_paths(
     paths,
     protect_dirs: Optional[List[str]] = None,
     detect_project_roots: bool = True,
+    cancel_event=None,
 ) -> ScanResult:
     """只读取给定的文件或目录，不遍历整理空间里的其他内容。
 
@@ -508,19 +598,30 @@ def scan_paths(
         return result
 
     checked_dirs = set()
+    root_key = os.path.normcase(root)
+
+    def _within_root(p: str) -> bool:
+        key = os.path.normcase(os.path.abspath(p))
+        return key == root_key or key.startswith(root_key + os.sep)
 
     def note_dir(directory: str):
-        directory = os.path.abspath(directory)
+        directory = strip_long_prefix(os.path.abspath(directory))
         if directory in checked_dirs:
             return
-        if directory == root or directory.startswith(root + os.sep):
+        if _within_root(directory):
             checked_dirs.add(directory)
 
     def walk_dir(start: str):
         if not os.path.islink(start) and _is_junction_or_reparse(start):
             result.junction_dirs.append(os.path.abspath(start))
+            result.add_skipped_dir(start, "junction / 重解析点（目录联接）")
             return
-        for dirpath, dirnames, filenames in os.walk(start, followlinks=False):
+        for dirpath, dirnames, filenames in os.walk(
+                win_long_path(start), followlinks=False,
+                onerror=lambda e: _walk_error(result, e)):
+            if cancel_event is not None and cancel_event.is_set():
+                result.errors.append("扫描已取消（结果不完整）")
+                return
             note_dir(dirpath)
             _prune_dirnames(result, dirpath, dirnames)
             for fname in filenames:
@@ -534,13 +635,13 @@ def scan_paths(
         if not raw:
             continue
         path = os.path.abspath(os.path.expanduser(raw))
-        if not os.path.exists(path):
+        if not os.path.exists(win_long_path(path)):
             result.errors.append(f"路径不存在: {path}")
             continue
-        if not (path == root or path.startswith(root + os.sep)):
+        if not _within_root(path):
             result.errors.append(f"路径不在整理空间内: {path}")
             continue
-        if os.path.isdir(path):
+        if os.path.isdir(win_long_path(path)):
             walk_dir(path)
         else:
             for directory in _ancestors_within(path, root):

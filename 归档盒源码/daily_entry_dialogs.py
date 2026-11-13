@@ -75,7 +75,14 @@ class RecentSpacesDialog(QDialog):
         lay.addWidget(bb)
 
     def refresh(self):
-        self._records = recent_spaces.list_spaces()
+        try:
+            self._records = recent_spaces.list_spaces()
+        except recent_spaces.RecentSpacesError as exc:
+            self._records = []
+            self.table.setRowCount(0)
+            QMessageBox.warning(self, "最近整理空间", str(exc))
+            self._update_buttons()
+            return
         self.table.setRowCount(len(self._records))
         for r, rec in enumerate(self._records):
             self.table.setItem(r, 0, QTableWidgetItem(rec.name))
@@ -124,7 +131,11 @@ class RecentSpacesDialog(QDialog):
         rec = self._selected()
         if rec is None:
             return
-        recent_spaces.set_pinned(rec.path, not rec.pinned)
+        try:
+            recent_spaces.set_pinned(rec.path, not rec.pinned)
+        except recent_spaces.RecentSpacesError as exc:
+            QMessageBox.warning(self, "最近整理空间", str(exc))
+            return
         self.refresh()
 
     def on_remove(self):
@@ -137,7 +148,11 @@ class RecentSpacesDialog(QDialog):
                 "只删除记录，不会删除真实目录、配置或历史。",
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
             return
-        recent_spaces.remove(rec.path)
+        try:
+            recent_spaces.remove(rec.path)
+        except recent_spaces.RecentSpacesError as exc:
+            QMessageBox.warning(self, "最近整理空间", str(exc))
+            return
         self.refresh()
 
 

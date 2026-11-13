@@ -250,9 +250,11 @@ def assemble_report(root: str, entries: List[DupEntry], *,
         e.group_size = 0
 
     # ---- 内容重复：已核对且 SHA 一致 ----
+    # S4 / misc F-24：0 字节文件不算内容重复（空文件天然指纹相同，
+    # 会把报告数字全部占满）。
     by_sha = {}
     for e in entries:
-        if e.status == STATUS_VERIFIED and e.sha256:
+        if e.status == STATUS_VERIFIED and e.sha256 and e.size > 0:
             by_sha.setdefault(e.sha256, []).append(e)
     content_groups = []
     for digest, group in sorted(by_sha.items(), key=lambda kv: (-len(kv[1]), kv[0])):

@@ -85,7 +85,8 @@ class ConfigChoiceDialog(QDialog):
         mode_row = QHBoxLayout()
         self.rb_replace = QRadioButton("替换当前推荐模式配置")
         self.rb_merge = QRadioButton("合并到当前配置（现有优先）")
-        self.rb_replace.setChecked(True)
+        # S3 / misc F-13：破坏性选项不再预选，默认合并
+        self.rb_merge.setChecked(True)
         self.bg = QButtonGroup(self)
         self.bg.addButton(self.rb_replace, 0)
         self.bg.addButton(self.rb_merge, 1)
@@ -301,11 +302,13 @@ class ApplyPreviewDialog(QDialog):
     # ---- 影响计算 ----
     def _start_impact(self):
         if self.scan_result is None:
+            # S3 / misc F-26：影响没算出来时不能确认应用
             self.status.setText(
-                "未扫描：暂不能计算文件影响；仍可查看上面的配置差异并应用。")
+                "未扫描：无法计算文件影响，暂不能确认应用。"
+                "请取消后先扫描当前目录，再导入并查看影响。")
             self.impact_view.setPlainText(
                 "（当前目录尚未扫描或扫描结果已失效，应用前无法给出命中与目标变化。）")
-            self.bb.button(QDialogButtonBox.Ok).setEnabled(True)
+            self.bb.button(QDialogButtonBox.Ok).setEnabled(False)
             return
         try:
             self._seq += 1
@@ -316,8 +319,8 @@ class ApplyPreviewDialog(QDialog):
                                    ocr_texts=self.ocr_texts,
                                    ocr_errors=self.ocr_errors)
         except Exception as e:
-            self.status.setText(f"影响预览无法启动：{e}")
-            self.bb.button(QDialogButtonBox.Ok).setEnabled(True)
+            self.status.setText(f"影响预览无法启动，暂不能确认应用：{e}")
+            self.bb.button(QDialogButtonBox.Ok).setEnabled(False)
             return
         self._worker = worker
         self.bb.button(QDialogButtonBox.Ok).setEnabled(False)
@@ -367,9 +370,9 @@ class ApplyPreviewDialog(QDialog):
     def _on_failed(self, seq, root, err):
         if not self._seq_ok(seq, root):
             return
-        self.status.setText("影响计算失败；可以取消后重试。")
+        self.status.setText("影响计算失败；暂不能确认应用，可以取消后重试。")
         self.impact_view.setPlainText(f"⚠ {err}")
-        self.bb.button(QDialogButtonBox.Ok).setEnabled(True)
+        self.bb.button(QDialogButtonBox.Ok).setEnabled(False)
 
     def _on_cancelled(self, seq, root):
         if not self._seq_ok(seq, root):
@@ -430,9 +433,9 @@ class SchemeCenterDialog(QDialog):
         top.setStyleSheet("padding:6px;background:#ECEFF1;border-radius:4px;")
         lay.addWidget(top)
 
-        self.table = QTableWidget(0, 5)
+        self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
-            ["方案名称", "说明", "规则数量", "更新时间", "类型"])
+            ["方案名称", "说明", "规则数量", "更新时间", "类型", "方案标识"])
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -442,6 +445,7 @@ class SchemeCenterDialog(QDialog):
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeToContents)
         self.table.itemSelectionChanged.connect(self._update_buttons)
         lay.addWidget(self.table, 1)
 
@@ -514,7 +518,13 @@ class SchemeCenterDialog(QDialog):
             kind = "内置（只读）" if rec.builtin else (
                 "不可用" if rec.error else "自定义")
             self.table.setItem(r, 4, QTableWidgetItem(kind))
+            # S3 / misc F-12：同名方案靠标识/路径区分
+            id_item = QTableWidgetItem(rec.scheme_id or "—")
+            id_item.setToolTip(rec.path or rec.scheme_id)
+            self.table.setItem(r, 5, id_item)
             self.table.item(r, 0).setData(Qt.UserRole, rec.scheme_id)
+            if rec.path:
+                self.table.item(r, 0).setToolTip(rec.path)
         self._update_buttons()
 
     def _selected(self):
@@ -693,6 +703,7 @@ class SchemeCenterDialog(QDialog):
             return
         self.current_config = clone_config(cfg)
         self.refresh_list()
+        self.backup_label.setText(backup_summary(self.root))
         QMessageBox.information(
             self, "应用方案",
             "方案已应用到当前目录。旧预览已失效，请点击「重新生成预览」"
@@ -716,4 +727,5 @@ class SchemeCenterDialog(QDialog):
             self._show_error(f"恢复失败：{e}")
             return
         self.refresh_list()
+        self.backup_label.setText(backup_summary(self.root))
         QMessageBox.information(self, "恢复配置", message)

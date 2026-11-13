@@ -308,25 +308,25 @@ def main():
         _, src_default = load_config(root)
         default_ok = src_default == "default"
 
-        # 损坏备份不能被启用
+        # 损坏备份会被跳过：改用上一份可用备份，损坏文件保留（S2-35）
         bdir = CT.backup_dir(root)
         os.makedirs(bdir, exist_ok=True)
         corrupt = os.path.join(bdir, "config-backup-99999999-999999-000000.json")
         with open(corrupt, "w", encoding="utf-8") as f:
             f.write('{"state":"corrupt","raw":"{bad","error":"坏"}')
-        before = open(CFG.config_path(root), "rb").read() if \
-            os.path.exists(CFG.config_path(root)) else b""
-        refused = False
+        skipped_invalid = False
         try:
-            CT.restore_latest_backup(root)
-        except CFG.ClassificationConfigError:
-            refused = True
-        after = open(CFG.config_path(root), "rb").read() if \
-            os.path.exists(CFG.config_path(root)) else b""
-        ok = restored_ok and default_ok and refused and before == after
-        rec("S05", "恢复上一次配置：自定义/内置默认可恢复，损坏备份不可启用", ok,
+            _state, restore_msg = CT.restore_latest_backup(root)
+            skipped_invalid = any(
+                word in restore_msg for word in ("跳过", "损坏", "无效"))
+        except (CFG.ClassificationConfigError, TypeError, ValueError):
+            restore_msg = ""
+        corrupt_kept = os.path.exists(corrupt)
+        ok = (restored_ok and default_ok and skipped_invalid and corrupt_kept)
+        rec("S05", "恢复上一次配置：自定义/内置默认可恢复，损坏备份被跳过且保留", ok,
             f"恢复自定义={restored_ok}；恢复默认={default_ok}；"
-            f"损坏备份拒绝={refused}；配置字节未变={before == after}\n提示={msg}")
+            f"损坏备份已跳过={skipped_invalid}；损坏文件保留={corrupt_kept}\n"
+            f"提示={restore_msg or msg}")
         w.close()
         pump(app)
     except Exception as e:

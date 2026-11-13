@@ -20,7 +20,7 @@ from classification_config import (
     INNER_KEEP, INNER_CLEAR,
     default_config, DEFAULT_SEMESTER_MAP, DEFAULT_TOP_DIRECTION,
     DEFAULT_SEMESTER_DIRS, DEFAULT_KEYWORD_TO_COURSE, DEFAULT_GENERIC_DIR,
-    PENDING_DIRECTION,
+    PENDING_DIRECTION, sanitize_component_name,
 )
 
 
@@ -132,7 +132,7 @@ class PlanItem:
 
     @property
     def target_display(self) -> str:
-        return f"{TARGET_ROOT}{os.sep}{self.target_dir_rel.replace('_已整理'+os.sep, '')}{os.sep}{self.target_filename}"
+        return os.path.join(self.target_dir_rel, self.target_filename)
 
 
 # ======================== 固定计划 ========================
@@ -212,16 +212,8 @@ def _match_course(filename: str, rules: List[CourseRule],
 
 
 def _sanitize_component(name: str) -> str:
-    """
-    清理目录/文件名中的非法字符（跨平台）。
-    macOS 对 : 和 / 特殊敏感；Windows 对 <>:"/\\|?* 敏感。
-    """
-    # 去除路径分隔符和常见非法字符
-    for ch in '<>:"/\\|?*\x00':
-        name = name.replace(ch, "_")
-    # 去除首尾空白和点（Windows 限制）
-    name = name.strip().strip(".")
-    return name or "_"
+    """清理目录/文件名中的非法字符（跨平台，与配置校验保持同一规则）。"""
+    return sanitize_component_name(name)
 
 
 def _build_target_dir(mode: str, course: str, file_type: str) -> str:
@@ -230,9 +222,10 @@ def _build_target_dir(mode: str, course: str, file_type: str) -> str:
     固定以 TARGET_ROOT = "_已整理" 开头。
     """
     if mode == MODE_BY_TYPE:
-        return f"{TARGET_ROOT}/{_sanitize_component(file_type)}"
+        return f"{TARGET_ROOT}/{_sanitize_component(file_type)}".replace("/", os.sep)
     elif mode == MODE_BY_COURSE_THEN_TYPE:
-        return f"{TARGET_ROOT}/{_sanitize_component(course)}/{_sanitize_component(file_type)}"
+        return (f"{TARGET_ROOT}/{_sanitize_component(course)}/"
+                f"{_sanitize_component(file_type)}").replace("/", os.sep)
     else:
         raise ValueError(f"未知模式: {mode}")
 
@@ -628,6 +621,11 @@ def classify_entries(
                 inner_path = match.fixed_inner
             elif anchor_index >= 0 and anchor_index + 1 < len(parts) - 1:
                 inner_path = os.sep.join(parts[anchor_index + 1:-1])
+            elif (anchor_index < 0 and rule_key == "fallback"
+                  and len(parts) >= 3):
+                # S4 / planner F-13：未登记的顶层目录不要把整棵子树压平。
+                # 类别已经用顶层目录名，保留其内部的相对路径。
+                inner_path = os.sep.join(parts[1:-1])
             else:
                 inner_path = ""
 
@@ -666,7 +664,11 @@ def classify_entries(
         if mode == MODE_BY_DIRECTION_SEMESTER:
             target_dir = _build_target_dir_v2(direction, semester, category, ftype)
             if inner_path:
-                target_dir = os.path.join(target_dir, inner_path)
+                # S4 / planner F-05：内部路径逐段 sanitize，非法字符不再把整批拖垮
+                segs = [_sanitize_component(p)
+                        for p in inner_path.replace("\\", "/").split("/") if p]
+                if segs:
+                    target_dir = os.path.join(target_dir, *segs)
         else:
             target_dir = _build_target_dir(mode, course, ftype)
 
@@ -966,6 +968,8 @@ def _build_target_dir_v2(
     cat = s(category) if category else ""
 
     if direction == "课程":
+        # S4 / planner F-15：类别为空时用「未分类课程」兜底，绝不出现 //
+        cat = cat or s(DEFAULT_UNCLASSIFIED)
         base = f"{TARGET_ROOT}/{s('课程')}/{s(semester or '未识别学期')}/{cat}/{s(file_type)}"
     elif direction == "竞赛":
         base = f"{TARGET_ROOT}/{s('竞赛')}/{cat}" if cat else f"{TARGET_ROOT}/{s('竞赛')}"
@@ -977,4 +981,5 @@ def _build_target_dir_v2(
         # 待定 — category 为空时直接到 _已整理/待定/，给顶层散落文件留位置
         base = f"{TARGET_ROOT}/{s('待定')}/{cat}" if cat else f"{TARGET_ROOT}/{s('待定')}"
 
-    return base
+    # S4 / planner F-25：目标路径统一使用一种分隔符
+    return base.replace("/", os.sep)

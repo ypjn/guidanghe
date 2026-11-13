@@ -212,8 +212,12 @@ class DuplicateDialog(QDialog):
     def show_cancelled(self):
         self._running = False
         self.progress.setVisible(False)
-        self.progress_label.setText("核对已取消（没有生成结论）")
-        self._set_actions_enabled(False)
+        self.progress_label.setText("核对已取消（没有生成新结论）")
+        # S4 / misc F-35：取消不应把上一份报告的导出一起禁用
+        has_report = self.report is not None
+        self._set_actions_enabled(has_report)
+        if has_report:
+            self.btn_recheck.setEnabled(True)
 
     def reject(self):
         if self._running and self.cancel_callback is not None:
@@ -233,6 +237,16 @@ class DuplicateDialog(QDialog):
     def _populate(self):
         self.tree.clear()
         if self.report is None:
+            return
+        if not self.report.groups:
+            # S4 / misc F-35/F-39：空状态说清楚，并写明程序不会删除文件
+            empty = QTreeWidgetItem([
+                "没有发现重复文件", "", "", "", "",
+                f"已核对 {self.report.total_files} 个文件；"
+                "按大小与内容指纹都没有发现重复。"
+                "本窗口只查看与核对，程序不会删除、合并或移动任何文件。"])
+            empty.setToolTip(0, empty.text(5))
+            self.tree.addTopLevelItem(empty)
             return
         for group in self.report.groups:
             top = QTreeWidgetItem([

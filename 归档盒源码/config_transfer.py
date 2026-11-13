@@ -63,11 +63,17 @@ def _safe_rel(path: str) -> str:
 
 
 def _atomic_write_text(path: str, text: str) -> None:
+    """原子写文本；任何目录/权限错误都转成 ClassificationConfigError。
+
+    S3 / misc F-08：%APPDATA% 不可写时不能让原始 FileNotFoundError 冒到
+    Qt 槽里（对话框只捕 ClassificationConfigError）。
+    """
     target_dir = os.path.dirname(os.path.abspath(path))
-    os.makedirs(target_dir, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(prefix=".archive-box.", suffix=".tmp",
-                               dir=target_dir)
+    tmp = None
     try:
+        os.makedirs(target_dir, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=".archive-box.", suffix=".tmp",
+                                   dir=target_dir)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(text)
             f.flush()
@@ -75,7 +81,9 @@ def _atomic_write_text(path: str, text: str) -> None:
         os.replace(tmp, path)
         tmp = None
     except OSError as e:
-        raise ClassificationConfigError(f"写入文件失败：{path}\n原因：{e}")
+        raise ClassificationConfigError(
+            f"写入文件失败：{path}\n原因：{e}\n"
+            "请检查目标目录是否可写（例如 %APPDATA% 是否被只读或安全软件拦截）。")
     finally:
         if tmp and os.path.exists(tmp):
             try:
@@ -100,7 +108,7 @@ def rule_counts(cfg: ClassificationConfig) -> Dict[str, int]:
 
 def export_scheme_payload(cfg: ClassificationConfig, name: str,
                           description: str = "", scheme_id: str = "",
-                          app_version: str = "1.6") -> dict:
+                          app_version: str = "1.7") -> dict:
     """构造可迁移的方案文件内容（不含任何本机绑定信息）。"""
     name = (name or "").strip()
     if not name:

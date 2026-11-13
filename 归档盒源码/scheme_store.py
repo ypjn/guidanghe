@@ -180,6 +180,22 @@ def _valid_scheme_id(scheme_id: str) -> bool:
     return bool(_SCHEME_ID_RE.match(sid)) and sid not in BUILTIN_IDS
 
 
+def _unique_scheme_name(name: str, exclude_id: str = "") -> str:
+    """同名方案自动加序号（S3 / misc F-12：列表里两个「我的方案」无法区分）。"""
+    base = (name or "").strip() or "未命名方案"
+    existing = set()
+    for rec in list_schemes():
+        if rec.builtin or rec.scheme_id == exclude_id:
+            continue
+        existing.add((rec.name or "").strip().casefold())
+    if base.casefold() not in existing:
+        return base
+    n = 2
+    while f"{base} ({n})".casefold() in existing:
+        n += 1
+    return f"{base} ({n})"
+
+
 def save_scheme(name: str, description: str, cfg: ClassificationConfig,
                 scheme_id: Optional[str] = None) -> SchemeRecord:
     name = (name or "").strip()
@@ -196,6 +212,7 @@ def save_scheme(name: str, description: str, cfg: ClassificationConfig,
         raise ClassificationConfigError(
             f"方案标识非法，已拒绝保存：{sid!r}。"
             "标识只能包含字母、数字、下划线和连字符，且不能是内置标识。")
+    name = _unique_scheme_name(name, exclude_id=sid)
     payload = export_scheme_payload(clone_config(cfg), name,
                                     description, scheme_id=sid)
     path = _scheme_path(sid)

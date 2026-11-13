@@ -131,15 +131,26 @@ def t02_undo_db_failure():
     plan = _plan_one_file(root)
     st = Storage(root)
     real_update = st.update_action
+    real_bulk = st.update_actions_bulk
 
     def flaky(batch_id, action_index, status, error=""):
         if status == storage_mod.STATUS_MOVED:
             raise RuntimeError("模拟写库失败")
         return real_update(batch_id, action_index, status, error=error)
 
+    def flaky_bulk(batch_id, updates, commit=True):
+        # V1.7 起执行循环按批次批量写库（单次 commit）；
+        # 写库失败的效果仍必须让批次落在未完成状态。
+        for _idx, status, _err in updates:
+            if status == storage_mod.STATUS_MOVED:
+                raise RuntimeError("模拟写库失败")
+        return real_bulk(batch_id, updates, commit=commit)
+
     st.update_action = flaky
+    st.update_actions_bulk = flaky_bulk
     er = execute_plan(plan, st)
     st.update_action = real_update
+    st.update_actions_bulk = real_bulk
     batch = st.get_batch(er.batch_id)
 
     undo = undo_latest_batch(st)
@@ -474,9 +485,17 @@ def t10_startup_log():
         rec("S1-11", "未捕获异常写入启动日志", "SKIP", f"main 导入失败：{e}")
         return
     log = main_mod.startup_log_path()
-    # 测试不留下新文件：记录原本是否存在，验证后按原状清理
+    # 测试不留下新文件：记录原本是否存在，验证后按原状清理。
+    # 注意：日志是 UTF-8 多字节文本，比较“新增内容”必须用字符数，
+    # 不能用 os.path.getsize 的字节数（否则中文日志会把切片算空）。
     existed_before = os.path.exists(log)
-    before_size = os.path.getsize(log) if existed_before else 0
+    before_len = 0
+    if existed_before:
+        try:
+            with open(log, "r", encoding="utf-8") as f:
+                before_len = len(f.read())
+        except OSError:
+            before_len = 0
     try:
         raise ValueError("模拟启动异常")
     except ValueError:
@@ -489,10 +508,10 @@ def t10_startup_log():
             content = f.read()
     ok_ = ("模拟启动异常" in content and "ValueError" in content
            and len(content) > 20
-           and (not existed_before or len(content) > before_size))
+           and len(content) > before_len)
     ok("S1-11", "未捕获异常（含时间与堆栈）写入启动日志", ok_,
        f"日志路径={log}\n日志新增内容前 200 字="
-       f"{content[before_size:before_size + 200]!r}")
+       f"{content[before_len:before_len + 200]!r}")
     # 清理：原本不存在的日志文件删掉，避免污染源码目录
     if not existed_before:
         try:

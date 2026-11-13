@@ -14,13 +14,15 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Optional
+from typing import Iterable, List, Optional
 
 from scanner import FileEntry
 from planner import OrganizePlan, PlanItem, CourseRule
+from utils import win_long_path, strip_long_prefix
 
 
 DB_FILENAME = "history.db"
@@ -46,6 +48,14 @@ BATCH_RECOVERED_PARTIAL = "recovered_partial"  # 中断恢复后仍有不确定�
 BATCH_UNDONE = "undone"
 BATCH_PARTIAL_UNDONE = "partial_undone"
 BATCH_PARTIAL_FAILED_UNDONE = "partial_failed_undone"
+# V1.7：冲突批次经用户确认「已人工处理」后的终态——不再每次打开都询问
+BATCH_CONFLICT_ACK = "conflict_acknowledged"
+
+# 这些状态表示仍需要用户注意（可能还能撤销 / 需要核对）
+BATCH_PENDING_STATUSES = (
+    BATCH_PLANNING, BATCH_EXECUTING, BATCH_PARTIAL, BATCH_CANCELLED,
+    BATCH_RECOVERED_PARTIAL, BATCH_PARTIAL_UNDONE, BATCH_PARTIAL_FAILED_UNDONE,
+)
 
 
 @dataclass
@@ -167,17 +177,83 @@ class Storage:
         # S2-19：Windows 路径大小写不敏感。历史库根目录统一 normcase，
         # 否则 C:\Foo 与 c:\foo 会被当成两个空间、各存一套批次记录。
         raw_root = os.path.abspath(root)
+        self.display_root = raw_root
         self.root = (os.path.normcase(raw_root)
                      if os.name == "nt" else raw_root)
         self.db_dir = os.path.join(self.root, ".organizer")
         self.db_path = os.path.join(self.db_dir, DB_FILENAME)
+        # V1.7：历史库损坏时隔离旧文件并重建，提示用户
+        self.recovery_note = ""
+        self.conn = None
         self._ensure_db_dir()
-        self.conn = sqlite3.connect(self.db_path)
-        self.conn.execute("PRAGMA foreign_keys = ON")
-        self._init_schema()
+        self._open_with_recovery()
 
     def _ensure_db_dir(self):
         os.makedirs(self.db_dir, exist_ok=True)
+
+    def _open_with_recovery(self):
+        """打开历史库；损坏（或不是 sqlite 文件）时改名留存并重建。
+
+        S3 / filesafe F-14：history.db 是撤销能力的唯一载体。损坏时
+        不能让整个目录直接打不开，也不能悄悄删掉旧文件——改名留存。
+        """
+        try:
+            self._open_and_check()
+            return
+        except (sqlite3.DatabaseError, OSError) as e:
+            first_error = e
+        try:
+            if self.conn is not None:
+                self.conn.close()
+        except Exception:
+            pass
+        self.conn = None
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        backup_path = ""
+        try:
+            if os.path.exists(self.db_path):
+                backup_path = f"{self.db_path}.corrupt-{stamp}"
+                os.replace(self.db_path, backup_path)
+                for suffix in ("-wal", "-shm"):
+                    if os.path.exists(self.db_path + suffix):
+                        os.replace(self.db_path + suffix,
+                                   backup_path + suffix)
+        except OSError:
+            backup_path = ""
+        self._open_and_check()
+        self.recovery_note = (
+            "整理记录（history.db）无法读取，可能已损坏。\n"
+            + (f"旧文件已改名为：\n{strip_long_prefix(backup_path)}\n" if backup_path
+               else "旧文件未能改名留存。\n")
+            + "已创建新的整理记录；旧记录不会再出现在历史里。\n"
+            + f"原始错误：{first_error}")
+
+    def _open_and_check(self):
+        self.conn = sqlite3.connect(self.db_path)
+        self.conn.execute("PRAGMA foreign_keys = ON")
+        self._init_schema()
+        row = self.conn.execute("PRAGMA quick_check(1)").fetchone()
+        if not row or str(row[0]).lower() != "ok":
+            raise sqlite3.DatabaseError(
+                f"history.db 结构校验失败：{row[0] if row else '无结果'}")
+
+    def recorded_roots(self) -> List[str]:
+        """数据库里记录过的根目录（用于识别目录改名/移动）。"""
+        cur = self.conn.execute("SELECT DISTINCT root FROM batches")
+        return [row[0] for row in cur.fetchall() if row[0]]
+
+    def root_mismatch_note(self) -> str:
+        """根目录改名/移动时给用户的说明（历史与撤销仍然可用）。"""
+        current = os.path.normcase(self.root)
+        stale = [r for r in self.recorded_roots()
+                 if os.path.normcase(os.path.abspath(r)) != current]
+        if not stale:
+            return ""
+        return (
+            "整理记录里保存的根目录与当前目录不一致（目录可能已改名或移动）：\n"
+            + "\n".join(strip_long_prefix(r) for r in stale[:5])
+            + f"\n当前目录：{strip_long_prefix(self.display_root)}\n"
+            "历史记录与撤销仍按当前目录使用，不会静默失效。")
 
     def _init_schema(self):
         self.conn.executescript("""
@@ -277,10 +353,10 @@ class Storage:
         return br
 
     def get_latest_batch(self) -> Optional[BatchRecord]:
+        # 历史库就在当前整理空间内，所有批次都属于这个空间；
+        # 不再按 root 字符串精确过滤（目录改名/大小写变化会导致历史消失）。
         cur = self.conn.execute(
-            "SELECT id FROM batches WHERE root = ? ORDER BY id DESC LIMIT 1",
-            (self.root,),
-        )
+            "SELECT id FROM batches ORDER BY id DESC LIMIT 1")
         row = cur.fetchone()
         if not row:
             return None
@@ -294,9 +370,7 @@ class Storage:
         避免批次很多时一次加载全部动作。
         """
         cur = self.conn.execute(
-            "SELECT * FROM batches WHERE root = ? ORDER BY id DESC",
-            (self.root,),
-        )
+            "SELECT * FROM batches ORDER BY id DESC")
         results = []
         for row in cur.fetchall():
             br = self._row_to_batch(row)
@@ -307,21 +381,44 @@ class Storage:
         return results
 
     def get_pending_batch(self) -> Optional[BatchRecord]:
-        """获取最近一个尚未**完整撤销成功**的批次。
+        """获取最近一个仍需要用户注意的批次。
 
-        只排除 BATCH_UNDONE（完全撤销）。
-        BATCH_PARTIAL_UNDONE / BATCH_PARTIAL_FAILED_UNDONE 表示有冲突，
-        用户修好冲突条件后应该能再次撤销，所以不排除。
+        V1.7：done / undone / cancelled_clean / conflict_acknowledged
+        都不再算"待处理"——整理成功的批次不应每次打开目录都被追问撤销。
+        仍在 planning/executing/partial/conflict 的批次保留，供核对或撤销。
         """
+        placeholders = ",".join("?" for _ in BATCH_PENDING_STATUSES)
         cur = self.conn.execute(
-            "SELECT id FROM batches WHERE root = ? AND status != ? "
+            f"SELECT id FROM batches WHERE status IN ({placeholders}) "
             "ORDER BY id DESC LIMIT 1",
-            (self.root, BATCH_UNDONE),
+            BATCH_PENDING_STATUSES,
         )
         row = cur.fetchone()
         if not row:
             return None
         return self.get_batch(row[0])
+
+    def get_undoable_batch(self) -> Optional[BatchRecord]:
+        """最近一个还能撤销的批次（含已完成的 done 批次）。
+
+        S2 F-09/F-05：done 批次不再作为"未完成"被主动询问，
+        但用户手动点「撤销上一次」时仍可以撤销它。
+        """
+        cur = self.conn.execute(
+            "SELECT id FROM batches WHERE status != ? ORDER BY id DESC LIMIT 1",
+            (BATCH_UNDONE,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return self.get_batch(row[0])
+
+    def acknowledge_conflict_batch(self, batch_id: int) -> None:
+        """用户确认冲突已人工处理后，批次从"待处理"里移出（S3 F-24）。"""
+        self.conn.execute(
+            "UPDATE batches SET status = ?, summary = ? WHERE id = ?",
+            (BATCH_CONFLICT_ACK, "冲突已人工处理（用户确认）", batch_id))
+        self.conn.commit()
 
     def _row_to_batch(self, row) -> BatchRecord:
         # row columns: id, root, mode, status, created_at, finished_at,
@@ -334,13 +431,8 @@ class Storage:
 
     # ============== 动作操作 ==============
 
-    def create_action(self, batch_id: int, item: PlanItem, action_index: int, source_sha256: str):
-        """写入执行意图（status=planned）。V1.4 起同时写入手动修正信息。
-
-        自动目标路径用 item.auto_* 快照 + planner._compute_target_dir 重建；
-        storage 不顶层导入 planner，避免循环依赖——在函数内延迟导入。
-        未修正的文件三个新字段都为空串，历史页面视为"自动分类"。
-        """
+    def _action_values(self, batch_id: int, item: PlanItem,
+                       action_index: int, source_sha256: str) -> tuple:
         auto_target = ""
         auto_rule_applied = ""
         override_note = ""
@@ -349,7 +441,7 @@ class Storage:
             override_note = item.override_note or ""
             try:
                 from planner import (
-                    _build_target_dir_v2, _build_target_dir,
+                    _build_target_dir_v2,
                     MODE_BY_DIRECTION_SEMESTER, MODE_BY_COURSE_THEN_TYPE,
                     MODE_BY_TYPE,
                 )
@@ -361,40 +453,82 @@ class Storage:
                     )
                     auto_target = os.path.join(auto_dir, item.file.filename)
             except Exception:
-                # 极端情况下 planner 导入失败或 auto_* 快照不完整，
-                # 自动目标留空；撤销仍基于 target_rel（已记录实际路径）
-                # 不会受影响；只是历史追溯少了自动分类参考。
                 auto_target = ""
+        return (batch_id, action_index, item.file.rel_path, item.target_rel_path,
+                item.file.size, source_sha256, STATUS_PLANNED,
+                auto_target, auto_rule_applied, override_note,
+                item.rule_key or "", item.rule_applied or "")
 
-        self.conn.execute(
-            "INSERT INTO actions(batch_id, action_index, source_rel, target_rel, source_size, "
-            "source_sha256, status, auto_target_rel, auto_rule_applied, override_note, "
-            "rule_key, rule_applied) "
+    def create_actions_bulk(self, batch_id: int, items, sha_by_index) -> None:
+        """S3 / filesafe F-20：一次性写入整批执行意图（单次 commit）。
+
+        sha_by_index: 与 items 等长的 SHA 列表（元素可为空串）。
+        """
+        rows = [self._action_values(batch_id, item, idx, sha)
+                for idx, (item, sha) in enumerate(zip(items, sha_by_index))]
+        self.conn.executemany(
+            "INSERT INTO actions(batch_id, action_index, source_rel, target_rel, "
+            "source_size, source_sha256, status, auto_target_rel, "
+            "auto_rule_applied, override_note, rule_key, rule_applied) "
             "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (batch_id, action_index, item.file.rel_path, item.target_rel_path,
-             item.file.size, source_sha256, STATUS_PLANNED,
-             auto_target, auto_rule_applied, override_note,
-             item.rule_key or "", item.rule_applied or ""),
+            rows,
         )
         self.conn.commit()
 
-    def update_action(self, batch_id: int, action_index: int, status: str, error: str = ""):
-        now = datetime.now().isoformat(timespec="seconds")
-        # 通用 UPDATE：取消状态/恢复状态/执行状态都用同一条 SQL
-        # executed_at / undone_at 只在对应阶段赋值；其他状态置空（保持历史记录完整）
-        executed_at = ""
-        undone_at = ""
-        if status in (STATUS_MOVED, STATUS_FAILED, STATUS_SKIPPED, STATUS_PAUSED, STATUS_CANCELLED):
-            executed_at = now
-        elif status in (STATUS_UNDONE, STATUS_CONFLICT):
-            undone_at = now
-
+    def create_action(self, batch_id: int, item: PlanItem, action_index: int, source_sha256: str):
+        """写入单条执行意图（status=planned）。内部使用，兼容旧调用。"""
         self.conn.execute(
-            "UPDATE actions SET status = ?, error = ?, executed_at = ?, undone_at = ? "
-            "WHERE batch_id = ? AND action_index = ?",
-            (status, error, executed_at, undone_at, batch_id, action_index),
+            "INSERT INTO actions(batch_id, action_index, source_rel, target_rel, "
+            "source_size, source_sha256, status, auto_target_rel, "
+            "auto_rule_applied, override_note, rule_key, rule_applied) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            self._action_values(batch_id, item, action_index, source_sha256),
         )
         self.conn.commit()
+
+    @staticmethod
+    def _status_timestamps(status: str):
+        """返回 (executed_at, undone_at)；空串表示该列保持原值不变。
+
+        S4 / filesafe F-29：标记 undone/conflict 时不再清空 executed_at。
+        """
+        now = datetime.now().isoformat(timespec="seconds")
+        if status in (STATUS_MOVED, STATUS_FAILED, STATUS_SKIPPED, STATUS_PAUSED,
+                      STATUS_CANCELLED):
+            return now, ""
+        if status in (STATUS_UNDONE, STATUS_CONFLICT):
+            return "", now
+        return "", ""
+
+    def update_action(self, batch_id: int, action_index: int, status: str,
+                      error: str = "", commit: bool = True):
+        executed_at, undone_at = self._status_timestamps(status)
+        sql = "UPDATE actions SET status = ?, error = ?"
+        params: list = [status, error]
+        if executed_at:
+            sql += ", executed_at = ?"
+            params.append(executed_at)
+        if undone_at:
+            sql += ", undone_at = ?"
+            params.append(undone_at)
+        sql += " WHERE batch_id = ? AND action_index = ?"
+        params.extend([batch_id, action_index])
+        self.conn.execute(sql, params)
+        if commit:
+            self.conn.commit()
+
+    def update_actions_bulk(self, batch_id: int, updates, commit: bool = True) -> None:
+        """批量更新动作状态（单次 commit）。
+
+        updates: [(action_index, status, error), ...]
+        单条更新仍走 update_action（便于统一拦截/测试写库失败），只是不提交；
+        最后一次性 commit。
+        """
+        for action_index, status, error in updates:
+            self.update_action(batch_id, action_index, status,
+                               error=error or "", commit=False)
+        if commit:
+            self.conn.commit()
 
     def get_actions(self, batch_id: int) -> List[ActionRecord]:
         cur = self.conn.execute(

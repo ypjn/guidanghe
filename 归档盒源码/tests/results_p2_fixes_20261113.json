@@ -1,0 +1,146 @@
+[
+  {
+    "id": "P2-01",
+    "title": "根目录改名后历史与撤销不静默消失",
+    "status": "PASS",
+    "evidence": "批次=1 撤销恢复=1 源恢复=True\n说明=整理记录里保存的根目录与当前目录不一致（目录可能已改名或移动）："
+  },
+  {
+    "id": "P2-02",
+    "title": "保护名单不因根目录改名/目录暂时不存在而被静默清空",
+    "status": "PASS",
+    "evidence": "保存项=['暂时不存在', '要保护']\n读取=['C:\\\\Users\\\\Lenovo\\\\AppData\\\\Local\\\\Temp\\\\p2_fixes_k8o21w79\\\\g1_protect_rename_移动后\\\\暂时不存在', 'C:\\\\Users\\\\Lenovo\\\\AppData\\\\Local\\\\Temp\\\\p2_fixes_k8o21w79\\\\g1_protect_rename_移动后\\\\要保护']\n说明=['保护目录配置记录的根目录是：\\nC:\\\\Users\\\\Lenovo\\\\AppData\\\\Local\\\\Temp\\\\p2_fixes_k8o21w79\\\\g1_protect_rename\\n当前整理空间是：\\nC:\\\\Users\\\\Lenovo\\\\AppData\\\\Local\\\\Temp\\\\p2_fixes_k8o21w79\\\\g1_protect_rename_移动后\\n（目录可能已改名或移动）配置随目录一起保留，已按当前根目录继续使用。', '有 1 个保护目录当前不存在，配置已保留，不会自动删除：\\nC:\\\\Users\\\\Lenovo\\\\AppData\\\\Local\\\\Temp\\\\p2_fixes_k8o21w79\\\\g1_protect_rename_移动后\\\\暂时不存在']\n再次保存=['暂时不存在', '要保护']"
+  },
+  {
+    "id": "P2-03",
+    "title": "SHA 为空或目标读不了时：不误报“内容已被修改”",
+    "status": "PASS",
+    "evidence": "无指纹：恢复=1 已恢复=True 说明含指纹提示=True\n读失败：冲突=1 文本=二号.txt：目标文件无法读取（权限/占用），不能核对内容；请关闭占用它的程序后重试，或确认后标记已人工处理"
+  },
+  {
+    "id": "P2-04",
+    "title": "history.db 损坏：改名留存并重建，目录仍可打开",
+    "status": "PASS",
+    "evidence": "提示=整理记录（history.db）无法读取，可能已损坏。\n隔离文件=['history.db.corrupt-20261113-120249']"
+  },
+  {
+    "id": "P2-05",
+    "title": "跳过目录列出完整路径；os.walk 错误不静默",
+    "status": "PASS",
+    "evidence": "纳入文件=['正常.txt']\n跳过清单=\nC:\\Users\\Lenovo\\AppData\\Local\\Temp\\p2_fixes_k8o21w79\\g1_skip_paths\\$RECYCLE.BIN\nC:\\Users\\Lenovo\\AppData\\Local\\Temp\\p2_fixes_k8o21w79\\g1_skip_paths\\.隐藏\nC:\\Users\\Lenovo\\AppData\\Local\\Temp\\p2_fixes_k8o21w79\\g1_skip_paths\\venv\nC:\\Users\\Lenovo\\AppData\\Local\\Temp\\p2_fixes_k8o21w79\\g1_skip_paths\\desktop.ini\nwalk_errors=['扫描目录失败（C:\\\\受限）：Permission denied']"
+  },
+  {
+    "id": "P2-06",
+    "title": "超过 260 字符的深层文件可扫描、移动、撤销",
+    "status": "PASS",
+    "evidence": "源长度=311 扫描=1 移动=1 目标存在=True 撤销=1 源恢复=True"
+  },
+  {
+    "id": "P2-07",
+    "title": "撤销后清理本批次创建的空父目录（含 _已整理）",
+    "status": "PASS",
+    "evidence": "整理目录存在过=True 撤销=1 现已清空=True"
+  },
+  {
+    "id": "P2-08",
+    "title": "执行循环不再逐项 get_actions + 两次 commit（批量写库）",
+    "status": "PASS",
+    "evidence": "移动=1 全表查询次数=0"
+  },
+  {
+    "id": "P2-09",
+    "title": "moved=0 时标题是「没有移动文件」，不是「整理完成！」",
+    "status": "PASS",
+    "evidence": "没有移动文件 / 整理完成！ / 整理已取消"
+  },
+  {
+    "id": "P2-10",
+    "title": "0 字节文件不互相算内容重复",
+    "status": "PASS",
+    "evidence": "内容组=0 文件=0"
+  },
+  {
+    "id": "P2-11",
+    "title": "OCR 缓存有上限；临时失败冷却后允许重试",
+    "status": "PASS",
+    "evidence": "缓存=512/512 冷却期跳过=True 过期可重试=True"
+  },
+  {
+    "id": "P2-12",
+    "title": "AI 默认关闭、已问过复用缓存、清单不塞几百条",
+    "status": "PASS",
+    "evidence": "实际请求=1 第二次=AI 补充分类 1 个（其中 1 个复用上次结果）。\n关闭时=AI 未开启，或还没有 DeepSeek 密钥。\nprompt 分类行=80"
+  },
+  {
+    "id": "P2-13",
+    "title": "保护路径大小写比较统一 normcase",
+    "status": "PASS",
+    "evidence": "返回=C:\\USERS\\LENOVO\\APPDATA\\LOCAL\\TEMP\\P2_FIXES_K8O21W79\\G1_NORMCASE\\保护目录 错误="
+  },
+  {
+    "id": "P2-14",
+    "title": "未登记顶层目录保留内部路径；空类别不出现 //",
+    "status": "PASS",
+    "evidence": "目标=_已整理\\待定\\未被登记的目录\\内部子目录\\文件.pdf\n空类别目录=_已整理\\课程\\大二上\\未分类课程\\文档"
+  },
+  {
+    "id": "P2-15",
+    "title": "sanitize 撞名在配置里报出；「.」「(」等过宽关键词被拒绝",
+    "status": "PASS",
+    "evidence": "通用目录前缀第 3 条：类别「A?B」与「A:B」整理后会变成同一个目录「A_B」，请改名区分\n关键词规则第 551 条：关键词「.」只包含符号，会命中几乎所有文件，请换成更具体的词组\n关键词规则第 552 条：关键词「(」只包含符号，会命中几乎所有文件，请换成更具体的词组"
+  },
+  {
+    "id": "P2-16",
+    "title": ".circ 只在没有更具体目录规则时归计组，学期沿用路径",
+    "status": "PASS",
+    "evidence": "具体目录=数据结构/semester_dir:大二上/数据结构\n散落=计算机组成原理/大二上\n学长学期=计算机组成原理/2023-2024-2"
+  },
+  {
+    "id": "P2-17",
+    "title": "改回原本自动分类后不再标记为「手动修正」",
+    "status": "PASS",
+    "evidence": "先手动=True 改回自动后手动=False 依据=学期「大二上」/「数据结构」→ 课程/数据结构"
+  },
+  {
+    "id": "P2-18",
+    "title": "APPDATA/目标目录不可写时抛出 ClassificationConfigError",
+    "status": "PASS",
+    "evidence": "错误=写入文件失败：C:\\Users\\Lenovo\\AppData\\Local\\Temp\\p2_fixes_k8o21w79\\g5_atomic\\blocker\\sub\\a.json"
+  },
+  {
+    "id": "P2-19",
+    "title": "最近空间读失败会提示，不把旧记录当空覆盖",
+    "status": "PASS",
+    "evidence": "错误=最近空间记录路径不是普通文件：C:\\Users\\Lenovo\\AppData\\Local\\Temp\\p2_fixes_k8o21w79\\g5_recent\\recent.json 原路径保留=True"
+  },
+  {
+    "id": "P2-20",
+    "title": "同名方案自动区分；导入默认不选「替换当前配置」",
+    "status": "PASS",
+    "evidence": "方案名=['我的方案', '我的方案 (2)'] 默认合并=True"
+  },
+  {
+    "id": "P2-21",
+    "title": "版本号统一为 V1.7（窗口标题 + 方案导出）",
+    "status": "PASS",
+    "evidence": "标题=归档盒 V1.7 导出版本=1.7"
+  },
+  {
+    "id": "P2-22",
+    "title": "忙碌禁改表格；空历史文案；关闭子窗口；筛选标签；小屏尺寸",
+    "status": "PASS",
+    "evidence": "忙碌锁表=True 空闲可用=True\n空历史=「这个文件夹还没有整理记录」\n子窗口已关=True 筛选标签=True 分类依据列宽=200\n窗口=820x740 最小高=460 屏幕=800x800"
+  },
+  {
+    "id": "P2-23",
+    "title": "目录树显示隐藏属性目录；读取失败可重试",
+    "status": "PASS",
+    "evidence": "隐藏属性已设置=True 树中包含=True 可重试=True"
+  },
+  {
+    "id": "P2-24",
+    "title": "影响没算出来（未扫描）时不能确认应用",
+    "status": "PASS",
+    "evidence": "确认应用可用=False"
+  }
+]

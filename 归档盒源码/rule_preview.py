@@ -125,6 +125,10 @@ def preview_impact(
         scan_result, base, mode, rules,
         cancel_event=cancel_event, progress_cb=_base_progress,
         ocr_texts=ocr_texts, ocr_errors=ocr_errors)
+    # S4 / planner F-18：第二遍（当前配置）也要响应取消，
+    # 不能拿半成品计划继续给出比较结论。
+    if cancel_event and cancel_event.is_set():
+        return ImpactResult(root=scan_result.root, mode=mode, sample_total=total)
 
     # 命中统计（按稳定 rule_key 分组，标签用人类可读的分类依据）
     labels: "OrderedDict[str, str]" = OrderedDict()

@@ -9,6 +9,9 @@ from __future__ import annotations
 import base64
 import json
 import os
+import subprocess
+import sys
+import threading
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -17,13 +20,21 @@ from classification_config import compile_config, default_config
 from planner import (
     DEFAULT_UNCLASSIFIED, MODE_BY_COURSE_THEN_TYPE, MODE_BY_DIRECTION_SEMESTER,
     MODE_BY_TYPE, OrganizePlan, _assign_unique_names, _build_target_dir,
-    _build_target_dir_v2,
+    _build_target_dir_v2, assign_unique_targets,
 )
 from scheme_store import app_data_dir
 
 AI_FILE_LIMIT = 40
+# S4 / misc F-15：请求里不要把几百条分类清单全塞进 prompt
+_MAX_PROMPT_PAIRS = 80
+# 已询问过的文件结果缓存（重新预览时复用，不重复花钱）
+_RESULT_CACHE_LIMIT = 512
+_result_cache: dict[tuple, tuple] = {}
+_result_cache_order: list[tuple] = []
+_result_cache_lock = threading.Lock()
 DEEPSEEK_BASE = "https://api.deepseek.com/v1"
 DEEPSEEK_MODEL = "deepseek-chat"
+_REQUEST_TIMEOUT = 20
 _IMAGE_EXTS = {".png": "image/png", ".jpg": "image/jpeg",
                ".jpeg": "image/jpeg", ".webp": "image/webp"}
 _MAX_IMAGE_BYTES = 1_500_000
@@ -32,6 +43,10 @@ _SETTINGS_NAME = "ai.json"
 
 class AiStop(Exception):
     """接口不可用，停止继续询问。已经得到的结果保留。"""
+
+
+class _AiCancelled(Exception):
+    """用户在等待当前请求时取消。"""
 
 
 @dataclass
@@ -63,6 +78,27 @@ def load_settings() -> AiSettings:
     return AiSettings(api_key=key, enabled=enabled)
 
 
+def _restrict_windows_acl(path: str) -> None:
+    """S4 / misc F-28：Windows 上 chmod 不产生访问控制效果，改用 icacls。
+
+    只给当前用户完全控制，移除继承权限。失败时静默（不阻断保存），
+    因为是否可写取决于系统策略，真正重要的是默认关闭 + 用户自填。
+    """
+    if os.name != "nt":
+        return
+    user = os.environ.get("USERNAME") or ""
+    if not user:
+        return
+    try:
+        subprocess.run(
+            ["icacls", path, "/inheritance:r",
+             "/grant:r", f"{user}:F"],
+            capture_output=True, timeout=10, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def save_settings(settings: AiSettings) -> None:
     directory = app_data_dir()
     os.makedirs(directory, exist_ok=True)
@@ -81,7 +117,9 @@ def save_settings(settings: AiSettings) -> None:
         os.chmod(tmp, 0o600)
     except OSError:
         pass
+    _restrict_windows_acl(tmp)
     os.replace(tmp, path)
+    _restrict_windows_acl(path)
 
 
 def needs_ai(item, mode: str) -> bool:
@@ -183,14 +221,11 @@ def _apply_choice(item, mode: str, direction: str, category: str) -> None:
 
 
 def _rebuild_names(plan: OrganizePlan) -> None:
-    done = []
     for item in plan.items:
         item.target_filename = item.file.filename
         item.conflict_with_existing = False
         item.target_rel_path = os.path.join(item.target_dir_rel, item.file.filename)
-        updated = _assign_unique_names(done, plan.root, item)
-        done.append(updated)
-    plan.items[:] = done
+    assign_unique_targets(plan.items, plan.root)
 
 
 def _user_text(item) -> str:
@@ -212,7 +247,13 @@ def _user_text(item) -> str:
 
 
 def _messages(item, pairs, with_image: bool):
-    listing = "\n".join(f"{direction}/{category}" for direction, category in pairs)
+    # S4 / misc F-15：清单过长时截断，避免每次请求塞几百条分类
+    listing_pairs = list(pairs)[:_MAX_PROMPT_PAIRS]
+    listing = "\n".join(f"{direction}/{category}"
+                        for direction, category in listing_pairs)
+    if len(pairs) > len(listing_pairs):
+        listing += (f"\n（清单过长，只列出前 {len(listing_pairs)} 条；"
+                    "请只从中选择）")
     system = (
         "你是文件归档助手。只能从清单里选一个分类。"
         "无法判断时返回 {\"direction\":\"\",\"category\":\"\"}。"
@@ -272,7 +313,7 @@ def default_transport(settings: AiSettings, messages) -> str:
     if settings.api_key.strip():
         request.add_header("Authorization", "Bearer " + settings.api_key.strip())
     try:
-        with urllib.request.urlopen(request, timeout=45) as response:
+        with urllib.request.urlopen(request, timeout=_REQUEST_TIMEOUT) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403):
@@ -293,6 +334,60 @@ def default_transport(settings: AiSettings, messages) -> str:
 def _ask(settings, item, pairs, transport) -> str:
     # deepseek-chat 只收文字。识别失败时带上失败说明，不附图片。
     return transport(settings, _messages(item, pairs, with_image=False))
+
+
+def _ask_cancellable(settings, item, pairs, transport, cancel_event) -> str:
+    """等待当前请求时可被取消。
+
+    urllib 的阻塞读无法从外部打断，这里把请求放到守护线程里，
+    主线程按 0.2 秒轮询取消标志——用户点取消后界面立即返回，
+    后台线程最多再等到超时自行结束。
+    """
+    box: dict = {}
+
+    def run():
+        try:
+            box["text"] = _ask(settings, item, pairs, transport)
+        except BaseException as exc:      # noqa: BLE001 — 原样抛回主线程
+            box["error"] = exc
+
+    worker = threading.Thread(target=run, daemon=True,
+                              name="archivebox-ai-request")
+    worker.start()
+    while worker.is_alive():
+        if cancel_event is not None and cancel_event.is_set():
+            raise _AiCancelled()
+        worker.join(0.2)
+    if "error" in box:
+        raise box["error"]
+    return str(box.get("text", ""))
+
+
+def _cache_key(plan, item, pairs) -> tuple:
+    return (plan.mode,
+            os.path.normcase(item.file.rel_path),
+            int(item.file.size),
+            int(getattr(item.file, "mtime_ns", 0) or 0),
+            (getattr(item, "ocr_text", "") or "")[:200],
+            len(pairs))
+
+
+_MISS = object()
+
+
+def _cache_get(key):
+    with _result_cache_lock:
+        return _result_cache.get(key, _MISS)
+
+
+def _cache_put(key, value) -> None:
+    with _result_cache_lock:
+        if key not in _result_cache:
+            _result_cache_order.append(key)
+        _result_cache[key] = value
+        while len(_result_cache_order) > _RESULT_CACHE_LIMIT:
+            old = _result_cache_order.pop(0)
+            _result_cache.pop(old, None)
 
 
 def apply_ai_fallback(plan: OrganizePlan, settings: AiSettings,
@@ -317,6 +412,7 @@ def apply_ai_fallback(plan: OrganizePlan, settings: AiSettings,
     limited = pending[:AI_FILE_LIMIT]
     changed = 0
     skipped = 0
+    reused = 0
     stopped = ""
     for index, item in enumerate(limited, start=1):
         if cancel_event is not None and cancel_event.is_set():
@@ -324,12 +420,23 @@ def apply_ai_fallback(plan: OrganizePlan, settings: AiSettings,
             break
         if progress_cb is not None:
             progress_cb(index, len(limited), f"询问 AI {item.file.filename}")
-        try:
-            content = _ask(settings, item, pairs, ask)
-        except AiStop as exc:
-            stopped = str(exc)
-            break
-        choice = parse_choice(content, allowed)
+        cache_key = _cache_key(plan, item, pairs)
+        cached = _cache_get(cache_key)
+        if cached is not _MISS:
+            reused += 1
+            choice = cached
+        else:
+            try:
+                content = _ask_cancellable(settings, item, pairs, ask,
+                                           cancel_event)
+            except _AiCancelled:
+                stopped = "AI 询问已取消（当前请求已停止等待）。"
+                break
+            except AiStop as exc:
+                stopped = str(exc)
+                break
+            choice = parse_choice(content, allowed)
+            _cache_put(cache_key, choice)
         if choice is None:
             skipped += 1
             continue
@@ -338,6 +445,8 @@ def apply_ai_fallback(plan: OrganizePlan, settings: AiSettings,
     if changed:
         _rebuild_names(plan)
     note = f"AI 补充分类 {changed} 个"
+    if reused:
+        note += f"（其中 {reused} 个复用上次结果）"
     if skipped:
         note += f"，{skipped} 个仍无法判断"
     left = len(pending) - len(limited)

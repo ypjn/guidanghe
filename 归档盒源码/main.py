@@ -59,8 +59,8 @@ from classification_config import (
 from config_dialog import ClassificationConfigDialog
 from protect_config import (
     KIND_LABELS, ProtectConfigError, dedupe_manual_paths,
-    load_manual_protect, manual_scan_specs, normalize_manual_path,
-    save_manual_protect,
+    load_manual_protect_report, manual_scan_specs,
+    normalize_manual_path, save_manual_protect,
 )
 from storage import Storage
 from storage_tree import StorageTree
@@ -70,11 +70,15 @@ from intake_model import IntakeList, is_within, normalize_path
 import recent_spaces
 from executor import (
     execute_plan, undo_latest_batch, undo_is_available,
-    recover_batch, interrupted_batch_id,
+    recover_batch, interrupted_batch_id, acknowledge_batch_handled,
 )
 
 # 归档盒自身源码目录 —— 默认保护，防止程序移动自己
 DEFAULT_PROTECT_APP_SRC = os.path.dirname(os.path.abspath(__file__))
+
+# S3 / lead L-07：对外版本号统一为 V1.7（窗口标题、关于、使用说明）
+APP_VERSION = "V1.7"
+APP_TITLE = f"归档盒 {APP_VERSION}"
 
 
 # ======================== 统一任务状态（V1.2） ========================
@@ -221,6 +225,25 @@ class TaskContext:
 
 # ======================== 后台线程 ========================
 
+def _execute_headline(result) -> str:
+    """整理完成弹窗标题（S3 / guia F-09：没有移动文件时不能说「整理完成」）。"""
+    if getattr(result, "was_cancelled", False):
+        return "整理已取消"
+    if getattr(result, "moved", 0) > 0:
+        return "整理完成！"
+    return "没有移动文件"
+
+
+def _worker_running(worker) -> bool:
+    """安全判断后台线程是否在运行（兼容测试里的假 worker）。"""
+    if worker is None:
+        return False
+    try:
+        return bool(worker.isRunning())
+    except Exception:
+        return False
+
+
 def _describe_exception(e: BaseException) -> str:
     """异常的可读文本：str(e) 为空时至少给出类型名（S3-30）。"""
     text = str(e).strip()
@@ -247,14 +270,20 @@ class ScanWorker(QThread):
         self.root_path = root_path
         self.protect_dirs = protect_dirs or []
         self.only_paths = list(only_paths or [])
+        self.cancel_event = threading.Event()
+
+    def request_cancel(self):
+        self.cancel_event.set()
 
     def run(self):
         try:
             if self.only_paths:
                 r = scan_paths(self.root_path, self.only_paths,
-                               protect_dirs=self.protect_dirs)
+                               protect_dirs=self.protect_dirs,
+                               cancel_event=self.cancel_event)
             else:
-                r = scan_directory(self.root_path, protect_dirs=self.protect_dirs)
+                r = scan_directory(self.root_path, protect_dirs=self.protect_dirs,
+                                   cancel_event=self.cancel_event)
             self.finished_ok.emit(r)
         except Exception as e:
             _log_worker_failure("扫描", e)
@@ -395,12 +424,16 @@ class UndoWorker(QThread):
     def __init__(self, root: str, parent=None):
         super().__init__(parent)
         self.root = root
+        self.cancel_event = threading.Event()
+
+    def request_cancel(self):
+        self.cancel_event.set()
 
     def run(self):
         storage = None
         try:
             storage = Storage(self.root)
-            result = undo_latest_batch(storage)
+            result = undo_latest_batch(storage, cancel_event=self.cancel_event)
             self.finished_ok.emit(result)
         except Exception as e:
             _log_worker_failure("撤销", e)
@@ -434,6 +467,10 @@ class RecoverWorker(QThread):
         self.seq = seq
         self.root = root
         self.batch_id = batch_id
+        self.cancel_event = threading.Event()
+
+    def request_cancel(self):
+        self.cancel_event.set()
 
     def run(self):
         storage = None
@@ -443,6 +480,7 @@ class RecoverWorker(QThread):
                 storage, self.batch_id,
                 progress_cb=lambda cur, total, path:
                     self.progress.emit(self.seq, self.root, cur, total, path),
+                cancel_event=self.cancel_event,
             )
             self.finished_ok.emit(self.seq, self.root, result)
         except Exception as e:
@@ -689,6 +727,23 @@ _HISTORY_BATCH_COLUMNS = ["批次", "时间", "分类模式", "状态",
                           "移动", "跳过", "失败", "取消", "已撤销", "注意"]
 
 
+def _fit_dialog(dlg, width: int, height: int,
+                min_width: int = 820, min_height: int = 440) -> None:
+    """S3 / guib F-05/F-06：窗口按可用屏幕缩小，并设置最小尺寸。
+
+    1366×768 / 150% 缩放下也保证主按钮在屏幕内；放不下时由内部滚动兜底。
+    """
+    screen = dlg.screen() or QApplication.primaryScreen()
+    avail = screen.availableGeometry() if screen is not None else None
+    dlg.setMinimumSize(min_width, min_height)
+    if avail is None:
+        dlg.resize(width, height)
+        return
+    w = max(min_width, min(width, avail.width() - 30))
+    h = max(min_height, min(height, avail.height() - 60))
+    dlg.resize(w, h)
+
+
 def _fmt_size(n: int) -> str:
     if n < 1024:
         return f"{n} B"
@@ -764,7 +819,8 @@ class HistoryDialog(QDialog):
         self.mw = main_window                      # MainWindow（提供 storage 与任务状态）
         self.root = main_window._current_root()
         self.setWindowTitle(f"操作历史 — {self.root}")
-        self.resize(1080, 720)
+        # S3 / guib F-06：按可用屏幕缩小，并设置最小尺寸
+        _fit_dialog(self, 1080, 720)
         self._batches = []                         # BatchRecord（不含动作）
         self._counts = {}                          # {batch_id: {status: n}}
         self._source_counts = {}                   # {batch_id: {"手动"/"长期规则"/"自动": n}}
@@ -790,10 +846,17 @@ class HistoryDialog(QDialog):
         self.batch_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.batch_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.batch_table.verticalHeader().setVisible(False)
-        self.batch_table.horizontalHeader().setSectionResizeMode(
-            2, QHeaderView.Stretch)
-        self.batch_table.horizontalHeader().setSectionResizeMode(
-            3, QHeaderView.ResizeToContents)
+        # S3 / guib F-12：注意/模式/状态列有 tooltip，长文本不挤掉其他列
+        for col in range(len(_HISTORY_BATCH_COLUMNS)):
+            self.batch_table.horizontalHeader().setSectionResizeMode(
+                col, QHeaderView.Interactive)
+        self.batch_table.setColumnWidth(0, 70)
+        self.batch_table.setColumnWidth(1, 150)
+        self.batch_table.setColumnWidth(2, 170)
+        self.batch_table.setColumnWidth(3, 110)
+        for col in (4, 5, 6, 7, 8):
+            self.batch_table.setColumnWidth(col, 60)
+        self.batch_table.setColumnWidth(9, 240)
         self.batch_table.itemSelectionChanged.connect(self._on_batch_selected)
         lay.addWidget(self.batch_table, 2)
 
@@ -850,6 +913,12 @@ class HistoryDialog(QDialog):
         self.item_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.item_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.item_table.verticalHeader().setVisible(False)
+        # S3 / guib F-13：状态/原因列不能太窄，长文本用 tooltip
+        self.item_table.setColumnWidth(0, 46)
+        self.item_table.setColumnWidth(3, 70)
+        self.item_table.setColumnWidth(4, 140)
+        self.item_table.setColumnWidth(5, 200)
+        self.item_table.setColumnWidth(6, 80)
         self.item_table.horizontalHeader().setSectionResizeMode(
             1, QHeaderView.Stretch)
         self.item_table.horizontalHeader().setSectionResizeMode(
@@ -955,12 +1024,10 @@ class HistoryDialog(QDialog):
             if sc.get("长期规则", 0) > 0:
                 attention += f" / ⚑ 长期规则×{sc['长期规则']}"
             attention = attention.lstrip(" / ")
-            # 时间列缩短显示（去掉年份，避免列宽不足被截断），
-            # 悬浮提示仍显示完整时间
+            # S4 / guib F-27：时间列保留年份，悬浮提示完整时间
             t_full = b.created_at.replace("T", " ")
-            t_short = t_full[5:] if len(t_full) >= 16 else t_full
             cells = [
-                f"#{b.batch_id}", t_short,
+                f"#{b.batch_id}", t_full,
                 MODE_LABELS.get(b.mode, b.mode),
                 BATCH_STATUS_LABELS.get(b.status, b.status),
                 str(moved), str(c.get("skipped", 0)), str(c.get("failed", 0)),
@@ -970,8 +1037,8 @@ class HistoryDialog(QDialog):
                 it = QTableWidgetItem(text)
                 if col in (4, 5, 6, 7, 8):
                     it.setTextAlignment(Qt.AlignCenter)
-                if col == 1:
-                    it.setToolTip(t_full)   # 悬浮显示完整时间
+                if col in (1, 2, 3, 9):
+                    it.setToolTip(text)   # 完整文本，避免被列宽截断
                 self.batch_table.setItem(r, col, it)
         # 选中行
         select_row = -1
@@ -989,14 +1056,29 @@ class HistoryDialog(QDialog):
             self.item_table.setRowCount(0)
             self.page_label.setText("")
             self.batch_config_label.hide()
+            # S3 / guib F-14：空历史要有明确说明
+            if not self._batches:
+                self.batch_table.setRowCount(1)
+                empty = QTableWidgetItem("这个文件夹还没有整理记录")
+                empty.setToolTip(
+                    "整理一次后，批次与逐项明细会记录在这里；"
+                    "记录保存在该文件夹的 .organizer 里。")
+                self.batch_table.setItem(0, 0, empty)
+                self.batch_table.setSpan(
+                    0, 0, 1, len(_HISTORY_BATCH_COLUMNS))
+                self.detail_label.setText(
+                    "还没有整理记录。完成一次整理后，这里会显示移动了哪些文件。")
         self._refresh_buttons()   # 即使选中行未变（如撤销后），也要刷新操作按钮
 
     def _on_batch_selected(self):
         rows = self.batch_table.selectionModel().selectedRows()
-        if not rows:
+        if not rows or not self._batches:
             self.batch_config_label.hide()
             return
-        b = self._batches[rows[0].row()]
+        row = rows[0].row()
+        if row < 0 or row >= len(self._batches):
+            return
+        b = self._batches[row]
         summary = b.config_summary
         if summary:
             self.batch_config_label.setText(
@@ -1082,6 +1164,8 @@ class HistoryDialog(QDialog):
                 if col == 5 and text:
                     # 原因列同理：悬浮显示完整原因（V1.2 第三轮小优化）
                     it.setToolTip(text)
+                if col == 4:
+                    it.setToolTip(text)   # 状态列：暂停/冲突等完整说明
                 if col == 6:
                     tip = ""
                     if text == "手动":
@@ -1264,6 +1348,16 @@ class HistoryDialog(QDialog):
         if batch is None:
             QMessageBox.warning(self, "归档盒", "未找到该批次记录。")
             return
+        # S3 / guib F-16：导出范围与界面筛选一致
+        active_filter = bool(self.search_edit.text().strip()
+                             or self.status_filter.currentData())
+        actions = (self._filtered_items() if active_filter
+                   else list(batch.actions))
+        if active_filter and not actions:
+            QMessageBox.information(
+                self, "归档盒",
+                "当前筛选没有任何记录，未导出。请先调整搜索或状态筛选。")
+            return
         suggested = f"归档盒_批次{batch_id}_操作历史.csv"
         path, sel_filter = QFileDialog.getSaveFileName(
             self, "导出操作历史", suggested,
@@ -1299,7 +1393,7 @@ class HistoryDialog(QDialog):
                             "rule_key": a.rule_key,
                             "rule_applied": a.rule_applied,
                         }
-                        for a in batch.actions
+                        for a in actions
                     ],
                     "exported_at": __import__("time").strftime(
                         "%Y-%m-%d %H:%M:%S"),
@@ -1316,7 +1410,7 @@ class HistoryDialog(QDialog):
                                 "SHA-256", "状态", "原因", "执行时间", "撤销时间",
                                 "分类来源", "自动目标", "自动依据", "修正说明",
                                 "规则标识", "命中依据"])
-                    for a in batch.actions:
+                    for a in actions:
                         w.writerow([csv_safe(v) for v in (
                             a.action_index + 1, a.source_rel,
                             a.target_rel, a.source_size,
@@ -1329,9 +1423,12 @@ class HistoryDialog(QDialog):
         except OSError as e:
             QMessageBox.warning(self, "归档盒", f"导出失败：{e}")
             return
+        scope = ("当前筛选结果" if active_filter else "整批全部记录")
         QMessageBox.information(
             self, "归档盒",
-            f"已导出批次 #{batch_id} 的 {len(batch.actions)} 条记录到：\n{path}")
+            f"已导出批次 #{batch_id} 的 {len(actions)} 条记录（{scope}）到：\n{path}\n\n"
+            "导出包含原位置与目标位置的完整相对路径；"
+            "CSV/JSON 里也会带完整路径字段，分享前请自行脱敏。")
 
     # ---------------- 主窗口回调 ----------------
 
@@ -1348,8 +1445,9 @@ class HistoryDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("归档盒")
-        self.resize(1280, 780)
+        self.setWindowTitle(APP_TITLE)
+        # S3 / guib F-05：按可用屏幕缩小，1366×768 / 150% 也能看到「开始整理」
+        _fit_dialog(self, 1280, 780, min_width=820, min_height=460)
         self._center_window()
 
         # V1.2: 统一任务状态来源（_working/_plan_working 是它的属性）
@@ -1423,10 +1521,68 @@ class MainWindow(QMainWindow):
         # V1.2: 操作历史窗口（非模态；同一时间只保留当前根目录的实例）
         self._history_dialog: HistoryDialog | None = None
 
+        self._busy_timer = QTimer(self)
+        self._busy_timer.setInterval(500)
+        self._busy_timer.timeout.connect(self._tick_busy)
+        self._busy_started_at = 0.0
+        self._interrupted_batch = None
+        self._root_mismatch_note = ""
+
         self._build_ui()
+        self._build_menus()
         self._attach_drop_watch(self)
         for child in self.findChildren(QWidget):
             self._attach_drop_watch(child)
+
+    def _build_menus(self):
+        """S3 / guib F-32：提供「帮助 / 关于 / 使用说明」入口。"""
+        menu = self.menuBar().addMenu("帮助")
+        act_guide = menu.addAction("使用说明")
+        act_guide.triggered.connect(self._show_guide)
+        act_about = menu.addAction("关于归档盒")
+        act_about.triggered.connect(self._show_about)
+
+    def _show_about(self):
+        from scheme_store import app_data_dir
+        QMessageBox.about(
+            self, f"关于 {APP_TITLE}",
+            f"<b>{APP_TITLE}</b><br><br>"
+            "把散落的文件按学期、课程与类别整理到 _已整理，"
+            "并在移动前给出可核对的预览。<br><br>"
+            f"整理记录保存在：<br>{os.path.join(app_data_dir(), '')}<br>"
+            "（每个整理空间的记录在其 .organizer/history.db）<br><br>"
+            "AI 补充分类默认关闭；只有你自己打开并填写密钥后才会发请求。")
+
+    def _show_guide(self):
+        """打开包内的使用说明；不存在时直接说明要点，不指向不存在的文件。"""
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        package_root = os.path.dirname(app_dir)
+        candidates = [
+            os.path.join(package_root, "使用说明.txt"),
+            os.path.join(app_dir, "使用说明.txt"),
+        ]
+        for path in candidates:
+            if os.path.isfile(path):
+                try:
+                    if os.name == "nt":
+                        os.startfile(path)  # noqa: S606 — 打开本程序自带说明
+                    else:
+                        subprocess.Popen(["xdg-open", path])
+                    return
+                except OSError:
+                    break
+        from scheme_store import app_data_dir
+        QMessageBox.information(
+            self, "使用说明",
+            f"{APP_TITLE}\n\n"
+            "1. 选择要整理的文件夹，点「重新扫描」。\n"
+            "2. 在预览里核对目标位置，取消不想移动的勾选。\n"
+            "3. 点「开始整理」，在确认框里再确认一次。\n"
+            "4. 需要还原时点「撤销上一次」；中断的批次会提示核对恢复。\n\n"
+            "整理记录保存在每个文件夹的 .organizer 里；"
+            f"方案库与最近空间在 {app_data_dir()}。\n"
+            "AI 补充分类默认关闭，程序不内置任何密钥。\n\n"
+            "（当前包内没有附带「使用说明.txt」，以上为内置说明。）")
 
     # V1.2: 统一任务状态 —— 旧布尔位以属性形式委托到 TaskContext
     @property
@@ -1451,6 +1607,16 @@ class MainWindow(QMainWindow):
             return self._storage.root
         t = self.path_edit.text().strip()
         return os.path.abspath(t) if t else ""
+
+    def _touch_recent_space(self, path: str) -> None:
+        """记录最近空间；写失败要提示，不能静默吞掉（S4 / misc F-17）。"""
+        try:
+            recent_spaces.touch(path)
+        except recent_spaces.RecentSpacesError as exc:
+            append_startup_log(f"最近空间记录写入失败：{exc}")
+            self.statusBar().showMessage(
+                "最近整理空间记录没能保存（%APPDATA% 不可写或被占用）；"
+                "本次整理不受影响。")
 
     def _center_window(self):
         screen = QApplication.primaryScreen().availableGeometry()
@@ -1601,8 +1767,8 @@ class MainWindow(QMainWindow):
         else:
             self.ocr_check.setEnabled(False)
             self.ocr_check.setToolTip(
-                "没有可用的文字识别组件。请在归档盒源码目录执行：\n"
-                "pip install -r requirements.txt"
+                "没有可用的文字识别组件。图片仍会正常整理，只是不读取图片里的文字。\n"
+                "请确认安装的是完整版归档盒（无需在命令行安装依赖）。"
             )
         self.ocr_check.stateChanged.connect(self.on_plan_param_changed)
         side_lay.addWidget(self.ocr_check)
@@ -1701,24 +1867,34 @@ class MainWindow(QMainWindow):
 
         filters = QHBoxLayout()
         filters.setSpacing(6)
+        filters.addWidget(QLabel("筛选："))
         self.plan_search = QLineEdit()
         self.plan_search.setPlaceholderText("搜索原位置、目标位置或分类依据")
+        self.plan_search.setToolTip("按文字筛选预览行；只影响显示，不改变勾选")
         self.plan_search.textChanged.connect(self._apply_plan_filters)
         filters.addWidget(self.plan_search, 3)
         self.type_filter = QComboBox()
+        self.type_filter.setToolTip("按文件类型筛选预览")
+        self.type_filter.setAccessibleName("类型筛选")
+        self.type_filter.addItem("全部类型", "")
         self.type_filter.currentIndexChanged.connect(self._apply_plan_filters)
         filters.addWidget(self.type_filter, 1)
         self.dir_filter = QComboBox()
+        self.dir_filter.setToolTip("按分类目录筛选预览")
+        self.dir_filter.setAccessibleName("分类目录筛选")
+        self.dir_filter.addItem("全部目录", "")
         self.dir_filter.currentIndexChanged.connect(self._apply_plan_filters)
         filters.addWidget(self.dir_filter, 1)
         self.source_filter = QComboBox()
+        self.source_filter.setToolTip("按分类来源筛选：自动 / 长期规则 / 本次手动修正")
+        self.source_filter.setAccessibleName("分类来源筛选")
         self.source_filter.addItem("全部来源", "")
         self.source_filter.addItem("自动", "auto")
         self.source_filter.addItem("长期规则", "long_term")
         self.source_filter.addItem("本次手动修正", "manual")
         self.source_filter.currentIndexChanged.connect(self._apply_plan_filters)
         filters.addWidget(self.source_filter, 1)
-        self.pending_check = QCheckBox("未定")
+        self.pending_check = QCheckBox("待定")
         self.pending_check.setToolTip("只看还没定分类的文件")
         self.pending_check.stateChanged.connect(self._apply_plan_filters)
         filters.addWidget(self.pending_check)
@@ -1791,7 +1967,9 @@ class MainWindow(QMainWindow):
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        # S3 / guib F-09：分类依据列固定宽度，长规则不能把状态/大小挤出屏幕
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.Interactive)
+        self.table.setColumnWidth(3, 200)
         self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeToContents)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -2054,10 +2232,7 @@ class MainWindow(QMainWindow):
             self.path_edit.setText(chosen)
             self.btn_scan.setEnabled(True)
             self._reset_for_new_dir(chosen)
-            try:
-                recent_spaces.touch(chosen)
-            except Exception:
-                pass
+            self._touch_recent_space(chosen)
             self.statusBar().showMessage(f"已选择：{chosen}")
             self._mark_next_action()
 
@@ -2093,7 +2268,13 @@ class MainWindow(QMainWindow):
         self.btn_undo.setEnabled(False)
         self._current_plan_seq = 0
         # 按根目录加载手动保护配置（切换目录不会串用）
-        self.manual_protect = load_manual_protect(root)
+        # S2 F-07/F-08：目录改名/移动、保护目录暂时不存在时都要说明，
+        # 不静默丢弃配置项。
+        self.manual_protect, protect_notes = load_manual_protect_report(root)
+        if protect_notes and not self._closing:
+            QMessageBox.information(
+                self, "保护目录配置",
+                "手动保护配置已按当前目录继续使用：\n\n" + "\n\n".join(protect_notes))
         # 按根目录加载推荐模式分类配置（只读；不存在时不创建文件）
         self._load_root_config(root)
         # 打开或切换到该目录的 Storage
@@ -2116,6 +2297,21 @@ class MainWindow(QMainWindow):
             self._refresh_folder_list()
             self._update_inspector()
             return
+        # S3 / filesafe F-14：history.db 损坏时已隔离旧文件并重建，提示用户
+        if self._storage.recovery_note and not self._closing:
+            append_startup_log(self._storage.recovery_note)
+            QMessageBox.warning(self, "整理记录已重建",
+                                self._storage.recovery_note)
+        # S2 F-05/F-06：目录改名/移动后历史与撤销仍然可用，但要说清楚
+        mismatch = self._storage.root_mismatch_note()
+        if mismatch and not self._closing:
+            append_startup_log(mismatch)
+            self.statusBar().showMessage(
+                "整理记录里的根目录与当前目录不一致（目录已改名或移动），"
+                "历史与撤销仍按当前目录使用。")
+            self._root_mismatch_note = mismatch
+        else:
+            self._root_mismatch_note = ""
         # 检查是否有未完成的批次
         self._refresh_folder_list()
         self._update_inspector()
@@ -2130,6 +2326,7 @@ class MainWindow(QMainWindow):
 
         # 优先处理「上次运行被中断」的批次：核对磁盘实际状态
         interrupted = interrupted_batch_id(self._storage)
+        self._interrupted_batch = interrupted
         if interrupted is not None:
             reply = QMessageBox.question(
                 self, "归档盒",
@@ -2137,7 +2334,7 @@ class MainWindow(QMainWindow):
                 "现在核对磁盘实际状态并恢复记录吗？\n"
                 "（只核对与补记，不会覆盖、删除或再次移动文件）",
                 QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.Yes,
+                QMessageBox.No,
             )
             if reply == QMessageBox.Yes:
                 # V1.2 第二轮：核对恢复移入后台线程（与历史页同一流程），
@@ -2148,12 +2345,15 @@ class MainWindow(QMainWindow):
         pending = self._storage.get_pending_batch()
         if pending is not None and pending.status != "done":
             self.btn_undo.setEnabled(True)
+            # S3 / guib F-19：用中文状态、不暴露内部状态码与 ISO 时间；
+            # 默认按钮是「否」。
+            status_text = BATCH_STATUS_LABELS.get(pending.status, "需要核对")
             reply = QMessageBox.question(
                 self, "归档盒",
-                f"检测到该目录存在一个未完成的整理批次（#{pending.batch_id}，"
-                f"状态：{pending.status}，创建于 {pending.created_at}）。\n\n"
-                f"可以选择继续扫描、或者先撤销该批次。\n\n"
-                f"是否现在尝试撤销？",
+                f"检测到该目录有一个需要处理的整理批次（#{pending.batch_id}，"
+                f"状态：{status_text}）。\n\n"
+                "可以先继续扫描，或稍后在主界面点「撤销上一次」处理这个批次。\n\n"
+                "现在尝试撤销吗？",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No,
             )
@@ -2163,6 +2363,10 @@ class MainWindow(QMainWindow):
     def on_scan(self):
         if self._close_pending or self._closing:
             return  # 关闭等待期间不启动新的扫描
+        # S3 / guia F-12：扫描不接受重入，避免两个扫描结果互相覆盖
+        if self._working or self._plan_working:
+            self.statusBar().showMessage("正在处理，请等当前任务结束后再重新扫描。")
+            return
         root = self.path_edit.text().strip()
         if not root or not os.path.isdir(root):
             QMessageBox.warning(self, "归档盒", "请先选择一个有效的文件夹。")
@@ -2208,12 +2412,16 @@ class MainWindow(QMainWindow):
         protect = [(DEFAULT_PROTECT_APP_SRC, "default", "默认保护（归档盒源码）")]
         protect.extend(manual_scan_specs(root, self.manual_protect))
 
-        self._scan_worker = ScanWorker(
-            root, protect_dirs=protect, only_paths=only_paths, parent=self)
-        self._scan_worker.finished_ok.connect(self._on_scan_done)
-        self._scan_worker.failed.connect(self._on_scan_failed)
-        self._scan_worker.finished.connect(self._on_scan_worker_finished)
-        self._scan_worker.start()
+        try:
+            self._scan_worker = ScanWorker(
+                root, protect_dirs=protect, only_paths=only_paths, parent=self)
+            self._scan_worker.finished_ok.connect(self._on_scan_done)
+            self._scan_worker.failed.connect(self._on_scan_failed)
+            self._scan_worker.finished.connect(self._on_scan_worker_finished)
+            self._refresh_busy_ui(phase)
+            self._scan_worker.start()
+        except Exception as e:
+            self._abort_task_start("scan", "扫描", e)
 
     def _on_scan_worker_finished(self):
         """扫描线程结束。只清理扫描态，不能覆盖仍在运行的计划生成态。"""
@@ -2221,6 +2429,13 @@ class MainWindow(QMainWindow):
         self._set_working(False)
 
     def _on_scan_done(self, result: ScanResult):
+        worker = getattr(self, "_scan_worker", None)
+        if worker is not None and getattr(worker, "cancel_event", None) is not None \
+                and worker.cancel_event.is_set():
+            # S3 / guia F-06：用户取消扫描后不能用半成品结果生成计划
+            self._discard_plan("扫描已取消，旧预览已失效；请重新扫描")
+            self.statusBar().showMessage("扫描已取消（结果不完整，未生成计划）。")
+            return
         self._full_scan_result = result
         self._scan_generation += 1
         quiet_drop = self._quiet_drop_scan
@@ -2254,7 +2469,11 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "待整理清单", message)
             return
 
-        # 拖入单个文件时仍遵守保护规则，但不为同文件夹里的其他目录弹窗。
+        # 先启动计划生成（后台），再统一弹一个扫描提示，
+        # 避免连续 3–4 个模态框挡住已经开始的计划（S3 / guia F-15）。
+        self._generate_and_show_plan()
+
+        notices: list[str] = []
         if result.protected_roots and not quiet_drop:
             protect_lines = []
             for proot, reason in result.protected_roots.items():
@@ -2269,36 +2488,38 @@ class MainWindow(QMainWindow):
                     f"\n共 {result.protected_count} 个文件因项目保护被跳过，"
                     f"不会进入整理计划。"
                 )
-            QMessageBox.information(
-                self, "归档盒",
-                "以下目录被整体保护（不会被整理）：\n\n"
-                + "\n".join(protect_lines)
-            )
+            notices.append("以下目录被整体保护（不会被整理）：\n\n"
+                           + "\n".join(protect_lines))
 
         if result.junction_dirs:
-            QMessageBox.information(
-                self, "归档盒",
+            notices.append(
                 "以下目录是 junction / 重解析点（指向其他位置的链接目录），"
                 "已整体跳过，其中的文件不会进入整理计划：\n\n"
                 + "\n".join(f"  • {p}" for p in result.junction_dirs[:20])
                 + ("\n  …" if len(result.junction_dirs) > 20 else "")
-                + "\n\n如需整理这些位置，请对链接目标的真实目录单独扫描。"
-            )
+                + "\n\n如需整理这些位置，请对链接目标的真实目录单独扫描。")
 
-        self._generate_and_show_plan()
+        # S3 / filesafe F-12：跳过目录必须给出路径，不能只给一个数字
+        if result.skipped_dirs:
+            notices.append(
+                f"以下 {len(result.skipped_dirs)} 个目录/文件被跳过"
+                "（不会进入整理计划）：\n\n"
+                + "\n".join(f"  • {p}（{why}）"
+                           for p, why in result.skipped_dirs[:40])
+                + ("\n  …" if len(result.skipped_dirs) > 40 else ""))
 
         if result.permission_errors:
-            QMessageBox.information(
-                self, "归档盒",
-                f"扫描完成，但有 {result.permission_errors} 个文件/目录无读取权限，已跳过。"
-            )
+            notices.append(
+                f"有 {result.permission_errors} 个文件/目录无读取权限或读取失败，"
+                "已跳过（原因同时写入启动日志）。")
         if result.errors:
-            QMessageBox.warning(
-                self, "归档盒",
+            notices.append(
                 f"扫描遇到 {len(result.errors)} 个问题：\n\n"
                 + "\n".join(result.errors[:10])
-                + ("\n…" if len(result.errors) > 10 else "")
-            )
+                + ("\n…" if len(result.errors) > 10 else ""))
+
+        if notices:
+            QMessageBox.information(self, "扫描提示", "\n\n────────\n\n".join(notices))
 
     def _update_protect_summary(self, result: ScanResult):
         """更新保护摘要：来源类别 + 跳过数量。"""
@@ -2320,11 +2541,18 @@ class MainWindow(QMainWindow):
         self.protect_label.show()
 
     def _on_scan_failed(self, err: str):
+        root = self.path_edit.text().strip()
         self._discard_plan("扫描失败，旧预览已失效；请排除问题后重新扫描生成新预览")
-        self.statusBar().showMessage("扫描失败：旧预览已失效")
+        # S4 / guia F-25：状态栏说明是哪个目录、失败在扫描阶段
+        self.statusBar().showMessage(f"扫描失败（{root or '未选择目录'}）：{err}")
+        append_startup_log(
+            f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 扫描失败："
+            f"{root or '未选择目录'}：{err}")
         if self._close_pending or self._closing:
             return
-        QMessageBox.critical(self, "归档盒", f"扫描时发生异常：\n{err}")
+        QMessageBox.critical(
+            self, "归档盒",
+            f"扫描时发生异常：\n{root or '未选择目录'}\n\n{err}")
 
     # ============== 扫描 / 待整理范围（V1.7） ==============
 
@@ -2427,10 +2655,7 @@ class MainWindow(QMainWindow):
         self.path_edit.setText(path)
         self.btn_scan.setEnabled(True)
         self._reset_for_new_dir(path)
-        try:
-            recent_spaces.touch(path)
-        except Exception:
-            pass
+        self._touch_recent_space(path)
         self.statusBar().showMessage(f"已打开整理空间：{path}")
         self._mark_next_action()
         return True
@@ -2579,10 +2804,7 @@ class MainWindow(QMainWindow):
                     self.btn_scan.setEnabled(True)
                     self._reset_for_new_dir(res.candidate_root,
                                             keep_intake_dialog=True)
-                    try:
-                        recent_spaces.touch(res.candidate_root)
-                    except Exception:
-                        pass
+                    self._touch_recent_space(res.candidate_root)
                     root = self.path_edit.text().strip()
                     res = self.intake.add(path, root or None)
                 elif answer is False:
@@ -2822,13 +3044,25 @@ class MainWindow(QMainWindow):
             switched = ((not root_ok) or
                         normalize_path(target_root) != normalize_path(root))
             if switched:
+                # S3 / guia F-11 / guib F-22：换根会清空清单与勾选，必须先确认
+                reply = QMessageBox.question(
+                    self, "切换整理空间？",
+                    f"拖入的文件在另一个文件夹：\n{target_root}\n\n"
+                    f"当前整理空间：\n{root or '（还没有选择）'}\n\n"
+                    "切换后会清空待整理清单、当前预览和勾选，"
+                    "并把范围改成「只预览这些文件」。\n"
+                    "不会移动、删除任何文件。\n\n要切换到上面的文件夹吗？",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if reply != QMessageBox.Yes:
+                    message = "已取消切换整理空间，拖入的文件没有加入清单。"
+                    self.statusBar().showMessage(message)
+                    return
                 self.path_edit.setText(target_root)
                 self.btn_scan.setEnabled(True)
                 self._reset_for_new_dir(target_root)
-                try:
-                    recent_spaces.touch(target_root)
-                except Exception:
-                    pass
+                self._touch_recent_space(target_root)
                 if self._working or self._plan_working:
                     message = "这个文件夹有未完成的整理。处理完之后再拖入文件。"
                     self.statusBar().showMessage(message)
@@ -3177,9 +3411,23 @@ class MainWindow(QMainWindow):
             return
         dlg = RuleEditDialog(rules_to_text(self.rules), self)
         if dlg.exec() == QDialog.Accepted:
-            new_rules = parse_rules_text(dlg.get_text())
-            if new_rules:
-                self.rules = new_rules
+            text = dlg.get_text()
+            # S3 / guib F-20/F-21：清空或格式全错时明确说「没有保存」
+            if not text.strip():
+                QMessageBox.information(
+                    self, "课程关键词",
+                    "规则为空，没有保存。当前仍使用原来的课程关键词规则。\n"
+                    "如果要清空，请保留至少一条规则，或直接在配置里改用推荐模式。")
+                return
+            new_rules = parse_rules_text(text)
+            if not new_rules:
+                QMessageBox.warning(
+                    self, "课程关键词",
+                    "没有识别到任何有效规则行，没有保存。\n\n"
+                    "每行格式应为：关键词1,关键词2 → 课程名\n"
+                    "当前仍使用原来的课程关键词规则。")
+                return
+            self.rules = new_rules
             self.on_plan_param_changed()
 
     def on_edit_protect(self):
@@ -3231,6 +3479,8 @@ class MainWindow(QMainWindow):
         """保护配置改变后：旧扫描结果与旧计划都不可信，必须重新扫描。"""
         self._abandon_plan_generation()
         self.scan_result = None
+        # S2 / guia F-04：保护配置改变后，整空间原始扫描也不能再复活
+        self._full_scan_result = None
         self.current_plan = None
         self._plan_valid = False
         self.table.setRowCount(0)
@@ -3292,8 +3542,12 @@ class MainWindow(QMainWindow):
         self._ai_settings.enabled = checked
         try:
             save_settings(self._ai_settings)
-        except OSError:
-            pass
+        except OSError as exc:
+            append_startup_log(f"AI 设置保存失败：{exc}")
+            QMessageBox.warning(
+                self, "AI 设置",
+                f"AI 设置没能保存到磁盘（%APPDATA% 不可写或被占用）：\n{exc}\n\n"
+                "本次运行仍按当前选择生效，下次启动需要重新设置。")
         self.on_plan_param_changed()
 
     def on_regenerate_plan(self):
@@ -3362,22 +3616,37 @@ class MainWindow(QMainWindow):
         self._refresh_busy_ui(f"{phase}，共 {len(self.scan_result.files)} 个文件…")
         self._update_button_states()
 
-        worker = PlanWorker(
-            seq, self.scan_result, mode, self.rules,
-            config=plan_config, ocr_enabled=use_ocr,
-            ai_settings=(self._ai_snapshot() if use_ai else None),
-            parent=self)
-        self._plan_worker = worker
-        self._plan_workers.append(worker)
+        try:
+            worker = PlanWorker(
+                seq, self.scan_result, mode, self.rules,
+                config=plan_config, ocr_enabled=use_ocr,
+                ai_settings=(self._ai_snapshot() if use_ai else None),
+                parent=self)
+            self._plan_worker = worker
+            self._plan_workers.append(worker)
 
-        worker.progress.connect(self._on_plan_progress)
-        worker.finished_ok.connect(self._on_plan_done)
-        worker.cancelled.connect(self._on_plan_cancelled)
-        worker.failed.connect(self._on_plan_failed)
-        worker.finished_seq.connect(self._on_plan_worker_finished)
-        # 线程真正结束后再释放引用（此时线程已不在运行）
-        worker.finished.connect(lambda w=worker: self._forget_plan_worker(w))
-        worker.start()
+            worker.progress.connect(self._on_plan_progress)
+            worker.finished_ok.connect(self._on_plan_done)
+            worker.cancelled.connect(self._on_plan_cancelled)
+            worker.failed.connect(self._on_plan_failed)
+            worker.finished_seq.connect(self._on_plan_worker_finished)
+            # 线程真正结束后再释放引用（此时线程已不在运行）
+            worker.finished.connect(lambda w=worker: self._forget_plan_worker(w))
+            worker.start()
+        except Exception as e:
+            # S3 / guia F-24：begin() 之后异常不能让界面永久卡在忙碌态
+            self._abort_task_start("plan", "生成计划", e)
+
+    def _abort_task_start(self, kind: str, label: str, exc: BaseException):
+        """后台任务启动失败：结束忙碌态、写日志、告诉用户（S3 / F-24）。"""
+        self.task.end(kind)
+        self._set_working(False)
+        _log_worker_failure(f"{label}启动", exc)
+        if not (self._close_pending or self._closing):
+            QMessageBox.critical(
+                self, "归档盒",
+                f"{label}没能启动：\n{_describe_exception(exc)}\n\n"
+                "界面已恢复空闲，可以重试或换一个目录。")
 
     def _forget_plan_worker(self, worker):
         try:
@@ -3577,12 +3846,18 @@ class MainWindow(QMainWindow):
             tgt = QTableWidgetItem(item.target_rel_path)
             if manual:
                 tgt.setBackground(row_color)
+            # S3 / guib F-10：目标位置始终有完整路径 tooltip
             if item.conflict_with_existing:
                 tgt.setForeground(Qt.red)
-                tgt.setToolTip("⚠ 目标磁盘上已存在同名文件，计划已分配唯一名称")
+                tgt.setToolTip(
+                    "⚠ 目标磁盘上已存在同名文件，计划已分配唯一名称\n"
+                    f"{item.target_rel_path}")
+            else:
+                tgt.setToolTip(f"目标位置：{item.target_rel_path}")
             self.table.setItem(row, 2, tgt)
 
             reason = QTableWidgetItem(item.rule_applied)
+            reason.setToolTip(item.rule_applied)
             if manual:
                 reason.setBackground(row_color)
             self.table.setItem(row, 3, reason)
@@ -3609,7 +3884,38 @@ class MainWindow(QMainWindow):
     def _on_check_changed(self, row: int, state: int):
         if self._suppress_cell_signals:
             return
+        # S3 / guia F-07：忙碌期间勾选不生效，避免统计与实际移动不一致
+        if self.task.busy:
+            self._suppress_cell_signals = True
+            try:
+                cb = self.table.cellWidget(row, 0)
+                box = cb.findChild(QCheckBox) if cb is not None else None
+                if box is not None:
+                    item = (self.current_plan.items[row]
+                            if self.current_plan and row < len(self.current_plan.items)
+                            else None)
+                    box.setChecked(bool(item.selected) if item else box.isChecked())
+            finally:
+                self._suppress_cell_signals = False
+            self.statusBar().showMessage("正在处理，暂时不能修改勾选。")
+            return
         if self.current_plan is None or row >= len(self.current_plan.items):
+            return
+        # S3 / guib F-02：计划失效后勾选不能被静默丢弃
+        if not self._plan_valid:
+            self._suppress_cell_signals = True
+            try:
+                cb = self.table.cellWidget(row, 0)
+                box = cb.findChild(QCheckBox) if cb is not None else None
+                if box is not None:
+                    box.setChecked(bool(self.current_plan.items[row].selected))
+            finally:
+                self._suppress_cell_signals = False
+            self.invalid_label.setText(
+                "⚠ 计划已失效：勾选没有保存。请先点「重新生成预览」。")
+            self.invalid_label.show()
+            self.statusBar().showMessage(
+                "计划已失效，勾选没有保存；请先重新生成预览。")
             return
         # stateChanged 在 PySide6 中以 int 发出，Qt.Checked 是严格枚举，
         # 必须先转换再比较，否则行内复选框只能取消、不能勾选。
@@ -4173,6 +4479,11 @@ class MainWindow(QMainWindow):
                   self.btn_select_visible, self.btn_deselect_visible,
                   self.btn_invert_visible, self.btn_target_tree):
             w.setEnabled(bool(enabled))
+        # S3 / guia F-07：忙碌时表格与行内勾选框都不可改；
+        # 计划失效（但空闲）时表格仍可滚动查看。
+        busy = (self._working or self._plan_working
+                or self._close_pending or self._closing)
+        self.table.setEnabled(not busy)
 
     # ============== 执行 & 撤销 ==============
 
@@ -4202,9 +4513,26 @@ class MainWindow(QMainWindow):
         exec_worker = getattr(self, "_exec_worker", None)
         exec_cancelable = (
             not blocking and self._working and not self._plan_working
-            and exec_worker is not None and exec_worker.isRunning()
+            and _worker_running(exec_worker)
         )
-        show_cancel = (not blocking) and (self._plan_working or exec_cancelable)
+        scan_worker = getattr(self, "_scan_worker", None)
+        scan_cancelable = (
+            not blocking and self._working and self.task.kind == "scan"
+            and _worker_running(scan_worker)
+        )
+        undo_worker = getattr(self, "_undo_worker", None)
+        undo_cancelable = (
+            not blocking and self._working and self.task.kind == "undo"
+            and _worker_running(undo_worker)
+        )
+        recover_worker = getattr(self, "_recover_worker", None)
+        recover_cancelable = (
+            not blocking and self._working and self.task.kind == "recover"
+            and _worker_running(recover_worker)
+        )
+        show_cancel = (not blocking) and (
+            self._plan_working or exec_cancelable or scan_cancelable
+            or undo_cancelable or recover_cancelable)
 
         if busy:
             self._apply_progress(self.task.progress_cur, self.task.progress_total)
@@ -4214,23 +4542,51 @@ class MainWindow(QMainWindow):
                 self.btn_cancel.show()
                 if self._plan_working:
                     self.btn_cancel.setText("停止生成预览")
-                    self.btn_cancel.setEnabled(not self._plan_cancel_requested)
-                else:
+                elif exec_cancelable:
                     self.btn_cancel.setText("停止本次整理")
-                    self.btn_cancel.setEnabled(True)
+                elif scan_cancelable:
+                    self.btn_cancel.setText("停止扫描")
+                elif undo_cancelable:
+                    self.btn_cancel.setText("停止撤销")
+                else:
+                    self.btn_cancel.setText("停止核对")
+                self.btn_cancel.setEnabled(
+                    not (self._plan_working and self._plan_cancel_requested))
             else:
-                # 扫描 / 撤销 / 关闭等待等阶段，不展示无效的取消按钮
+                # 关闭等待等阶段，不展示无效的取消按钮
                 self.btn_cancel.hide()
                 self.btn_cancel.setEnabled(False)
+            if not self._busy_timer.isActive():
+                self._busy_started_at = time.monotonic()
+                self._busy_timer.start()
             if msg:
                 self.statusBar().showMessage(msg)
         else:
+            self._busy_timer.stop()
             self.progress.hide()
             self.progress_row.hide()
             self._apply_progress(0, 0)
             self.btn_cancel.hide()
             self.btn_cancel.setEnabled(False)
         self._mark_next_action()
+
+    def _tick_busy(self):
+        """S3 / guia F-26：等待期间显示任务名与已等待时长，证明程序还活着。"""
+        if not self.task.busy and not self._close_pending:
+            self._busy_timer.stop()
+            return
+        elapsed = max(0, int(time.monotonic() - self._busy_started_at))
+        if self._close_pending:
+            self.statusBar().showMessage(
+                f"正在等待：{self.task.describe()}，已等待 {elapsed} 秒"
+                "（再次点关闭可强制退出）")
+            return
+        if self.task.progress_total > 0:
+            self.progress_label.setText(
+                f"{self.task.progress_cur} / {self.task.progress_total}")
+        else:
+            label = TASK_KIND_LABELS.get(self.task.kind or "", "任务")
+            self.progress_label.setText(f"{label}中 · 已等 {elapsed}s")
 
     def _set_working(self, working: bool, msg: str = ""):
         self._working = working
@@ -4296,14 +4652,17 @@ class MainWindow(QMainWindow):
             total=len(selected_items),
         )
 
-        self._exec_worker = ExecuteWorker(plan, plan.root, parent=self)
-        self._exec_worker.progress.connect(self._on_execute_progress)
-        self._exec_worker.finished_ok.connect(self._on_execute_done)
-        self._exec_worker.failed.connect(self._on_execute_failed)
-        self._exec_worker.finished.connect(lambda: self._finish_task("execute"))
-        self.btn_cancel.setEnabled(True)
-        self.btn_cancel.show()
-        self._exec_worker.start()
+        try:
+            self._exec_worker = ExecuteWorker(plan, plan.root, parent=self)
+            self._exec_worker.progress.connect(self._on_execute_progress)
+            self._exec_worker.finished_ok.connect(self._on_execute_done)
+            self._exec_worker.failed.connect(self._on_execute_failed)
+            self._exec_worker.finished.connect(lambda: self._finish_task("execute"))
+            self.btn_cancel.setEnabled(True)
+            self.btn_cancel.show()
+            self._exec_worker.start()
+        except Exception as e:
+            self._abort_task_start("execute", "整理", e)
 
     def _on_execute_progress(self, cur: int, total: int, fname: str):
         """整理进度（V1.2：执行线程逐项汇报）。"""
@@ -4314,19 +4673,28 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"正在整理 [{cur}/{total}] {fname}")
 
     def on_cancel_execute(self):
-        """取消按钮：按界面相位决定取消“生成计划”还是“执行整理”。"""
+        """取消按钮：按界面相位决定取消「生成计划」「执行」「扫描/撤销/核对」。"""
         # 优先取消计划生成：即使线程已经结束，只要界面仍处于生成相位，
         # 排队中的成功结果也必须被撤销
         if self._plan_working:
             self._cancel_plan_generation()
             return
-        # 否则取消执行
-        worker = getattr(self, "_exec_worker", None)
-        if worker is not None and worker.isRunning():
+        kind = self.task.kind
+        worker = None
+        if kind == "execute":
+            worker = getattr(self, "_exec_worker", None)
+        elif kind == "scan":
+            worker = getattr(self, "_scan_worker", None)
+        elif kind == "undo":
+            worker = getattr(self, "_undo_worker", None)
+        elif kind == "recover":
+            worker = getattr(self, "_recover_worker", None)
+        if _worker_running(worker):
             worker.request_cancel()
             self.task.request_cancel()
             self.btn_cancel.setEnabled(False)
-            self.statusBar().showMessage("正在取消：将在当前文件操作完成后停止……")
+            self.statusBar().showMessage(
+                "正在取消：将在当前文件操作完成后停止……")
 
     def _on_execute_done(self, result):
         if self._closing:
@@ -4362,10 +4730,15 @@ class MainWindow(QMainWindow):
                 + "\n".join(result.errors))
 
         # 弹窗报告
-        headline = "整理已取消" if result.was_cancelled else "整理完成！"
+        headline = _execute_headline(result)
         msg_lines = [f"{headline}\n\n{summary}\n"]
+        if result.moved == 0 and not result.was_cancelled:
+            msg_lines.append(
+                "本次没有移动任何文件。请查看下面的跳过/失败原因，"
+                "处理后重新生成预览再试。")
         if result.skipped:
-            msg_lines.append(f"跳过 {result.skipped} 项（源已消失/已修改/目标被占用）")
+            msg_lines.append(
+                f"跳过 {result.skipped} 项（逐项原因见下方详情）")
         if result.failed:
             msg_lines.append(f"失败 {result.failed} 项（移动错误）")
         msg_lines.append(f"\n批次 #{result.batch_id} 已保存至 .organizer/history.db")
@@ -4402,6 +4775,21 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "归档盒", "没有可撤销的批次（已经是最新状态）。")
             return
 
+        # S3 / guia F-08：存在未核对的中断批次时，撤销按钮走核对恢复
+        blocked = interrupted_batch_id(self._storage)
+        if blocked is not None:
+            reply = QMessageBox.question(
+                self, "有未核对的批次",
+                f"批次 #{blocked} 上次运行被中断，状态还没核对。\n\n"
+                "直接撤销无法保证不丢文件。要先「核对恢复」确认磁盘实际状态吗？\n"
+                "（只核对与补记，不会覆盖、删除或再次移动文件）",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if reply == QMessageBox.Yes:
+                self.recover_interrupted_batch(blocked)
+            return
+
         # 确认
         reply = QMessageBox.question(
             self, "归档盒",
@@ -4419,11 +4807,15 @@ class MainWindow(QMainWindow):
 
         self._set_working(True, "撤销中……")
         self.task.begin("undo", self._storage.root, phase="撤销最近批次")
-        self._undo_worker = UndoWorker(self._storage.root, parent=self)
-        self._undo_worker.finished_ok.connect(self._on_undo_done)
-        self._undo_worker.failed.connect(self._on_undo_failed)
-        self._undo_worker.finished.connect(lambda: self._finish_task("undo"))
-        self._undo_worker.start()
+        try:
+            self._undo_worker = UndoWorker(self._storage.root, parent=self)
+            self._undo_worker.finished_ok.connect(self._on_undo_done)
+            self._undo_worker.failed.connect(self._on_undo_failed)
+            self._undo_worker.finished.connect(lambda: self._finish_task("undo"))
+            self._refresh_busy_ui("正在撤销最近批次……")
+            self._undo_worker.start()
+        except Exception as e:
+            self._abort_task_start("undo", "撤销", e)
 
     def _finish_task(self, kind: str):
         """工作线程真正退出后：结束任务上下文并刷新界面/历史。"""
@@ -4442,6 +4834,8 @@ class MainWindow(QMainWindow):
             f"撤销批次 #{result.batch_id}：{result.summary()}"
         )
         msg = f"撤销批次 #{result.batch_id}\n\n{result.summary()}"
+        if getattr(result, "notes", None):
+            msg += "\n\n说明：\n" + "\n".join(result.notes[:20])
         if result.errors_list:
             msg += "\n\n冲突/错误详情：\n" + "\n".join(result.errors_list[:20])
         # S3-23：撤销的拒绝原因/冲突详情同样落盘，便于事后核对
@@ -4463,6 +4857,31 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.warning(self, "归档盒",
                                 msg + "\n\n⚠ 没有任何文件被恢复，不能算完整撤销。")
+
+        # S3 / filesafe F-24：冲突批次要有出口，不能永远问、又永远撤不掉
+        if result.conflict > 0 and self._storage is not None:
+            conflict_text = "\n".join(result.conflicts[:10]) \
+                if getattr(result, "conflicts", None) else ""
+            reply = QMessageBox.question(
+                self, "冲突批次",
+                "有文件因为冲突没有恢复：\n\n"
+                + (conflict_text or "\n".join(result.errors_list[:10]))
+                + "\n\n这些冲突是否已经人工处理完？\n\n"
+                "选「是」：把批次标记为已人工处理，以后打开目录不再反复询问"
+                "（不会删除、移动或修改任何文件）。\n"
+                "选「否」：保留待处理；修好冲突后可以再次撤销。",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply == QMessageBox.Yes:
+                try:
+                    acknowledge_batch_handled(self._storage, result.batch_id)
+                    self.statusBar().showMessage(
+                        f"批次 #{result.batch_id} 已标记为人工处理，不再反复询问。")
+                except Exception as e:
+                    QMessageBox.warning(
+                        self, "归档盒",
+                        f"标记人工处理失败：{_describe_exception(e)}")
 
     def _on_undo_failed(self, err: str):
         self.statusBar().showMessage("撤销失败")
@@ -4672,9 +5091,8 @@ class MainWindow(QMainWindow):
           不自动重放计划、不把文件搬回（搬回是“撤销”的职责）。
         - 工作线程在自身线程内创建并关闭 Storage，不复用主线程连接。
         - 任务携带唯一 seq 与根目录，回调校验来源，迟到结果丢弃。
-        - 本阶段恢复不可取消：进度明确显示“正在核对 N/M”，
-          不展示无效的取消按钮。
-        """
+        - 本阶段恢复支持协作式取消：进度明确显示“正在核对 N/M”，
+          取消后未处理的项目保持原状态。"""
         if self._storage is None:
             return None
         if self._close_pending or self._closing:
@@ -4686,18 +5104,23 @@ class MainWindow(QMainWindow):
         seq = self._recover_seq
         root = self._storage.root
         self.task.begin("recover", root, phase="核对恢复中……",
-                        cancelable=False, total=0)
+                        cancelable=True, total=0)
         self._set_working(True, "正在核对恢复……")
         self._recover_result = None
 
-        self._recover_worker = RecoverWorker(seq, root, int(batch_id),
-                                             parent=self)
-        self._recover_worker.progress.connect(self._on_recover_progress)
-        self._recover_worker.finished_ok.connect(self._on_recover_done)
-        self._recover_worker.failed.connect(self._on_recover_failed)
-        self._recover_worker.finished.connect(
-            lambda: self._finish_task("recover"))
-        self._recover_worker.start()
+        try:
+            self._recover_worker = RecoverWorker(seq, root, int(batch_id),
+                                                 parent=self)
+            self._recover_worker.progress.connect(self._on_recover_progress)
+            self._recover_worker.finished_ok.connect(self._on_recover_done)
+            self._recover_worker.failed.connect(self._on_recover_failed)
+            self._recover_worker.finished.connect(
+                lambda: self._finish_task("recover"))
+            self._refresh_busy_ui("正在核对恢复……")
+            self._recover_worker.start()
+        except Exception as e:
+            self._abort_task_start("recover", "核对恢复", e)
+            return None
         return self._recover_worker
 
     def _recover_source_ok(self, seq: int, root: str) -> bool:
@@ -4802,17 +5225,40 @@ class MainWindow(QMainWindow):
             event.accept()
             return
 
+        # 已经在等待后台任务时再次点关闭：说明在等谁、等多久，并允许强制退出
+        if self._close_pending:
+            elapsed = max(0, int(time.monotonic() - self._busy_started_at))
+            reply = QMessageBox.question(
+                self, "仍在等待后台任务",
+                f"正在等待：{self.task.describe()}\n"
+                f"已等待：{elapsed} 秒\n\n"
+                "现在强制退出吗？\n\n"
+                "强制退出不会丢失已经移动的文件：整理记录已写入 "
+                ".organizer/history.db，下次打开目录会提示核对恢复。\n"
+                "仍在进行的单个文件操作会先完成再退出。",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply == QMessageBox.Yes:
+                append_startup_log(
+                    f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 用户强制退出："
+                    f"{self.task.describe()}（已等待 {elapsed} 秒）")
+                self._closing = True
+                os._exit(0)
+            event.ignore()
+            return
+
         # 请求所有支持协作式取消的后台任务停止
         workers = self._background_workers()
         for w in workers:
-            if w.isRunning() and hasattr(w, "request_cancel"):
+            if _worker_running(w) and hasattr(w, "request_cancel"):
                 try:
                     w.request_cancel()
                 except Exception:
                     pass
 
         # 只要还有线程在跑，就不关闭窗口、不关闭数据库，等线程真正结束
-        running = [w for w in workers if w.isRunning()]
+        running = [w for w in workers if _worker_running(w)]
         if running:
             event.ignore()
             if not self._close_pending:
@@ -4821,8 +5267,8 @@ class MainWindow(QMainWindow):
                 self._plan_cancel_seq = self._current_plan_seq
                 self._plan_cancel_requested = True
                 self._refresh_busy_ui(
-                    "后台任务正在结束，窗口将在任务完成且记录安全关闭后自动关闭……"
-                )
+                    f"正在等待后台任务结束：{self.task.describe()}。"
+                    "再次点关闭可以强制退出。")
                 self._update_button_states()
                 QTimer.singleShot(200, self._retry_close)
             return
@@ -4830,9 +5276,7 @@ class MainWindow(QMainWindow):
         # 所有线程已结束，此时关闭数据库才安全
         self._closing = True
         self._close_pending = False
-        if self._history_dialog is not None:
-            self._history_dialog.close()
-            self._history_dialog = None
+        self._close_child_windows()
         if self._storage is not None:
             try:
                 self._storage.close()
@@ -4840,11 +5284,27 @@ class MainWindow(QMainWindow):
                 self._storage = None
         event.accept()
 
+    def _close_child_windows(self):
+        """S3 / guia F-19：关闭主窗口时一并关闭所有非模态子窗口。"""
+        for attr in ("_history_dialog", "_intake_dialog", "_tree_dialog",
+                     "_duplicate_dialog", "_recent_dialog"):
+            dlg = getattr(self, attr, None)
+            if dlg is None:
+                continue
+            try:
+                dlg.close()
+            except Exception:
+                pass
+            try:
+                setattr(self, attr, None)
+            except Exception:
+                pass
+
     def _retry_close(self):
         """等待后台线程全部结束后再真正关闭窗口。"""
         if not self._close_pending or self._closing:
             return
-        running = [w for w in self._background_workers() if w.isRunning()]
+        running = [w for w in self._background_workers() if _worker_running(w)]
         if running:
             QTimer.singleShot(200, self._retry_close)
             return
@@ -4914,9 +5374,27 @@ def _install_crash_logging() -> None:
     threading.excepthook = _thread_excepthook
 
 
+def _install_qt_chinese(app) -> None:
+    """S3 / guib F-18：加载 Qt 自带中文翻译，标准按钮显示「确定/取消/是/否」。
+
+    找不到翻译文件时静默降级（各对话框已单独设置主要按钮文案）。
+    """
+    try:
+        from PySide6.QtCore import QLibraryInfo, QLocale, QTranslator
+        path = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
+        translator = QTranslator(app)
+        if translator.load(QLocale(QLocale.Chinese, QLocale.China),
+                           "qtbase", "_", path):
+            app.installTranslator(translator)
+            app._archivebox_translator = translator
+    except Exception:
+        pass
+
+
 def main():
     _install_crash_logging()
     app = QApplication(sys.argv)
+    _install_qt_chinese(app)
     app.setStyle("Fusion")
     ui_font = QFont()
     ui_font.setFamilies(["PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC"])
@@ -4956,7 +5434,7 @@ def main():
             border-radius: 4px;
         }
         QPushButton:hover { background: #ECEFF1; }
-        QPushButton:disabled { color: #90A4AE; background: #F5F7F8; }
+        QPushButton:disabled { color: #5F6B76; background: #EDF1F4; }
         QPushButton[role="primary"] {
             background: #2563EB;
             color: white;
@@ -4966,21 +5444,26 @@ def main():
         QPushButton[role="primary"]:hover { background: #1D4ED8; }
         QPushButton[role="nav"] {
             text-align: left;
-            padding: 5px 10px;
-            border: none;
+            padding: 6px 10px;
+            border: 1px solid #D7DEE6;
             border-radius: 6px;
-            background: transparent;
+            background: #FFFFFF;
             color: #0F172A;
             font-weight: 500;
         }
         QPushButton[role="nav"]:hover { background: #E2E8F0; }
-        QPushButton[role="nav"]:disabled { color: #94A3B8; background: transparent; }
+        QPushButton[role="nav"]:disabled {
+            color: #5F6B76; background: #EDF1F4; border-color: #E2E8F0;
+        }
         QPushButton[role="nav"][current="true"] {
             background: #EFF6FF;
             color: #1D4ED8;
             font-weight: 600;
         }
-        QPushButton[role="primary"]:disabled { background: #B0BEC5; color: white; }
+        QPushButton[role="primary"]:disabled {
+            background: #DCE3E8;
+            color: #5F6B76;
+        }
         QPushButton[role="danger"] {
             background: white;
             color: #C62828;

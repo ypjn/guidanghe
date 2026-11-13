@@ -400,7 +400,12 @@ def _compute_target_dir(
             f"当前模式为：{mode}")
     base = _build_target_dir_v2(
         direction or "", semester or "", category or "", file_type)
-    return os.path.join(base, inner_path) if inner_path else base
+    if not inner_path:
+        return base
+    # S4 / F-25：内部路径逐段 sanitize，统一使用 os.sep，避免混用 / 与 \
+    segs = [_sanitize_component(p)
+            for p in inner_path.replace("\\", "/").split("/") if p]
+    return os.path.join(base, *segs) if segs else base
 
 
 # ======================== 批次级唯一名称重算 ========================
@@ -541,10 +546,27 @@ def apply_override_to_plan(
     target.target_dir_rel = new_target_dir
     target.target_rel_path = os.path.join(new_target_dir, target.file.filename)
     target.target_filename = target.file.filename
-    target.rule_applied = new_reason
-    target.rule_key = f"manual_override:{source_rel}"
-    target.is_manual_overridden = True
-    target.override_note = p.override_note or ""
+
+    # S4 / planner F-19：改回原本的自动分类时，不应继续标成「手动修正」。
+    def _same(a, b) -> bool:
+        return (a or "").strip() == (b or "").strip()
+
+    same_as_auto = (
+        _same(new_dir, target.auto_direction)
+        and _same(new_sem, target.auto_semester)
+        and _same(new_cat, target.auto_category)
+        and _same(new_inner, target.auto_inner_path)
+    )
+    if same_as_auto:
+        target.is_manual_overridden = False
+        target.override_note = ""
+        target.rule_key = target.auto_rule_key or target.rule_key
+        target.rule_applied = target.auto_rule_applied or target.rule_applied
+    else:
+        target.rule_applied = new_reason
+        target.rule_key = f"manual_override:{source_rel}"
+        target.is_manual_overridden = True
+        target.override_note = p.override_note or ""
 
     # 4) 整批重算唯一名称（包括自身 + 可能被连带冲突的其他条目）
     _recompute_unique_names(plan)

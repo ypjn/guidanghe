@@ -26,6 +26,10 @@ VERSION = 1
 MAX_RECORDS = 30
 
 
+class RecentSpacesError(RuntimeError):
+    """最近空间记录读写失败（%APPDATA% 不可写、被占用等）。"""
+
+
 def store_path() -> str:
     override = os.environ.get(ENV_OVERRIDE, "").strip()
     if override:
@@ -35,15 +39,20 @@ def store_path() -> str:
 
 def _atomic_write(path: str, text: str) -> None:
     d = os.path.dirname(os.path.abspath(path))
-    os.makedirs(d, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(prefix=".recent_spaces.", suffix=".tmp", dir=d)
+    tmp = None
     try:
+        os.makedirs(d, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=".recent_spaces.", suffix=".tmp", dir=d)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(text)
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, path)
         tmp = None
+    except OSError as e:
+        raise RecentSpacesError(
+            f"无法写入最近空间记录：{path}\n原因：{e}\n"
+            "记录没有保存，整理本身不受影响。") from e
     finally:
         if tmp and os.path.exists(tmp):
             try:
@@ -74,11 +83,20 @@ def _quarantine_corrupt(path: str) -> None:
 def _read() -> dict:
     path = store_path()
     if not os.path.isfile(path):
+        # S4 / misc F-17：路径存在但不是文件（被目录/占用取代）不能当空
+        if os.path.exists(path):
+            raise RecentSpacesError(
+                f"最近空间记录路径不是普通文件：{path}\n"
+                "记录没有读取，也不会被覆盖。")
         return {"version": VERSION, "items": []}
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-    except (OSError, ValueError):
+    except OSError as e:
+        # S4 / misc F-17：读不出来不能当空，否则下一次写入会覆盖旧记录
+        raise RecentSpacesError(
+            f"无法读取最近空间记录：{path}\n原因：{e}") from e
+    except ValueError:
         _quarantine_corrupt(path)
         return {"version": VERSION, "items": []}
     if not isinstance(data, dict) or not isinstance(data.get("items"), list):
@@ -142,8 +160,11 @@ def list_spaces() -> List[SpaceRecord]:
 
 
 def _neg_time(value: str):
-    # 时间字符串为 ISO，可字典序比较；用负序实现“最近在前”
-    return "".join(chr(0x10FFFF - ord(c)) for c in (value or ""))
+    # 时间字符串为 ISO，可字典序比较；用负序实现“最近在前”。
+    # S4 / misc F-37：空时间不应排到最前。
+    if not (value or "").strip():
+        return "\uffff"
+    return "".join(chr(0x10FFFF - ord(c)) for c in value)
 
 
 def touch(path: str, name: str = "") -> None:

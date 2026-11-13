@@ -643,6 +643,15 @@ class ClassificationConfigDialog(QDialog):
     def _on_preview(self):
         if self._previewing or self._host_closing():
             return
+        # S4 / planner F-24：当前配置损坏时，不能拿内置默认配置冒充
+        # “当前生效配置”做对比；先修复/保存再试运行。
+        if self.config_error:
+            QMessageBox.warning(
+                self, "试运行",
+                "当前目录的分类配置不可用（原文件已保留），"
+                "没有可信的「当前生效配置」可供对比。\n\n"
+                "请先修复配置并保存，或点「恢复默认」保存后再试运行。")
+            return
         if self.scan_result is None:
             QMessageBox.information(
                 self, "试运行",

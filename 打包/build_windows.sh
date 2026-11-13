@@ -89,6 +89,13 @@ for src in "$ROOT/归档盒源码"/*.py; do
   cp "$src" "$DIST/app/"
 done
 
+# S3 / lead L-01/L-06：去掉 macOS AppleDouble、.DS_Store 与 Python 缓存，
+# 否则发行包里会出现成百上千个 ._* 和 __pycache__。
+find "$DIST" \
+  \( -name '._*' -o -name '.DS_Store' -o -name '__pycache__' \
+     -o -name '*.pyc' -o -name '*.pyo' \) \
+  -prune -exec rm -rf {} +
+
 if ! find "$SITE/PySide6" -name 'qwindows.dll' | grep -q .; then
   echo "Windows 界面组件不完整：没有 qwindows.dll" >&2
   exit 1
@@ -118,10 +125,14 @@ cat > "$DIST/使用说明.txt" <<'EOF'
 整理记录保存在你的账户里，不在这个文件夹里：
 %APPDATA%\归档盒
 
+AI 补充分类默认关闭，程序不内置任何密钥；只有你自己打开并填写密钥后才会发请求。
+
 Apple 芯片的 Mac 请用另一份「归档盒.app」，不要用这个 exe。
 EOF
 
 rm -f "$PACK/归档盒-Windows-免安装.zip"
-ditto -c -k --keepParent "$DIST" "$PACK/归档盒-Windows-免安装.zip"
+# --norsrc + COPYFILE_DISABLE：不把 AppleDouble 资源叉打进发布包
+COPYFILE_DISABLE=1 ditto -c -k --norsrc --keepParent "$DIST" \
+  "$PACK/归档盒-Windows-免安装.zip"
 echo "已生成：$DIST/归档盒.exe"
 echo "压缩包：$PACK/归档盒-Windows-免安装.zip"
