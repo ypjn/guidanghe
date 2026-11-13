@@ -23,6 +23,7 @@ from duplicate_report import (
     KIND_CONTENT, KIND_SAME_NAME_DIFF, KIND_SAME_NAME_PENDING,
     KIND_UNVERIFIED, DuplicateReport, DupEntry, assemble_report,
     export_csv_text, export_json_text, verify_entries,
+    write_csv_file,
 )
 from main import _reveal_in_file_manager
 
@@ -335,10 +336,12 @@ class DuplicateDialog(QDialog):
         if not path:
             return
         try:
-            text = (export_json_text(self.report) if fmt == "json"
-                    else export_csv_text(self.report))
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(text)
+            if fmt == "json":
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(export_json_text(self.report))
+            else:
+                # S2-43：UTF-8 BOM + newline=''，Excel 不乱码、不出现 \r\r\n
+                write_csv_file(path, export_csv_text(self.report))
         except OSError as e:
             QMessageBox.warning(self, "导出失败", str(e))
             return

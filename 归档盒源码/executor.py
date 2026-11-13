@@ -200,6 +200,7 @@ def execute_plan(
         if not os.path.isfile(src_path):
             _record(idx, STATUS_SKIPPED, error="源文件已不存在")
             result.skipped += 1
+            result.errors.append(f"跳过（源文件已不存在）：{item.file.rel_path}")
             continue
 
         stored_sha = None
@@ -211,11 +212,15 @@ def execute_plan(
         if stored_sha and current_sha and stored_sha != current_sha:
             _record(idx, STATUS_SKIPPED, error="源文件内容已变化")
             result.skipped += 1
+            result.errors.append(f"跳过（源文件内容已变化）：{item.file.rel_path}")
             continue
 
         if os.path.exists(target_path):
             _record(idx, STATUS_SKIPPED, error="目标路径已被占用")
             result.skipped += 1
+            result.errors.append(
+                f"跳过（目标路径已被占用）：{item.file.rel_path} → "
+                f"{item.target_rel_path}")
             continue
 
         # ---- 创建目标目录 ----
@@ -229,6 +234,9 @@ def execute_plan(
             except OSError as e:
                 _record(idx, STATUS_FAILED, error=f"创建目录失败：{e}")
                 result.failed += 1
+                result.errors.append(
+                    f"失败（创建目标目录）：{item.file.rel_path} → "
+                    f"{item.target_rel_path}：{e}")
                 continue
 
         # ---- 移动（原子操作，不中断）----

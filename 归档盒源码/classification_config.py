@@ -1038,15 +1038,17 @@ def compile_config(cfg: Optional[ClassificationConfig] = None) -> CompiledConfig
     cfg = cfg or default_config()
     semester_by_source: Dict[str, SemesterRule] = {}
     for r in cfg.semester_rules:
-        if r.enabled and r.source not in semester_by_source:
-            semester_by_source[r.source] = r
+        key = r.source.casefold()
+        if r.enabled and key not in semester_by_source:
+            semester_by_source[key] = r
     top_by_source: Dict[str, TopDirectionRule] = {}
     for r in cfg.top_direction_rules:
-        if r.enabled and r.source not in top_by_source:
-            top_by_source[r.source] = r
+        key = r.source.casefold()
+        if r.enabled and key not in top_by_source:
+            top_by_source[key] = r
     semester_dirs: Dict[Tuple[str, str], SemesterDirRule] = {}
     for r in cfg.semester_dir_rules:
-        key = (r.semester, r.source)
+        key = (r.semester.casefold(), r.source.casefold())
         if r.enabled and key not in semester_dirs:
             semester_dirs[key] = r
     generic_rules = [r for r in cfg.generic_dir_rules if r.enabled]
@@ -1071,13 +1073,47 @@ def compile_config(cfg: Optional[ClassificationConfig] = None) -> CompiledConfig
     )
 
 
+_CJK_RE = re.compile(r"[\u3400-\u9fff]")
+
+# 常见教学日历学期写法（S2-24）：命中即视为学期目录，学期标签用目录名本身
+_SEMESTER_NAME_RE = re.compile(
+    r"^(?:"
+    r"20\d{2}\s*[-_—~至]\s*20\d{2}\s*[-_]\s*[12]"
+    r"|20\d{2}\s*[-_—~]?\s*20\d{2}\s*学年\s*(?:第)?\s*[一二12]\s*学期"
+    r"|20\d{2}\s*学年?\s*(?:第)?\s*[一二12]\s*学期"
+    r"|20\d{2}\s*[春秋]\s*(?:学期)?"
+    r"|20\d{2}\s*[-_]\s*[12]\s*(?:学期)?"
+    r"|大[一二三四]\s*[上下]"
+    r")$"
+)
+
+
+def looks_like_semester(name: str) -> bool:
+    """目录名是否像教学日历里的学期（2024-2025-1 / 2024秋 / 大二上）。"""
+    text = (name or "").strip()
+    return bool(text) and _SEMESTER_NAME_RE.match(text) is not None
+
+
+def keyword_matches(text_lower: str, keyword: str) -> bool:
+    """关键词匹配（S2-14/15）。
+
+    - 含中文等非 ASCII 字符的关键词：直接子串匹配——
+      否则「高数2」「线代A」这类"课名+班号"永远命中不了；
+    - 纯 ASCII 关键词：仍按词边界，避免 ai 命中 training/main/email；
+      右侧允许紧跟数字（python 能命中 python3），左侧不允许字母数字。
+    """
+    kw_lower = (keyword or "").lower()
+    if not kw_lower:
+        return False
+    if not kw_lower.isascii() or _CJK_RE.search(kw_lower):
+        return kw_lower in text_lower
+    pattern = r"(?<![a-z0-9])" + re.escape(kw_lower) + r"(?![a-z])"
+    return re.search(pattern, text_lower) is not None
+
+
 def _match_english_word(text_lower: str, keyword: str) -> bool:
-    """英文关键词按词边界匹配，避免 "ai" 命中 "training"。"""
-    kw_lower = keyword.lower()
-    if kw_lower.isalpha():
-        pattern = r"(?<![a-z0-9])" + re.escape(kw_lower) + r"(?![a-z0-9])"
-        return re.search(pattern, text_lower) is not None
-    return kw_lower in text_lower
+    """兼容旧名：实际走 keyword_matches（保留英文词边界行为）。"""
+    return keyword_matches(text_lower, keyword)
 
 
 # ======================== 长期修正规则匹配（V1.5） ========================
@@ -1251,7 +1287,9 @@ def _project_output_match(rel_path: str, compiled: CompiledConfig):
     def is_project(name: str) -> bool:
         if name in _NOT_PROJECT_DIR:
             return False
-        if name in compiled.semester_by_source:
+        if name.casefold() in compiled.semester_by_source:
+            return False
+        if looks_like_semester(name):
             return False
         return _output_type_in(name) is None
 
@@ -1301,10 +1339,15 @@ def _unmatched_fallback(compiled: CompiledConfig, rel_path: str,
     未命中关键词时保持调用方给出的原始锚点与类别（与 V1.1 一致）。
     extra_text 只参与关键词，不参与目录判断。文件名已经能命中时，
     不用图片文字改判。
+
+    S2-16：已经落在某个已识别目录（anchor >= 0，例如学期内的课程目录）下时，
+    不再被「软著/专利/论文」的项目输出规则抢走——否则同一课程目录会被
+    拆到「项目/论文」和「课程」两处。只有还没有目录锚点的文件才做项目识别。
     """
-    output = _project_output_match(rel_path, compiled)
-    if output is not None:
-        return output
+    if anchor < 0:
+        output = _project_output_match(rel_path, compiled)
+        if output is not None:
+            return output
     hit = _pick_keyword(
         compiled.keyword_unmatched, rel_path, filename, extra_text)
     if hit is not None:
@@ -1346,18 +1389,25 @@ def _classify_context_impl(rel_path: str, compiled: CompiledConfig,
     text_lower = rel_path.lower()
 
     # 1) 学期目录（与 V1.1 一致：按路径组件顺序找第一个命中）
-    sem_index, sem_rule = -1, None
-    for i, p in enumerate(parts):
-        rule = compiled.semester_by_source.get(p)
+    #    S2-25：配置的学期源按 casefold 比较（DAA/daa 视为同一学期目录）；
+    #    S2-24：未登记但形如 2024-2025-1 / 2024秋 / 学年第一学期 的目录
+    #    也识别为学期，学期标签使用目录名本身，不再静默落到待定。
+    sem_index, sem_rule, sem_label = -1, None, ""
+    for i, p in enumerate(dir_parts):
+        rule = compiled.semester_by_source.get(p.casefold())
         if rule is not None:
-            sem_index, sem_rule = i, rule
+            sem_index, sem_rule, sem_label = i, rule, rule.semester
             break
-    sem_label = sem_rule.semester if sem_rule is not None else ""
+    if sem_index < 0:
+        for i, p in enumerate(dir_parts):
+            if looks_like_semester(p):
+                sem_index, sem_label = i, p.strip()
+                break
 
     # 2) 顶层方向（非学期场景）
     if sem_index < 0 and parts:
         top = parts[0]
-        top_rule = compiled.top_by_source.get(top)
+        top_rule = compiled.top_by_source.get(top.casefold())
         if top_rule is not None:
             direction = top_rule.direction
             if len(dir_parts) >= 2:
@@ -1388,7 +1438,8 @@ def _classify_context_impl(rel_path: str, compiled: CompiledConfig,
         child_dir = parts[child_idx] if child_idx < len(dir_parts) else None
         # 目录映射按「学期标签」关联（默认配置中标签与来源目录同名，
         # 自定义学期标签不同名时也能命中）
-        rule = (compiled.semester_dirs.get((sem_label, child_dir))
+        rule = (compiled.semester_dirs.get(
+                    (sem_label.casefold(), child_dir.casefold()))
                 if child_dir else None)
 
         if rule is not None:

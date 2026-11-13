@@ -364,6 +364,24 @@ def export_payload(report: DuplicateReport) -> dict:
     }
 
 
+def csv_safe(value) -> str:
+    """按纯文本转义会触发 Excel 公式的前缀（S3-20）。
+
+    以 = + - @ 或制表符/回车开头的单元格，在 Excel/WPS 里会被当成公式执行。
+    统一加一个前导单引号，强制按文本显示。
+    """
+    text = "" if value is None else str(value)
+    if text[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + text
+    return text
+
+
+def write_csv_file(path: str, text: str) -> None:
+    """S2-43：CSV 统一 UTF-8 BOM + newline=''，避免 Excel 乱码与 \\r\\r\\n。"""
+    with open(path, "w", encoding="utf-8-sig", newline="") as f:
+        f.write(text)
+
+
 def export_csv_text(report: DuplicateReport) -> str:
     buf = io.StringIO()
     writer = csv.writer(buf)
@@ -372,10 +390,10 @@ def export_csv_text(report: DuplicateReport) -> str:
         "大小(字节)", "大小", "核对状态", "说明", "SHA-256", "计划目标"])
     for g in report.groups:
         for e in g.entries:
-            writer.writerow([
+            writer.writerow([csv_safe(v) for v in (
                 g.kind_label, g.group_id, g.count, e.filename, e.rel_path,
                 e.abs_path, e.size, e.size_display, e.status_label,
-                e.reason, e.sha256, e.target_rel_path])
+                e.reason, e.sha256, e.target_rel_path)])
     return buf.getvalue()
 
 

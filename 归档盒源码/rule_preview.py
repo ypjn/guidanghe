@@ -148,9 +148,9 @@ def preview_impact(
         old_item = base_by_rel.get(new_item.file.rel_path)
         if old_item is None:
             continue
-        if (old_item.target_rel_path != new_item.target_rel_path
-                or old_item.rule_key != new_item.rule_key
-                or old_item.rule_applied != new_item.rule_applied):
+        # S2-22：只比较目标路径。规则标识/依据里的内部序号变化不代表
+        # 文件会被移动到别处，不能报成「将移动」。
+        if old_item.target_rel_path != new_item.target_rel_path:
             changed.append(ImpactItem(
                 rel_path=new_item.file.rel_path,
                 old_reason=old_item.rule_applied,

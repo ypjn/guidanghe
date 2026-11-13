@@ -164,7 +164,11 @@ class Storage:
     """SQLite 持久化管理器。"""
 
     def __init__(self, root: str):
-        self.root = os.path.abspath(root)
+        # S2-19：Windows 路径大小写不敏感。历史库根目录统一 normcase，
+        # 否则 C:\Foo 与 c:\foo 会被当成两个空间、各存一套批次记录。
+        raw_root = os.path.abspath(root)
+        self.root = (os.path.normcase(raw_root)
+                     if os.name == "nt" else raw_root)
         self.db_dir = os.path.join(self.root, ".organizer")
         self.db_path = os.path.join(self.db_dir, DB_FILENAME)
         self._ensure_db_dir()

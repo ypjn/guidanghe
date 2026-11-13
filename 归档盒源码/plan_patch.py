@@ -25,6 +25,7 @@
 
 from __future__ import annotations
 
+import copy
 import os
 import re
 from dataclasses import dataclass, field
@@ -34,6 +35,7 @@ from planner import (
     PlanItem, OrganizePlan, TARGET_ROOT,
     _build_target_dir_v2,
     _sanitize_component, _assign_unique_names,
+    assign_unique_targets,
     MODE_BY_DIRECTION_SEMESTER, build_plan, ocr_maps_from_plan,
 )
 from classification_config import (
@@ -229,12 +231,12 @@ class ManualOverrideDialog:
             return
         try:
             params = self._current_params()
-            target_dir = _compute_target_dir(
-                self.mode, params.direction or None,
-                params.semester, params.category,
-                self.item.file_type, inner_path=params.inner_path,
-            )
-            target_path = os.path.join(target_dir, self.item.file.filename)
+            # S2-20/S2-21：预览与「点确定」走完全相同的校验与唯一名重算，
+            # 不再出现"预览通过、点确定报错"或"预览 x.pdf、实际 x (1).pdf"。
+            checked = validate_override_params(self.mode, params)
+            target_path = preview_override_target(
+                self.plan, self.source_rel, checked)
+            target_dir = os.path.dirname(target_path)
             self.preview_label.setText(
                 f"<b>目标路径：</b>{target_path}<br>"
                 f"<b>目标目录：</b>{target_dir}<br>"
@@ -404,57 +406,30 @@ def _compute_target_dir(
 # ======================== 批次级唯一名称重算 ========================
 
 def _recompute_unique_names(plan: OrganizePlan) -> None:
-    """按 planner 的 _assign_unique_names 逻辑，重新分配批次内唯一名称。
+    """重新分配批次内唯一名称。
 
-    因为 _assign_unique_names 是"遍历 items_so_far + 磁盘检查"的增量
-    算法，而批次间目标存在交叉冲突（改一个文件的目标可能让另一个
-    原来不冲突的条目变成冲突），这里对**每个**条目都按当前
-    target_dir_rel + 原名重新跑一遍。
-
-    不改变条目顺序；只更新 target_filename / target_rel_path /
-    conflict_with_existing。已选中/手动修正/自动快照字段都不动。
+    S2-21/S2-23：与 planner 共用同一个稳定分配器（assign_unique_targets），
+    因此「预览看到的目标路径」与「点确定后实际写入的目标路径」完全一致，
+    重复计算也不会把 (1)(2) 换来换去，只改无关的一行不会连累其他条目。
     """
-    seen_in_batch: set[str] = set()
-    root = plan.root
-    for item in plan.items:
-        base_target_dir = item.target_dir_rel
-        base_name = item.file.filename
-        target_rel = os.path.join(base_target_dir, base_name)
+    assign_unique_targets(plan.items, plan.root)
 
-        candidate_name = base_name
-        n = 1
-        while target_rel in seen_in_batch:
-            stem, ext = os.path.splitext(base_name)
-            candidate_name = f"{stem} ({n}){ext}"
-            target_rel = os.path.join(base_target_dir, candidate_name)
-            n += 1
 
-        disk_path = os.path.join(root, target_rel)
-        if os.path.exists(disk_path) and os.path.abspath(disk_path) not in {
-            os.path.abspath(os.path.join(root, i.file.rel_path))
-            for i in plan.items
-        }:
-            # 磁盘上非计划来源的文件已占用；但如果就是本轮文件自己的位置
-            # （它原来的目标），就不算冲突
-            base_existing = os.path.join(root, base_target_dir, base_name)
-            if os.path.abspath(base_existing) != os.path.abspath(
-                os.path.join(root, item.file.rel_path)):
-                candidate_name = base_name
-                n = 1
-                seen_this_pass = set(seen_in_batch)
-                while (os.path.exists(os.path.join(root, base_target_dir, candidate_name))
-                       or os.path.join(base_target_dir, candidate_name) in seen_this_pass):
-                    stem, ext = os.path.splitext(base_name)
-                    candidate_name = f"{stem} ({n}){ext}"
-                    n += 1
-                target_rel = os.path.join(base_target_dir, candidate_name)
-                item.conflict_with_existing = True
-            else:
-                item.conflict_with_existing = False
+def preview_override_target(plan: OrganizePlan, source_rel: str,
+                            params: OverrideParams) -> str:
+    """只读预览：返回「点确定后」该条目真正会用的目标相对路径。
 
-        seen_in_batch.add(target_rel)
-        item.target_filename = candidate_name if candidate_name else base_name
-        item.target_rel_path = target_rel
+    实现方式与 apply_override_to_plan 完全一致（在同一份计划副本上应用 +
+    整批重算唯一名），因此预览结果不可能是"看起来合法、点确定报错"
+    或"预览 x.pdf、实际 x (1).pdf"。
+    校验失败时抛 OverrideValidationError，供对话框显示原因。
+    """
+    # 只做浅拷贝：apply_override_to_plan 只改条目的目标字段，
+    # 不会改 FileEntry；大计划下比 deepcopy 轻得多。
+    simulated = copy.copy(plan)
+    simulated.items = [copy.copy(item) for item in plan.items]
+    applied = apply_override_to_plan(simulated, source_rel, params)
+    return applied.target_rel_path
 
 
 # ======================== 单文件修正主入口 ========================

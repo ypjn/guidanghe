@@ -16,7 +16,7 @@ from scanner import ScanResult, FileEntry, classify_type
 from utils import sha256_file
 from classification_config import (
     ClassificationConfig, CompiledConfig, classify_context, compile_config,
-    match_long_term_rule,
+    match_long_term_rule, keyword_matches,
     INNER_KEEP, INNER_CLEAR,
     default_config, DEFAULT_SEMESTER_MAP, DEFAULT_TOP_DIRECTION,
     DEFAULT_SEMESTER_DIRS, DEFAULT_KEYWORD_TO_COURSE, DEFAULT_GENERIC_DIR,
@@ -34,7 +34,9 @@ class CourseRule:
     order: int = 0         # 在界面上的显示顺序（越小越优先）
 
     def matches(self, text_lower: str) -> bool:
-        return any(kw in text_lower for kw in self.keywords)
+        # S2-15：与推荐模式共用同一套关键词匹配（英文按词边界，
+        # 中文允许紧邻数字/字母），不再用裸子串。
+        return any(keyword_matches(text_lower, kw) for kw in self.keywords)
 
     def describe(self) -> str:
         """人类可读的规则描述。"""
@@ -233,6 +235,59 @@ def _build_target_dir(mode: str, course: str, file_type: str) -> str:
         return f"{TARGET_ROOT}/{_sanitize_component(course)}/{_sanitize_component(file_type)}"
     else:
         raise ValueError(f"未知模式: {mode}")
+
+
+def assign_unique_targets(items: List[PlanItem], root: str) -> None:
+    """给整批条目分配唯一目标文件名（稳定、可重复、大小写归一）。
+
+    S2-19：Windows 上路径大小写不敏感，两个只差大小写的目标算同一个，
+           必须让其中一个改名，否则执行时第二条会被跳过。
+    S2-23：分配结果是「目录 + 原文件名 + 源路径」的纯函数，
+           与条目顺序、是否刚被手动修正无关——重复生成预览不会把
+           (1)(2) 换来换去，改无关的一行也不会连累其他文件。
+
+    分配顺序：手动修正的条目优先保住自己想要的目录，其余按
+    (normcase 目标目录, normcase 原文件名, normcase 源路径) 排序，
+    因此同一批文件、同一顺序，结果完全一致。
+    """
+    root_abs = os.path.abspath(root)
+
+    def wanted_dir(item: PlanItem) -> str:
+        return os.path.normcase(item.target_dir_rel)
+
+    order = sorted(
+        items,
+        key=lambda it: (
+            0 if getattr(it, "is_manual_overridden", False) else 1,
+            wanted_dir(it),
+            os.path.normcase(it.file.filename),
+            os.path.normcase(it.file.rel_path),
+        ),
+    )
+
+    taken: set[str] = set()
+    for item in items:
+        item.conflict_with_existing = False
+
+    for item in order:
+        base_name = item.file.filename
+        stem, ext = os.path.splitext(base_name)
+        candidate = base_name
+        counter = 1
+        while True:
+            rel = os.path.join(item.target_dir_rel, candidate)
+            key = os.path.normcase(rel)
+            on_disk = os.path.exists(os.path.join(root_abs, rel))
+            if key not in taken and not on_disk:
+                break
+            if on_disk:
+                item.conflict_with_existing = True
+            candidate = f"{stem} ({counter}){ext}"
+            counter += 1
+        taken.add(os.path.normcase(
+            os.path.join(item.target_dir_rel, candidate)))
+        item.target_filename = candidate
+        item.target_rel_path = os.path.join(item.target_dir_rel, candidate)
 
 
 def _assign_unique_names(
@@ -507,8 +562,6 @@ def _group_unregistered_with_neighbors(items: List[PlanItem], root: str) -> None
             item.target_dir_rel = target_dir
             item.target_filename = item.file.filename
             item.conflict_with_existing = False
-            others = [other for other in items if other is not item]
-            _assign_unique_names(others, root, item)
             adopted += 1
         if adopted == 0:
             break
@@ -643,7 +696,6 @@ def classify_entries(
             item.ocr_text = extra
         if ocr_errors and fentry.rel_path in ocr_errors:
             item.ocr_error = ocr_errors[fentry.rel_path] or ""
-        item = _assign_unique_names(items, root, item)
         items.append(item)
 
         if progress_cb and total > 0:
@@ -652,6 +704,9 @@ def classify_entries(
     if (mode == MODE_BY_DIRECTION_SEMESTER and compiled is not None
             and not (cancel_event and cancel_event.is_set())):
         _group_unregistered_with_neighbors(items, root)
+
+    # 全部分类/归组完成后再统一分配唯一名（稳定、大小写归一，见函数说明）
+    assign_unique_targets(items, root)
 
     if mode == MODE_BY_DIRECTION_SEMESTER:
         for item in items:

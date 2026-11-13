@@ -54,7 +54,7 @@ from ocr_engine import OcrError, collect_image_text, engine_label, ocr_supported
 from ai_fallback import AiSettings, apply_ai_fallback, load_settings, save_settings
 from classification_config import (
     ClassificationConfig, ClassificationConfigError, config_summary,
-    default_config, load_config, save_config,
+    default_config, load_config, save_config, config_path,
 )
 from config_dialog import ClassificationConfigDialog
 from protect_config import (
@@ -64,6 +64,7 @@ from protect_config import (
 )
 from storage import Storage
 from storage_tree import StorageTree
+from duplicate_report import csv_safe
 from config_transfer import create_backup, restore_latest_backup
 from intake_model import IntakeList, is_within, normalize_path
 import recent_spaces
@@ -220,6 +221,21 @@ class TaskContext:
 
 # ======================== 后台线程 ========================
 
+def _describe_exception(e: BaseException) -> str:
+    """异常的可读文本：str(e) 为空时至少给出类型名（S3-30）。"""
+    text = str(e).strip()
+    name = type(e).__name__
+    return f"{name}: {text}" if text else name
+
+
+def _log_worker_failure(task: str, e: BaseException) -> None:
+    """后台任务失败：把类型、消息与堆栈追加到启动日志（S3-23/S3-30）。"""
+    append_startup_log(
+        f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {task}失败："
+        f"{_describe_exception(e)}\n"
+        + "".join(traceback.format_exception(type(e), e, e.__traceback__)))
+
+
 class ScanWorker(QThread):
     """后台扫描线程。"""
     finished_ok = Signal(object)
@@ -241,7 +257,8 @@ class ScanWorker(QThread):
                 r = scan_directory(self.root_path, protect_dirs=self.protect_dirs)
             self.finished_ok.emit(r)
         except Exception as e:
-            self.failed.emit(str(e))
+            _log_worker_failure("扫描", e)
+            self.failed.emit(_describe_exception(e))
 
 
 class PlanWorker(QThread):
@@ -288,7 +305,8 @@ class PlanWorker(QThread):
                         progress_cb=_progress,
                     )
                 except OcrError as e:
-                    self.failed.emit(self.seq, str(e))
+                    _log_worker_failure("计划生成（图片识别）", e)
+                    self.failed.emit(self.seq, _describe_exception(e))
                     return
                 if self.cancel_event.is_set():
                     self.cancelled.emit(self.seq)
@@ -321,7 +339,8 @@ class PlanWorker(QThread):
 
             self.finished_ok.emit(self.seq, plan)
         except Exception as e:
-            self.failed.emit(self.seq, str(e))
+            _log_worker_failure("计划生成", e)
+            self.failed.emit(self.seq, _describe_exception(e))
         finally:
             self.finished_seq.emit(self.seq)
 
@@ -358,7 +377,8 @@ class ExecuteWorker(QThread):
             )
             self.finished_ok.emit(result)
         except Exception as e:
-            self.failed.emit(str(e))
+            _log_worker_failure("整理", e)
+            self.failed.emit(_describe_exception(e))
         finally:
             if storage is not None:
                 try:
@@ -383,7 +403,8 @@ class UndoWorker(QThread):
             result = undo_latest_batch(storage)
             self.finished_ok.emit(result)
         except Exception as e:
-            self.failed.emit(str(e))
+            _log_worker_failure("撤销", e)
+            self.failed.emit(_describe_exception(e))
         finally:
             if storage is not None:
                 try:
@@ -425,7 +446,8 @@ class RecoverWorker(QThread):
             )
             self.finished_ok.emit(self.seq, self.root, result)
         except Exception as e:
-            self.failed.emit(self.seq, self.root, str(e))
+            _log_worker_failure("核对恢复", e)
+            self.failed.emit(self.seq, self.root, _describe_exception(e))
         finally:
             if storage is not None:
                 try:
@@ -1287,21 +1309,23 @@ class HistoryDialog(QDialog):
             else:
                 with open(path, "w", encoding="utf-8-sig", newline="") as f:
                     w = csv.writer(f)
-                    w.writerow(["批次", batch.batch_id, "状态", batch.status,
-                                "时间", batch.created_at, "模式", batch.mode])
+                    w.writerow([csv_safe(v) for v in (
+                        "批次", batch.batch_id, "状态", batch.status,
+                        "时间", batch.created_at, "模式", batch.mode)])
                     w.writerow(["序号", "原位置", "目标位置", "大小(字节)",
                                 "SHA-256", "状态", "原因", "执行时间", "撤销时间",
                                 "分类来源", "自动目标", "自动依据", "修正说明",
                                 "规则标识", "命中依据"])
                     for a in batch.actions:
-                        w.writerow([a.action_index + 1, a.source_rel,
-                                    a.target_rel, a.source_size,
-                                    a.source_sha256, a.status, a.error,
-                                    a.executed_at, a.undone_at,
-                                    a.classification_source,
-                                    a.auto_target_rel, a.auto_rule_applied,
-                                    a.override_note,
-                                    a.rule_key, a.rule_applied])
+                        w.writerow([csv_safe(v) for v in (
+                            a.action_index + 1, a.source_rel,
+                            a.target_rel, a.source_size,
+                            a.source_sha256, a.status, a.error,
+                            a.executed_at, a.undone_at,
+                            a.classification_source,
+                            a.auto_target_rel, a.auto_rule_applied,
+                            a.override_note,
+                            a.rule_key, a.rule_applied)])
         except OSError as e:
             QMessageBox.warning(self, "归档盒", f"导出失败：{e}")
             return
@@ -3026,6 +3050,10 @@ class MainWindow(QMainWindow):
                 os.path.realpath(os.path.abspath(root)):
             raise ClassificationConfigError(
                 "当前根目录已变化，拒绝把配置写入其他目录。请重新选择目录后再编辑。")
+        # S2-36：手动编辑保存前也备份一次——「恢复上一次配置」应当回到
+        # 你上一次保存的状态，而不是越过所有手工编辑退回到上次应用方案之前。
+        if os.path.isfile(config_path(root)):
+            create_backup(root)
         saved_custom = save_config(root, cfg)
         self.classification_config = cfg
         self._config_source = "custom" if saved_custom else "default"
@@ -4326,6 +4354,13 @@ class MainWindow(QMainWindow):
             parts.append(f"数据库：{os.path.join(self._storage.db_dir, 'history.db')}")
         self.statusBar().showMessage(" | ".join(parts))
 
+        # S3-23：即使不弹窗（关闭等待/未开始），跳过与失败详情也要留痕
+        if result.errors:
+            append_startup_log(
+                f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 整理批次 "
+                f"#{result.batch_id}：{result.summary()}\n"
+                + "\n".join(result.errors))
+
         # 弹窗报告
         headline = "整理已取消" if result.was_cancelled else "整理完成！"
         msg_lines = [f"{headline}\n\n{summary}\n"]
@@ -4336,7 +4371,10 @@ class MainWindow(QMainWindow):
         msg_lines.append(f"\n批次 #{result.batch_id} 已保存至 .organizer/history.db")
         msg_lines.append(f"关闭程序后仍可重新打开撤销。")
         if result.errors:
-            msg_lines.append(f"\n\n错误详情：\n" + "\n".join(result.errors[:20]))
+            msg_lines.append(
+                f"\n\n跳过/失败详情（同时写入启动日志）：\n"
+                + "\n".join(result.errors[:20])
+                + ("\n…" if len(result.errors) > 20 else ""))
 
         if result.failed > 0:
             QMessageBox.warning(self, "归档盒", "\n".join(msg_lines))
@@ -4403,12 +4441,17 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             f"撤销批次 #{result.batch_id}：{result.summary()}"
         )
-        if self._close_pending:
-            return  # 关闭等待期间不弹窗
-
         msg = f"撤销批次 #{result.batch_id}\n\n{result.summary()}"
         if result.errors_list:
             msg += "\n\n冲突/错误详情：\n" + "\n".join(result.errors_list[:20])
+        # S3-23：撤销的拒绝原因/冲突详情同样落盘，便于事后核对
+        if result.errors_list:
+            append_startup_log(
+                f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 撤销批次 "
+                f"#{result.batch_id}：{result.summary()}\n"
+                + "\n".join(result.errors_list))
+        if self._close_pending:
+            return  # 关闭等待期间不弹窗
 
         if result.refused:
             QMessageBox.warning(self, "归档盒", msg)

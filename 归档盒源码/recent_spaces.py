@@ -56,6 +56,21 @@ def _normalize(path: str) -> str:
     return os.path.realpath(os.path.abspath(os.path.expanduser(path or "")))
 
 
+def _key(path: str) -> str:
+    """比较用键：Windows 上路径大小写不敏感，避免同一目录记成两条（S2-19）。"""
+    real = _normalize(path)
+    return os.path.normcase(real) if os.name == "nt" else real
+
+
+def _quarantine_corrupt(path: str) -> None:
+    """损坏的 JSON 不删除、不覆盖：改名留存，便于用户/同步盘恢复（S2-37）。"""
+    try:
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        os.replace(path, f"{path}.corrupt-{stamp}")
+    except OSError:
+        pass
+
+
 def _read() -> dict:
     path = store_path()
     if not os.path.isfile(path):
@@ -64,8 +79,10 @@ def _read() -> dict:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
     except (OSError, ValueError):
+        _quarantine_corrupt(path)
         return {"version": VERSION, "items": []}
     if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+        _quarantine_corrupt(path)
         return {"version": VERSION, "items": []}
     return data
 
@@ -137,7 +154,7 @@ def touch(path: str, name: str = "") -> None:
     items = [row for row in data.get("items", []) if isinstance(row, dict)]
     found = None
     for row in items:
-        if _normalize(str(row.get("path", ""))) == path:
+        if _key(str(row.get("path", ""))) == _key(path):
             found = row
             break
     if found is None:
@@ -162,11 +179,11 @@ def touch(path: str, name: str = "") -> None:
 
 
 def set_pinned(path: str, pinned: bool) -> bool:
-    target = _normalize(path)
+    target = _key(path)
     data = _read()
     changed = False
     for row in data.get("items", []):
-        if isinstance(row, dict) and _normalize(str(row.get("path", ""))) == target:
+        if isinstance(row, dict) and _key(str(row.get("path", ""))) == target:
             row["pinned"] = bool(pinned)
             changed = True
     if changed:
