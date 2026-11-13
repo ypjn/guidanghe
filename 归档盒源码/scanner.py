@@ -155,6 +155,21 @@ def _looks_like_project_root(dirpath: str) -> Optional[str]:
     return None
 
 
+def _is_junction_or_reparse(path: str) -> bool:
+    """目录是否为 NTFS junction 或其他重解析点（不含普通符号链接）。
+
+    Windows 上 os.path.islink() 对 junction 返回 False，但 os.walk 仍会走进去。
+    调用方应先排除符号链接。非 Windows 上没有 st_reparse_tag，恒为 False。
+    """
+    if hasattr(os.path, "isjunction") and os.path.isjunction(path):
+        return True
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return False
+    return getattr(st, "st_reparse_tag", 0) != 0
+
+
 def _find_all_project_roots(root_dir: str) -> Dict[str, str]:
     """扫描 root_dir 下所有目录，返回所有像项目根的目录。
 
@@ -163,15 +178,20 @@ def _find_all_project_roots(root_dir: str) -> Dict[str, str]:
 
     walk 时仍跳过隐藏目录（.git/.venv 等）——不需要进入它们内部来识别项目根，
     _looks_like_project_root 只看当前层的直接子项（listdir）。
+    junction / 重解析点同样不进入。
     """
     roots: Dict[str, str] = {}
     try:
         for dirpath, dirnames, _filenames in os.walk(root_dir, followlinks=False):
-            # 跳过隐藏目录（.git/.venv 等）和明确的 skip 目录
-            dirnames[:] = [
-                d for d in dirnames
-                if not d.startswith(".") and d.lower() not in SKIP_DIRS
-            ]
+            kept = []
+            for name in dirnames:
+                if name.startswith(".") or name.lower() in SKIP_DIRS:
+                    continue
+                full = os.path.join(dirpath, name)
+                if not os.path.islink(full) and _is_junction_or_reparse(full):
+                    continue
+                kept.append(name)
+            dirnames[:] = kept
             reason = _looks_like_project_root(dirpath)
             if reason is not None:
                 roots[dirpath] = reason
@@ -213,6 +233,7 @@ class ScanResult:
     protected_roots: Dict[str, str] = field(default_factory=dict)  # {绝对路径: 保护原因}
     protected_kinds: Dict[str, str] = field(default_factory=dict)  # {绝对路径: default/auto/manual 组合}
     protected_count: int = 0  # 被保护跳过的文件数
+    junction_dirs: List[str] = field(default_factory=list)
 
     @property
     def total_files(self) -> int:
@@ -235,6 +256,8 @@ class ScanResult:
             parts.append(f"跳过保留目录 {self.skipdir_count}")
         if self.protected_count:
             parts.append(f"项目保护 {self.protected_count}（{len(self.protected_roots)} 个根）")
+        if self.junction_dirs:
+            parts.append(f"跳过 junction/重解析点 {len(self.junction_dirs)}")
         if self.permission_errors:
             parts.append(f"权限错误 {self.permission_errors}")
         if self.empty_dirs:
@@ -264,6 +287,133 @@ def format_size(size_bytes: int) -> str:
         return f"{size_bytes / (1024 * 1024):.1f} MB"
     else:
         return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+
+def _prune_dirnames(result: "ScanResult", dirpath: str, dirnames: List[str]) -> None:
+    """按扫描规则就地去掉不应进入的子目录。"""
+    kept = []
+    for name in dirnames:
+        full = os.path.join(dirpath, name)
+        if os.path.islink(full):
+            result.symlink_count += 1
+            continue
+        if _is_junction_or_reparse(full):
+            result.junction_dirs.append(full)
+            continue
+        if name.lower() in SKIP_DIRS:
+            if name.lower() == ".git":
+                result.git_count += 1
+            else:
+                result.skipdir_count += 1
+            continue
+        if name.startswith("."):
+            result.hidden_count += 1
+            continue
+        kept.append(name)
+    dirnames[:] = kept
+
+
+def _consider_file(result: "ScanResult", root: str, full_path: str) -> None:
+    """把一个路径按扫描规则纳入或跳过。规则与整目录扫描一致。"""
+    import stat as st_mod
+
+    fname = os.path.basename(full_path)
+    if os.path.islink(full_path):
+        result.symlink_count += 1
+        result.skipped.append(FileEntry(
+            abs_path=full_path, rel_path="", filename=fname,
+            file_type="", size=0, size_display="",
+            skipped_reason="符号链接",
+        ))
+        return
+    if fname.startswith("."):
+        result.hidden_count += 1
+        return
+    if fname.lower() in SKIP_FILENAMES:
+        result.skipdir_count += 1
+        return
+    if not os.access(full_path, os.R_OK):
+        result.permission_errors += 1
+        result.skipped.append(FileEntry(
+            abs_path=full_path, rel_path="", filename=fname,
+            file_type="", size=0, size_display="",
+            skipped_reason="无读取权限",
+        ))
+        return
+    try:
+        stat = os.stat(full_path, follow_symlinks=False)
+    except OSError as e:
+        result.errors.append(f"stat 失败 {full_path}: {e}")
+        return
+    if not st_mod.S_ISREG(stat.st_mode):
+        return
+    result.files.append(FileEntry(
+        abs_path=full_path,
+        rel_path=os.path.relpath(full_path, root),
+        filename=fname,
+        file_type=classify_type(fname),
+        size=stat.st_size,
+        size_display=format_size(stat.st_size),
+        mtime_ns=getattr(stat, "st_mtime_ns", 0),
+    ))
+
+
+def _apply_protection(result: "ScanResult", root: str,
+                      protect_dirs, detected: Dict[str, str]) -> None:
+    """把显式保护和自动识别的项目目录从可整理文件里剔除。"""
+    explicit: Dict[str, tuple] = {}
+    for p in protect_dirs or []:
+        if not p:
+            continue
+        if isinstance(p, (tuple, list)):
+            if len(p) < 2:
+                continue
+            path_part = p[0]
+            kind = p[1] or "manual"
+            label = p[2] if len(p) > 2 else "用户手动保护"
+        else:
+            path_part, kind, label = p, "manual", "用户手动保护"
+        if not path_part:
+            continue
+        ap = os.path.abspath(path_part)
+        if os.path.isdir(ap) and (ap == root or ap.startswith(root + os.sep)):
+            explicit[ap] = (kind, label)
+
+    merged: Dict[str, dict] = {}
+
+    def _add(ap: str, kind: str, label: str):
+        slot = merged.setdefault(ap, {"kinds": set(), "labels": []})
+        slot["kinds"].add(kind)
+        if label not in slot["labels"]:
+            slot["labels"].append(label)
+
+    for ap, reason in detected.items():
+        _add(ap, "auto", f"自动识别（{reason}）")
+    for ap, (kind, label) in explicit.items():
+        _add(ap, kind, label)
+
+    result.protected_roots = {
+        p: "；".join(slot["labels"]) for p, slot in merged.items()
+    }
+    result.protected_kinds = {
+        p: ",".join(sorted(slot["kinds"])) for p, slot in merged.items()
+    }
+    if not merged:
+        return
+    protected_abs_set = set(merged.keys())
+    new_files: List[FileEntry] = []
+    for entry in result.files:
+        hit = [p for p in protected_abs_set
+               if entry.abs_path == p or entry.abs_path.startswith(p + os.sep)]
+        if not hit:
+            new_files.append(entry)
+            continue
+        hit_root = max(hit, key=lambda x: x.count(os.sep))
+        reason = result.protected_roots.get(hit_root, "项目保护")
+        entry.skipped_reason = f"项目保护（{reason}）"
+        result.skipped.append(entry)
+        result.protected_count += 1
+    result.files = new_files
 
 
 def scan_directory(
@@ -306,184 +456,104 @@ def scan_directory(
         rel_dir = os.path.relpath(dirpath, root)
         depth = 0 if rel_dir == "." else rel_dir.count(os.sep) + 1
 
-        # --- 过滤子目录（原地修改 dirnames 以阻止 walk 进入） ---
-        dirs_to_remove = []
-        for d in list(dirnames):
-            full = os.path.join(dirpath, d)
-            # 1. 符号链接目录
-            if os.path.islink(full):
-                result.symlink_count += 1
-                dirs_to_remove.append(d)
-                continue
-            # 2. 显式跳过的目录名（大小写不敏感）
-            if d.lower() in SKIP_DIRS:
-                if d.lower() == ".git":
-                    result.git_count += 1
-                else:
-                    result.skipdir_count += 1
-                dirs_to_remove.append(d)
-                continue
-            # 3. 隐藏目录（以 '.' 开头，且不是 .git——.git 已在上面处理）
-            if d.startswith("."):
-                result.hidden_count += 1
-                dirs_to_remove.append(d)
-                continue
-        for d in dirs_to_remove:
-            dirnames.remove(d)
-
-        # --- 处理当前目录下的文件 ---
+        _prune_dirnames(result, dirpath, dirnames)
         for fname in filenames:
-            full_path = os.path.join(dirpath, fname)
-
-            # 符号链接文件
-            if os.path.islink(full_path):
-                result.symlink_count += 1
-                skipped = FileEntry(
-                    abs_path=full_path,
-                    rel_path="",
-                    filename=fname,
-                    file_type="",
-                    size=0,
-                    size_display="",
-                    skipped_reason="符号链接",
-                )
-                result.skipped.append(skipped)
-                continue
-
-            # 隐藏文件（以 '.' 开头）
-            if fname.startswith("."):
-                result.hidden_count += 1
-                continue
-
-            # 可配置跳过的文件名（大小写不敏感，如 Icon / .DS_Store）
-            if fname.lower() in SKIP_FILENAMES:
-                result.skipdir_count += 1  # 复用 skipdir_count 表示被显式排除
-                continue
-
-            # 权限检查
-            if not os.access(full_path, os.R_OK):
-                result.permission_errors += 1
-                err_entry = FileEntry(
-                    abs_path=full_path,
-                    rel_path="",
-                    filename=fname,
-                    file_type="",
-                    size=0,
-                    size_display="",
-                    skipped_reason="无读取权限",
-                )
-                result.skipped.append(err_entry)
-                continue
-
-            try:
-                stat = os.stat(full_path, follow_symlinks=False)
-            except OSError as e:
-                result.errors.append(f"stat 失败 {full_path}: {e}")
-                continue
-
-            # 必须是普通文件（不是设备、socket、fifo 等）
-            import stat as st_mod
-            if not st_mod.S_ISREG(stat.st_mode):
-                continue
-
-            rel_path = os.path.relpath(full_path, root)
-            ftype = classify_type(fname)
-            fsize = stat.st_size
-
-            entry = FileEntry(
-                abs_path=full_path,
-                rel_path=rel_path,
-                filename=fname,
-                file_type=ftype,
-                size=fsize,
-                size_display=format_size(fsize),
-                mtime_ns=getattr(stat, "st_mtime_ns", 0),
-            )
-            result.files.append(entry)
-
-        # --- 空目录计数 ---
+            _consider_file(result, root, os.path.join(dirpath, fname))
         if not filenames and not dirnames:
             result.empty_dirs += 1
 
-    # 按相对路径稳定排序
-    # V1.1 后处理：项目保护
-    # 保护来源分三类：
-    #   default — 程序默认保护（如归档盒自身源码）
-    #   auto    — 扫描时自动识别的项目根目录
-    #   manual  — 用户手动添加的保护目录
-    # protect_dirs 元素可以是 str，也可以是 (path, kind, label) 三元组。
-    explicit: Dict[str, tuple] = {}
-    for p in protect_dirs:
-        if not p:
-            continue
-        if isinstance(p, (tuple, list)):
-            if len(p) < 2:
-                continue
-            path_part = p[0]
-            kind = p[1] or "manual"
-            label = p[2] if len(p) > 2 else "用户手动保护"
-        else:
-            path_part, kind, label = p, "manual", "用户手动保护"
-        if not path_part:
-            continue
-        ap = os.path.abspath(path_part)
-        if os.path.isdir(ap) and (ap == root or ap.startswith(root + os.sep)):
-            explicit[ap] = (kind, label)
-
-    # 2) 自动识别所有项目根目录（不再互斥，父子/嵌套都保护）
     detected: Dict[str, str] = {}
     if detect_project_roots:
         detected = _find_all_project_roots(root)
-
-    # 合并：显式保护 + 自动识别，不做父子互斥。
-    # 文件只要落在任何一个保护根下就被跳过。
-    merged: Dict[str, dict] = {}
-
-    def _add(ap: str, kind: str, label: str):
-        slot = merged.setdefault(ap, {"kinds": set(), "labels": []})
-        slot["kinds"].add(kind)
-        if label not in slot["labels"]:
-            slot["labels"].append(label)
-
-    for ap, reason in detected.items():
-        _add(ap, "auto", f"自动识别（{reason}）")
-    for ap, (kind, label) in explicit.items():
-        _add(ap, kind, label)
-
-    result.protected_roots = {
-        p: "；".join(slot["labels"]) for p, slot in merged.items()
-    }
-    result.protected_kinds = {
-        p: ",".join(sorted(slot["kinds"])) for p, slot in merged.items()
-    }
-
-    # 3) 从 files 中剔除落在保护目录下的文件，加到 skipped
-    if merged:
-        protected_abs_set = set(merged.keys())
-        new_files: List[FileEntry] = []
-        for entry in result.files:
-            is_protected = False
-            for proot in protected_abs_set:
-                if entry.abs_path == proot or entry.abs_path.startswith(proot + os.sep):
-                    is_protected = True
-                    break
-            if is_protected:
-                # 找命中的最深保护目录的原因
-                hit_root = max(
-                    (p for p in protected_abs_set
-                     if entry.abs_path.startswith(p + os.sep) or entry.abs_path == p),
-                    key=lambda x: x.count(os.sep),
-                    default=None,
-                )
-                reason = result.protected_roots.get(hit_root, "项目保护") if hit_root else "项目保护"
-                entry.skipped_reason = f"项目保护（{reason}）"
-                result.skipped.append(entry)
-                result.protected_count += 1
-            else:
-                new_files.append(entry)
-        result.files = new_files
-
+    _apply_protection(result, root, protect_dirs, detected)
     result.files.sort(key=lambda e: e.rel_path.lower())
     result.skipped.sort(key=lambda e: e.abs_path.lower())
+    return result
 
+
+def _ancestors_within(path: str, root: str) -> List[str]:
+    """从 path 的所在目录向上，直到 root（含）。"""
+    root = os.path.abspath(root)
+    current = path if os.path.isdir(path) else os.path.dirname(path)
+    current = os.path.abspath(current)
+    found = []
+    while True:
+        if current == root or current.startswith(root + os.sep):
+            found.append(current)
+        if current == root:
+            break
+        parent = os.path.dirname(current)
+        if parent == current:
+            break
+        current = parent
+    return found
+
+
+def scan_paths(
+    root_path: str,
+    paths,
+    protect_dirs: Optional[List[str]] = None,
+    detect_project_roots: bool = True,
+) -> ScanResult:
+    """只读取给定的文件或目录，不遍历整理空间里的其他内容。
+
+    用于拖入或选中少量文件后立刻计算目标位置。
+    保护规则仍生效：显式保护目录，以及这些路径沿途和内部的项目根。
+    """
+    root = os.path.abspath(root_path)
+    result = ScanResult(root=root)
+    protect_dirs = protect_dirs or []
+    if not os.path.isdir(root):
+        result.errors.append(f"路径不是目录: {root}")
+        return result
+
+    checked_dirs = set()
+
+    def note_dir(directory: str):
+        directory = os.path.abspath(directory)
+        if directory in checked_dirs:
+            return
+        if directory == root or directory.startswith(root + os.sep):
+            checked_dirs.add(directory)
+
+    def walk_dir(start: str):
+        if not os.path.islink(start) and _is_junction_or_reparse(start):
+            result.junction_dirs.append(os.path.abspath(start))
+            return
+        for dirpath, dirnames, filenames in os.walk(start, followlinks=False):
+            note_dir(dirpath)
+            _prune_dirnames(result, dirpath, dirnames)
+            for fname in filenames:
+                full = os.path.join(dirpath, fname)
+                note_dir(os.path.dirname(full))
+                _consider_file(result, root, full)
+            if not filenames and not dirnames:
+                result.empty_dirs += 1
+
+    for raw in paths or []:
+        if not raw:
+            continue
+        path = os.path.abspath(os.path.expanduser(raw))
+        if not os.path.exists(path):
+            result.errors.append(f"路径不存在: {path}")
+            continue
+        if not (path == root or path.startswith(root + os.sep)):
+            result.errors.append(f"路径不在整理空间内: {path}")
+            continue
+        if os.path.isdir(path):
+            walk_dir(path)
+        else:
+            for directory in _ancestors_within(path, root):
+                note_dir(directory)
+            _consider_file(result, root, path)
+
+    detected: Dict[str, str] = {}
+    if detect_project_roots:
+        for directory in checked_dirs:
+            reason = _looks_like_project_root(directory)
+            if reason:
+                detected[directory] = reason
+    _apply_protection(result, root, protect_dirs, detected)
+    result.files.sort(key=lambda e: e.rel_path.lower())
+    result.skipped.sort(key=lambda e: e.abs_path.lower())
     return result

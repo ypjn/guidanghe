@@ -1,3 +1,12 @@
 # 归档盒 V1.2 内部试用版 — 依赖声明
 # 版本依据当前已验证环境（Python 3.14.8 / macOS arm64），不随意升级
 PySide6==6.12.0
+# 图片文字识别。勾选「识别图片文字」后才加载。
+# Mac 优先用系统 Vision；Windows 优先用系统中文识别；两边都能改用本地模型。
+pyobjc-framework-Vision==13.0; sys_platform == "darwin"
+rapidocr==3.10.0
+onnxruntime==1.31.1
+winrt-Windows.Media.Ocr==4!10.0.28000.2957; sys_platform == "win32"
+winrt-Windows.Graphics.Imaging==4!10.0.28000.2957; sys_platform == "win32"
+winrt-Windows.Storage==4!10.0.28000.2957; sys_platform == "win32"
+winrt-Windows.Globalization==4!10.0.28000.2957; sys_platform == "win32"

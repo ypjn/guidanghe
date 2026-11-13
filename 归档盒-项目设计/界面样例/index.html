@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>归档盒界面样例</title>
+<style>
+  :root {
+    --bg: #eef2f6;
+    --card: #ffffff;
+    --text: #0f172a;
+    --muted: #475569;
+    --faint: #64748b;
+    --line: #e2e8f0;
+    --line-strong: #d6dee8;
+    --blue: #2563eb;
+    --blue-dark: #1d4ed8;
+    --blue-soft: #eff6ff;
+    --amber: #b45309;
+    --amber-bg: #fffbeb;
+    --amber-line: #fde68a;
+    --red: #dc2626;
+    --gray-btn: #f8fafc;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .page {
+    min-height: 100vh;
+    padding: 28px 32px 40px;
+  }
+  .pagehead { max-width: 1120px; margin: 0 auto 14px; }
+  .kicker {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: var(--blue);
+  }
+  h1 { margin: 2px 0 4px; font-size: 22px; font-weight: 650; letter-spacing: -0.02em; }
+  .pagehead p { margin: 0; color: var(--muted); }
+
+  .window {
+    max-width: 1120px;
+    height: 680px;
+    margin: 0 auto;
+    background: var(--card);
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .titlebar {
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--line);
+    background: #f8fafc;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .titlebar b { color: var(--text); font-weight: 650; }
+  .textbtn, .primary, .ghost {
+    border-radius: 6px;
+    height: 30px;
+    padding: 0 12px;
+    font: inherit;
+    font-weight: 600;
+    cursor: default;
+  }
+  .textbtn, .ghost {
+    background: #fff;
+    color: var(--text);
+    border: 1px solid var(--line-strong);
+  }
+  .ghost { color: var(--muted); font-weight: 500; }
+  .primary {
+    background: var(--blue);
+    color: #fff;
+    border: 1px solid var(--blue);
+  }
+  .linkish {
+    background: none;
+    border: none;
+    color: var(--blue-dark);
+    font: inherit;
+    font-weight: 600;
+    padding: 0;
+  }
+
+  .body { flex: 1; display: flex; min-height: 0; }
+  .side {
+    width: 208px;
+    flex: 0 0 208px;
+    border-right: 1px solid var(--line);
+    background: #f8fafc;
+    padding: 14px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .side h2, .insp h2 {
+    margin: 8px 8px 6px;
+    font-size: 11px;
+    font-weight: 650;
+    color: var(--faint);
+    letter-spacing: 0.04em;
+  }
+  .nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0 4px;
+    padding: 7px 8px;
+    border-radius: 6px;
+    color: var(--text);
+  }
+  .nav.on { background: var(--blue-soft); color: var(--blue-dark); font-weight: 650; }
+  .nav span, .count { color: var(--faint); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .nav.on span { color: var(--blue); }
+  .side .spacer { flex: 1; }
+  .side note {
+    margin: 8px;
+    color: var(--faint);
+    font-size: 12px;
+  }
+
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .toolbar, .filters, .footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+  }
+  .toolbar { border-bottom: 1px solid var(--line); }
+  .path {
+    flex: 1;
+    min-width: 0;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #fff;
+    color: var(--muted);
+  }
+  .path b { color: var(--text); font-weight: 600; margin-right: 6px; }
+  .filters { padding-top: 0; padding-bottom: 8px; color: var(--faint); }
+  .search {
+    flex: 1;
+    height: 30px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0 10px;
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+  }
+  .chip {
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    color: var(--muted);
+    display: inline-flex;
+    align-items: center;
+  }
+  .chip.on { background: var(--blue-soft); color: var(--blue-dark); border-color: #bfdbfe; font-weight: 650; }
+
+  .table { flex: 1; min-height: 0; overflow: hidden; }
+  .thead, .row {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1.15fr) minmax(0, 1.35fr) 76px 64px;
+    gap: 8px;
+    align-items: center;
+    padding: 0 14px;
+  }
+  .thead {
+    height: 32px;
+    color: var(--faint);
+    font-size: 12px;
+    font-weight: 650;
+    border-bottom: 1px solid var(--line);
+  }
+  .row { height: 48px; border-bottom: 1px solid #f1f5f9; }
+  .row.sel { background: var(--blue-soft); }
+  .file { min-width: 0; }
+  .file b, .file span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .file b { font-weight: 620; }
+  .file span { color: var(--faint); font-size: 12px; }
+  .size { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+  .tag {
+    justify-self: start;
+    font-size: 12px;
+    font-weight: 650;
+    color: var(--muted);
+  }
+  .tag.amber {
+    color: var(--amber);
+    background: var(--amber-bg);
+    border: 1px solid var(--amber-line);
+    border-radius: 4px;
+    padding: 1px 6px;
+  }
+  .box {
+    width: 15px;
+    height: 15px;
+    border: 1.5px solid #94a3b8;
+    border-radius: 3px;
+    background: #fff;
+  }
+  .box.on { background: var(--blue); border-color: var(--blue); position: relative; }
+  .box.on::after {
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: 1px;
+    width: 3px;
+    height: 7px;
+    border: solid #fff;
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
+  }
+
+  .footer {
+    border-top: 1px solid var(--line);
+    background: #f8fafc;
+    color: var(--muted);
+  }
+  .footer b { color: var(--text); }
+  .grow { flex: 1; }
+
+  .insp {
+    width: 280px;
+    flex: 0 0 280px;
+    overflow: auto;
+    border-left: 1px solid var(--line);
+    background: #fff;
+    padding: 8px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .insp h3 { margin: 0; font-size: 15px; }
+  .insp .meta { margin: 0; color: var(--faint); font-size: 12px; }
+  dl { margin: 0; display: grid; gap: 8px; }
+  dt { color: var(--faint); font-size: 12px; }
+  dd { margin: 1px 0 0; font-weight: 600; }
+  .note {
+    margin: 0;
+    padding: 8px 10px;
+    background: var(--amber-bg);
+    border: 1px solid var(--amber-line);
+    border-radius: 6px;
+    color: var(--amber);
+  }
+  .quiet { margin: 0; color: var(--faint); font-size: 12px; }
+
+  /* B command bar */
+  .cmd {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    background: #fff;
+  }
+  .crumb { color: var(--muted); margin-right: 8px; }
+  .crumb b { color: var(--text); }
+  .detail {
+    margin: 0 14px 8px;
+    padding: 8px 10px;
+    background: var(--amber-bg);
+    border: 1px solid var(--amber-line);
+    border-radius: 6px;
+    color: #92400e;
+  }
+  .detail b { color: var(--amber); }
+
+  /* C inbox */
+  .hero {
+    padding: 16px 18px 8px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .hero h2 { margin: 0; font-size: 20px; letter-spacing: -0.02em; }
+  .hero p { margin: 4px 0 0; color: var(--muted); }
+  .statnum { font-variant-numeric: tabular-nums; }
+  .inbox-filters { padding: 8px 18px 10px; display: flex; gap: 8px; }
+</style>
+</head>
+<body>
+
+<section class="page" id="inspector">
+  <div class="pagehead">
+    <div class="kicker">样例 A</div>
+    <h1>检查器</h1>
+    <p>左栏选文件夹，中间对表，右边只解释当前这一行。规则收在标题栏里。</p>
+  </div>
+  <div class="window">
+    <div class="titlebar">
+      <b>归档盒</b>
+      <span>规则</span>
+    </div>
+    <div class="body">
+      <aside class="side">
+        <h2>文件夹</h2>
+        <div class="nav on">大二上 <span>当前</span></div>
+        <div class="nav">大一下</div>
+        <div class="nav">课程设计</div>
+        <h2>这次</h2>
+        <div class="nav">待整理清单 <span>12</span></div>
+        <div class="nav">最近打开</div>
+        <div class="spacer"></div>
+        <note>已跳过 3 个项目目录</note>
+      </aside>
+      <div class="main">
+        <div class="toolbar">
+          <div class="path"><b>大二上</b> /Users/ypjn/Desktop/NEU/大二上</div>
+          <button class="ghost">重新扫描</button>
+        </div>
+        <div class="filters">
+          <div class="search">搜索原位置或目标位置</div>
+          <span class="chip">类型</span>
+          <span class="chip">方向</span>
+          <span class="chip on">将改名 2</span>
+        </div>
+        <div class="table">
+          <div class="thead"><span></span><span>原位置</span><span>目标位置</span><span>结果</span><span>大小</span></div>
+          <div class="row"><span class="box on"></span><div class="file"><b>笔记.pdf</b><span>数据结构</span></div><div class="file"><b>笔记.pdf</b><span>课程/大二上/数据结构/文档</span></div><span class="tag">将移动</span><span class="size">1.2 MB</span></div>
+          <div class="row sel"><span class="box on"></span><div class="file"><b>实验报告.docx</b><span>数据结构</span></div><div class="file"><b>实验报告 (2).docx</b><span>课程/大二上/数据结构/文档</span></div><span class="tag amber">将改名</span><span class="size">840 KB</span></div>
+          <div class="row"><span class="box on"></span><div class="file"><b>作业3.pdf</b><span>高数</span></div><div class="file"><b>作业3.pdf</b><span>课程/大二上/高等数学/文档</span></div><span class="tag">将移动</span><span class="size">220 KB</span></div>
+          <div class="row"><span class="box on"></span><div class="file"><b>选课通知.pdf</b><span>附件-选课通知.pdf</span></div><div class="file"><b>选课通知.pdf</b><span>校园事务/通知</span></div><span class="tag">将移动</span><span class="size">96 KB</span></div>
+          <div class="row"><span class="box on"></span><div class="file"><b>听力.mp3</b><span>英语</span></div><div class="file"><b>听力.mp3</b><span>课程/大二上/大学英语/音频</span></div><span class="tag">将移动</span><span class="size">4.6 MB</span></div>
+          <div class="row"><span class="box on"></span><div class="file"><b>课件.pptx</b><span>数据结构</span></div><div class="file"><b>课件.pptx</b><span>课程/大二上/数据结构/课件</span></div><span class="tag">将移动</span><span class="size">8.1 MB</span></div>
+          <div class="row"><span class="box"></span><div class="file"><b>未命名.txt</b><span>下载</span></div><div class="file"><b>未命名.txt</b><span>待定/其他</span></div><span class="tag">待定</span><span class="size">2 KB</span></div>
+        </div>
+        <div class="footer">
+          <span>已勾选 <b>21</b> / 24</span>
+          <span class="grow"></span>
+          <button class="primary">开始整理</button>
+        </div>
+      </div>
+      <aside class="insp">
+        <h2>当前文件</h2>
+        <h3>实验报告.docx</h3>
+        <p class="meta">数据结构 · 840 KB</p>
+        <dl>
+          <div><dt>分类依据</dt><dd>学期「大二上」/ 目录「数据结构」</dd></div>
+          <div><dt>将放到</dt><dd>课程 / 大二上 / 数据结构 / 文档</dd></div>
+          <div><dt>文件名</dt><dd>实验报告 (2).docx</dd></div>
+        </dl>
+        <p class="note">同名文件已经存在。整理时改名，不覆盖原来的文件。</p>
+        <button class="textbtn">修改这一行</button>
+        <p class="quiet">现在只是预览。点击「开始整理」才会移动。</p>
+      </aside>
+    </div>
+  </div>
+</section>
+
+<section class="page" id="command">
+  <div class="pagehead">
+    <div class="kicker">样例 B</div>
+    <h1>命令栏</h1>
+    <p>一张表占满窗口。常用动作只有四个，规则、历史和重复文件放在「更多」里。</p>
+  </div>
+  <div class="window">
+    <div class="titlebar"><b>归档盒</b><span>大二上</span></div>
+    <div class="cmd">
+      <span class="crumb">文件夹 <b>大二上</b></span>
+      <button class="primary">开始整理</button>
+      <button class="textbtn">撤销上一次</button>
+      <button class="textbtn">修改这一行</button>
+      <span class="grow"></span>
+      <button class="ghost">重新扫描</button>
+      <button class="ghost">更多</button>
+    </div>
+    <div class="filters">
+      <div class="search">搜索原位置或目标位置</div>
+      <span class="chip on">全部 24</span>
+      <span class="chip">将改名 2</span>
+      <span class="chip">待定 1</span>
+    </div>
+    <p class="detail">选中 <b>实验报告.docx</b>。同名文件已存在，将改名为实验报告 (2).docx，不覆盖。</p>
+    <div class="table">
+      <div class="thead"><span></span><span>原位置</span><span>目标位置</span><span>结果</span><span>大小</span></div>
+      <div class="row"><span class="box on"></span><div class="file"><b>笔记.pdf</b><span>数据结构</span></div><div class="file"><b>笔记.pdf</b><span>课程/大二上/数据结构/文档</span></div><span class="tag">将移动</span><span class="size">1.2 MB</span></div>
+      <div class="row sel"><span class="box on"></span><div class="file"><b>实验报告.docx</b><span>数据结构</span></div><div class="file"><b>实验报告 (2).docx</b><span>课程/大二上/数据结构/文档</span></div><span class="tag amber">将改名</span><span class="size">840 KB</span></div>
+      <div class="row"><span class="box on"></span><div class="file"><b>作业3.pdf</b><span>高数</span></div><div class="file"><b>作业3.pdf</b><span>课程/大二上/高等数学/文档</span></div><span class="tag">将移动</span><span class="size">220 KB</span></div>
+      <div class="row"><span class="box on"></span><div class="file"><b>选课通知.pdf</b><span>附件-选课通知.pdf</span></div><div class="file"><b>选课通知.pdf</b><span>校园事务/通知</span></div><span class="tag">将移动</span><span class="size">96 KB</span></div>
+      <div class="row"><span class="box on"></span><div class="file"><b>听力.mp3</b><span>英语</span></div><div class="file"><b>听力.mp3</b><span>课程/大二上/大学英语/音频</span></div><span class="tag">将移动</span><span class="size">4.6 MB</span></div>
+      <div class="row"><span class="box on"></span><div class="file"><b>课件.pptx</b><span>数据结构</span></div><div class="file"><b>课件.pptx</b><span>课程/大二上/数据结构/课件</span></div><span class="tag">将移动</span><span class="size">8.1 MB</span></div>
+      <div class="row"><span class="box on"></span><div class="file"><b>证明.pdf</b><span>离散</span></div><div class="file"><b>证明.pdf</b><span>课程/大二上/离散数学/文档</span></div><span class="tag">将移动</span><span class="size">310 KB</span></div>
+      <div class="row"><span class="box"></span><div class="file"><b>未命名.txt</b><span>下载</span></div><div class="file"><b>未命名.txt</b><span>待定/其他</span></div><span class="tag">待定</span><span class="size">2 KB</span></div>
+    </div>
+    <div class="footer">
+      <span>已勾选 <b>21</b> / 24 · 已跳过 3 个项目目录</span>
+      <span class="grow"></span>
+      <span>预览有效，尚未移动文件</span>
+    </div>
+  </div>
+</section>
+
+<section class="page" id="inbox">
+  <div class="pagehead">
+    <div class="kicker">样例 C</div>
+    <h1>收件箱</h1>
+    <p>打开后先看到还要确认多少文件。底栏只有一个蓝色按钮，核对完再移动。</p>
+  </div>
+  <div class="window">
+    <div class="titlebar">
+      <b>归档盒</b>
+      <span>大二上 · 规则</span>
+    </div>
+    <div class="hero">
+      <div>
+        <h2 class="statnum">24 个文件待确认</h2>
+        <p>扫描已完成。取消不需要移动的勾选，再点右下角。</p>
+      </div>
+      <button class="ghost">更换文件夹</button>
+    </div>
+    <div class="inbox-filters">
+      <span class="chip on">全部 24</span>
+      <span class="chip">将改名 2</span>
+      <span class="chip">待定 1</span>
+      <span class="chip">只看勾选</span>
+    </div>
+    <div class="table">
+      <div class="thead"><span></span><span>原位置</span><span>目标位置</span><span>结果</span><span>大小</span></div>
+      <div class="row sel"><span class="box on"></span><div class="file"><b>实验报告.docx</b><span>数据结构 · 学期目录</span></div><div class="file"><b>实验报告 (2).docx</b><span>课程/大二上/数据结构/文档</span></div><span class="tag amber">将改名</span><span class="size">840 KB</span></div>
+      <div class="row"><span class="box"></span><div class="file"><b>未命名.txt</b><span>下载 · 没有匹配到规则</span></div><div class="file"><b>未命名.txt</b><span>待定/其他</span></div><span class="tag">待定</span><span class="size">2 KB</span></div>
+      <div class="row"><span class="box on"></span><div class="file"><b>笔记.pdf</b><span>数据结构 · 学期目录</span></div><div class="file"><b>笔记.pdf</b><span>课程/大二上/数据结构/文档</span></div><span class="tag">将移动</span><span class="size">1.2 MB</span></div>
+      <div class="row"><span class="box on"></span><div class="file"><b>作业3.pdf</b><span>高数 · 关键词「高数」</span></div><div class="file"><b>作业3.pdf</b><span>课程/大二上/高等数学/文档</span></div><span class="tag">将移动</span><span class="size">220 KB</span></div>
+      <div class="row"><span class="box on"></span><div class="file"><b>选课通知.pdf</b><span>前缀「附件-」</span></div><div class="file"><b>选课通知.pdf</b><span>校园事务/通知</span></div><span class="tag">将移动</span><span class="size">96 KB</span></div>
+      <div class="row"><span class="box on"></span><div class="file"><b>听力.mp3</b><span>英语 · 学期目录</span></div><div class="file"><b>听力.mp3</b><span>课程/大二上/大学英语/音频</span></div><span class="tag">将移动</span><span class="size">4.6 MB</span></div>
+      <div class="row"><span class="box on"></span><div class="file"><b>课件.pptx</b><span>数据结构 · 学期目录</span></div><div class="file"><b>课件.pptx</b><span>课程/大二上/数据结构/课件</span></div><span class="tag">将移动</span><span class="size">8.1 MB</span></div>
+      <div class="row"><span class="box on"></span><div class="file"><b>证明.pdf</b><span>离散 · 学期目录</span></div><div class="file"><b>证明.pdf</b><span>课程/大二上/离散数学/文档</span></div><span class="tag">将移动</span><span class="size">310 KB</span></div>
+    </div>
+    <div class="footer">
+      <span>已勾选 <b>21</b> 个 · 其中 2 个会改名 · 1 个待定未勾选</span>
+      <span class="grow"></span>
+      <button class="ghost">重新扫描</button>
+      <button class="primary">开始整理</button>
+    </div>
+  </div>
+</section>
+
+</body>
+</html>

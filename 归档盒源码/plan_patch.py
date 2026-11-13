@@ -34,7 +34,7 @@ from planner import (
     PlanItem, OrganizePlan, TARGET_ROOT,
     _build_target_dir_v2,
     _sanitize_component, _assign_unique_names,
-    MODE_BY_DIRECTION_SEMESTER, build_plan,
+    MODE_BY_DIRECTION_SEMESTER, build_plan, ocr_maps_from_plan,
 )
 from classification_config import (
     LongTermRule, new_rule_id, clone_config, validate_config, ensure_valid,
@@ -191,7 +191,7 @@ class ManualOverrideDialog:
         self.preview_label.setWordWrap(True)
         lay.addWidget(self.preview_label)
 
-        self.override_hint = QLabel("⚠ 本次修正只作用于当前计划；重新扫描/重新预览/切换根目录后失效。")
+        self.override_hint = QLabel("这次修改只对当前预览生效。重新扫描、重新生成预览或切换文件夹后会恢复自动分类。")
         self.override_hint.setStyleSheet("color:#E65100;")
         self.override_hint.setWordWrap(True)
         lay.addWidget(self.override_hint)
@@ -479,7 +479,7 @@ def validate_override_params(mode: str, params: OverrideParams) -> OverrideParam
     if mode != MODE_BY_DIRECTION_SEMESTER:
         raise OverrideValidationError(
             "本轮只支持在「按方向/学期/类别（推荐）」模式下修正单个文件；"
-            "其他模式请使用对应的规则配置入口（编辑课程规则 / 推荐模式配置）。")
+            "其他分类方式请使用「课程关键词」或「学期和目录规则」。")
     p = params
     if not p.direction:
         raise OverrideValidationError("方向不能为空（课程/竞赛/项目/校园事务/待定）")
@@ -691,7 +691,8 @@ def build_rule_draft(
 
 
 def preview_rule_impact(scan_result, mode: str, rules, config,
-                        rule: LongTermRule, cancel_event=None) -> RuleImpact:
+                        rule: LongTermRule, cancel_event=None,
+                        ocr_texts=None, ocr_errors=None) -> RuleImpact:
     """在不改动任何文件的前提下，计算"加入该规则后"的分类变化。
 
     - 与正式计划共用 build_plan（同一套分类、路径构造与冲突处理）；
@@ -711,12 +712,14 @@ def preview_rule_impact(scan_result, mode: str, rules, config,
     try:
         old_plan = build_plan(scan_result, mode, rules, config=base_cfg,
                               compute_duplicates=False,
-                              cancel_event=cancel_event)
+                              cancel_event=cancel_event,
+                              ocr_texts=ocr_texts, ocr_errors=ocr_errors)
         if cancel_event is not None and cancel_event.is_set():
             return RuleImpact(error="已取消")
         new_plan = build_plan(scan_result, mode, rules, config=new_cfg,
                               compute_duplicates=False,
-                              cancel_event=cancel_event)
+                              cancel_event=cancel_event,
+                              ocr_texts=ocr_texts, ocr_errors=ocr_errors)
         if cancel_event is not None and cancel_event.is_set():
             return RuleImpact(error="已取消")
     except Exception as e:
@@ -761,7 +764,8 @@ def rule_preview_worker_class():
         cancelled = Signal(int)             # seq
 
         def __init__(self, seq: int, scan_result, mode: str, rules,
-                     config, rule, parent=None):
+                     config, rule, parent=None,
+                     ocr_texts=None, ocr_errors=None):
             # 不把 parent 设为对话框：线程生命周期可能长于对话框，
             # 由主窗口登记表保活，结束后再回收（同 config_dialog 的做法）。
             super().__init__(None)
@@ -771,6 +775,8 @@ def rule_preview_worker_class():
             self.rules = rules
             self.config = config
             self.rule = rule
+            self.ocr_texts = ocr_texts
+            self.ocr_errors = ocr_errors
             self.cancel_event = threading.Event()
 
         def request_cancel(self):
@@ -781,7 +787,8 @@ def rule_preview_worker_class():
                 impact = preview_rule_impact(
                     self.scan_result, self.mode, self.rules,
                     self.config, self.rule,
-                    cancel_event=self.cancel_event)
+                    cancel_event=self.cancel_event,
+                    ocr_texts=self.ocr_texts, ocr_errors=self.ocr_errors)
                 if self.cancel_event.is_set() or impact.error == "已取消":
                     self.cancelled.emit(self.seq)
                     return
@@ -1098,20 +1105,23 @@ class RuleDraftDialog:
         # 使确认框里的命中统计与最终写入配置的标识一致。
         self._previewed_rule = rule
 
+        ocr_texts, ocr_errors = ocr_maps_from_plan(self.plan)
         try:
             Worker = rule_preview_worker_class()
         except Exception:
             # 没有 Qt 线程环境时退化为同步计算（仅影响非界面使用场景）
             impact = preview_rule_impact(
                 self.scan_result, self.mode, self.plan.rules,
-                self.config, rule)
+                self.config, rule,
+                ocr_texts=ocr_texts, ocr_errors=ocr_errors)
             self._apply_impact(impact)
             return
 
         self._preview_seq += 1
         seq = self._preview_seq
         worker = Worker(seq, self.scan_result, self.mode, self.plan.rules,
-                        self.config, rule)
+                        self.config, rule,
+                        ocr_texts=ocr_texts, ocr_errors=ocr_errors)
         self._worker = worker
         worker.finished_ok.connect(self._on_preview_done)
         worker.failed.connect(self._on_preview_failed)
@@ -1250,7 +1260,7 @@ class RuleDraftDialog:
             "保存后：\n"
             "· 规则写入该目录的配置并在重启后继续生效；\n"
             "· 当前计划的临时手动修正会随计划一起失效；\n"
-            "· 需要点击「重新预览」才能按新规则生成计划。\n\n继续保存吗？",
+            "· 需要点击「重新生成预览」才能按新规则生成计划。\n\n继续保存吗？",
             self.QMessageBox.Yes | self.QMessageBox.No,
             self.QMessageBox.Yes)
         if ret != self.QMessageBox.Yes:

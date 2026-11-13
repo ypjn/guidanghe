@@ -5,13 +5,15 @@
 - 纯配置与匹配逻辑，不负责界面；分类函数只接收显式配置，不读写文件。
 - 内置默认配置与用户配置严格区分：default_config() 每次返回新对象，
   任何一方都不会被全局修改。
+- 竞赛星级表、常见课程名和校园事务写在未匹配关键词里：
+  已经按课程目录认走的文件不会改判。
 - 用户配置按根目录保存到 {root}/.organizer/classification_config.json，
   原子写入；只读取默认配置不会创建文件。
 - 损坏、版本不兼容、根目录不匹配、字段非法时抛出 ClassificationConfigError，
   调用方必须明确提示，不能静默回退后继续执行。
 
-本模块不增加 AI、OCR、目录监测或跨磁盘能力，只把 V1.1 推荐模式中写在
-代码里的映射转为可编辑配置，默认值与原行为逐条一致。
+关键词匹配可以额外接收调用方传来的图片文字；本模块自己不读图片。
+目录映射仍然只看路径。不传图片文字时，结果与只看文件名、路径时一致。
 """
 
 from __future__ import annotations
@@ -23,6 +25,10 @@ import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
+
+from contest_catalog import CONTEST_CATALOG
+from general_catalog import GENERAL_CAMPUS_RULES, GENERAL_COURSE_RULES
+from professional_catalog import PROFESSIONAL_COURSE_RULES
 
 CONFIG_DIR = ".organizer"
 CONFIG_FILENAME = "classification_config.json"
@@ -107,8 +113,11 @@ DEFAULT_SEMESTER_MAP: Dict[str, str] = {
 DEFAULT_TOP_DIRECTION: Dict[str, str] = {
     "校园事务": "校园事务",
     "Code": "项目",
+    "代码": "项目",
+    "项目": "项目",
     "个人项目灵感": "项目",
     "大创答辩": "项目",
+    "实习": "校园事务",
 }
 
 # 学期内一级目录 → (方向, 类别)
@@ -264,6 +273,50 @@ class ClassificationConfig:
     version: int = CONFIG_VERSION
 
 
+def contest_keyword_rules() -> List[KeywordRule]:
+    """星级表竞赛名单。只在即将进入待定，或学期内目录尚未登记时生效。
+
+    按最长关键词降序，避免短名抢走已经写全的竞赛名称。
+    """
+    rules = [
+        KeywordRule(
+            keywords=list(keywords),
+            target=category,
+            direction="竞赛",
+            scope=SCOPE_PATH,
+            trigger=TRIGGER_UNMATCHED,
+        )
+        for keywords, category in CONTEST_CATALOG
+    ]
+    rules.sort(key=lambda rule: -max(len(keyword) for keyword in rule.keywords))
+    return rules
+
+
+def _catalog_keyword_rules(catalog, direction: str) -> List[KeywordRule]:
+    """把 (关键词, 类别) 收成未匹配关键词，长名优先。"""
+    rules = [
+        KeywordRule(
+            keywords=list(keywords),
+            target=category,
+            direction=direction,
+            scope=SCOPE_PATH,
+            trigger=TRIGGER_UNMATCHED,
+        )
+        for keywords, category in catalog
+    ]
+    rules.sort(key=lambda rule: -max(len(keyword) for keyword in rule.keywords))
+    return rules
+
+
+def general_keyword_rules() -> List[KeywordRule]:
+    """课程名按长短一起排序，校园事务在后。竞赛名单由调用方排在更前面。"""
+    return (
+        _catalog_keyword_rules(
+            GENERAL_COURSE_RULES + PROFESSIONAL_COURSE_RULES, "课程")
+        + _catalog_keyword_rules(GENERAL_CAMPUS_RULES, "校园事务")
+    )
+
+
 def default_config() -> ClassificationConfig:
     """构造一份全新的内置默认配置（不与任何全局对象共享）。"""
     return ClassificationConfig(
@@ -298,7 +351,7 @@ def default_config() -> ClassificationConfig:
                 trigger=TRIGGER_SUBDIR,
             )
             for kw, course in DEFAULT_KEYWORD_TO_COURSE
-        ],
+        ] + contest_keyword_rules() + general_keyword_rules(),
     )
 
 
@@ -962,6 +1015,8 @@ class ContextMatch:
     anchor_index: int
     rule_desc: str
     rule_key: str
+    # 不为 None 时，计划直接使用这段内部路径，不再从锚点截取。
+    fixed_inner: Optional[str] = None
 
 
 @dataclass
@@ -1045,7 +1100,8 @@ def _norm_rel(value: str) -> str:
 
 
 def match_long_term_rule(rel_path: str,
-                         compiled: CompiledConfig) -> Optional[LongTermMatch]:
+                         compiled: CompiledConfig,
+                         extra_text: str = "") -> Optional[LongTermMatch]:
     """按配置顺序返回第一条命中的长期规则；未命中返回 None。
 
     顺序即优先级：调用方（classify_entries）取第一条命中后即覆盖原有分类。
@@ -1082,48 +1138,194 @@ def match_long_term_rule(rel_path: str,
             if scope:
                 if len(dirs) < len(scope) or dirs[:len(scope)] != scope:
                     continue
+            where = (f"，限定目录「{os.sep.join(scope)}」" if scope else "")
             for kw in rule.keywords:
                 if _match_english_word(filename_lower, kw):
-                    where = (f"，限定目录「{os.sep.join(scope)}」" if scope else "")
                     return LongTermMatch(
                         rule, f"文件名关键词「{kw}」{where}")
+            extra_lower = (extra_text or "").lower()
+            if extra_lower:
+                for kw in rule.keywords:
+                    if _match_english_word(extra_lower, kw):
+                        return LongTermMatch(
+                            rule, f"图片文字关键词「{kw}」{where}")
     return None
+
+
+def _ocr_mark(source: str) -> str:
+    """关键词来自图片文字时，在分类依据末尾标明。"""
+    return "（图片文字）" if source == "image" else ""
 
 
 def _keyword_matches(rule: KeywordRule, rel_path: str,
-                     filename: str) -> Optional[str]:
-    """返回命中的关键词；未命中返回 None。"""
+                     filename: str, extra_text: str = "") -> Tuple[Optional[str], str]:
+    """返回 (命中的关键词, 来源)。来源是 name 或 image；未命中时关键词为 None。
+
+    文件名或路径先匹配。只有那边没有命中时，才看调用方传来的图片文字。
+    """
     text = (filename if rule.scope == SCOPE_FILENAME else rel_path).lower()
     for kw in rule.keywords:
         if _match_english_word(text, kw):
-            return kw
-    return None
+            return kw, "name"
+    extra = (extra_text or "").lower()
+    if extra:
+        for kw in rule.keywords:
+            if _match_english_word(extra, kw):
+                return kw, "image"
+    return None, ""
+
+
+def _pick_keyword(rules, rel_path: str, filename: str, extra_text: str = ""):
+    """按列表顺序选关键词。文件名或路径命中优先于图片文字。
+
+    返回 (从 1 计的序号, 规则, 关键词, 来源)；都未命中时返回 None。
+    """
+    image_hit = None
+    for i, rule in enumerate(rules, 1):
+        kw, source = _keyword_matches(rule, rel_path, filename, extra_text)
+        if not kw:
+            continue
+        if source != "image":
+            return i, rule, kw, source
+        if image_hit is None:
+            image_hit = (i, rule, kw, source)
+    return image_hit
+
+
+_OUTPUT_TYPES = (
+    ("软著", ("软件著作权", "著作权登记", "软著")),
+    ("专利", ("发明专利", "实用新型专利", "外观设计专利", "专利申请",
+             "专利交底", "权利要求书", "专利证书", "实用新型", "专利")),
+    ("论文", ("期刊论文", "会议论文", "学术论文", "论文投稿", "论文录用",
+             "论文初稿", "小论文", "论文")),
+)
+_THESIS_MARKERS = ("毕业设计", "毕业论文", "学位论文", "毕设", "开题报告")
+_NOT_PROJECT_DIR = {
+    "文档", "材料", "申请", "提交", "附件", "扫描件", "最终版", "草稿", "定稿",
+    "备份", "新建文件夹", "资料", "申报", "申请材料", "交底", "交底书", "证书",
+    "受理", "授权", "初稿", "修改稿", "终稿", "查重", "录用", "投稿", "登记",
+    "盖章", "签字", "版本", "扫描",
+}
+
+
+def _output_type_in(text: str):
+    """从目录名或文件名里认出软著、专利、论文。短名必须整段相等，避免「专利法」被当成专利。"""
+    best = None
+    for type_name, markers in _OUTPUT_TYPES:
+        for marker in markers:
+            if marker == "专利":
+                hit = text == marker
+            else:
+                hit = marker in text
+            if hit and (best is None or len(marker) > len(best[1])):
+                best = (type_name, marker)
+    return best
+
+
+def _project_output_match(rel_path: str, compiled: CompiledConfig):
+    """软著、专利、论文分开；路径里能看出项目名时，按项目各放一处。
+
+    已经由学期课程目录或顶层「项目」目录认走的文件不会进这里。
+    毕业论文、学位论文留给毕业设计规则。
+    """
+    if any(marker in rel_path for marker in _THESIS_MARKERS):
+        return None
+    parts = [part for part in rel_path.split(os.sep) if part]
+    if not parts:
+        return None
+    dirs = parts[:-1]
+    stem = os.path.splitext(parts[-1])[0]
+    type_index = None
+    type_name = ""
+    for index, name in enumerate(dirs):
+        hit = _output_type_in(name)
+        if hit is not None:
+            type_index, type_name = index, hit[0]
+            break
+    if not type_name:
+        hit = _output_type_in(stem)
+        if hit is None:
+            return None
+        type_name = hit[0]
+
+    def is_project(name: str) -> bool:
+        if name in _NOT_PROJECT_DIR:
+            return False
+        if name in compiled.semester_by_source:
+            return False
+        return _output_type_in(name) is None
+
+    project_index = None
+    if type_index is not None:
+        if type_index > 0 and is_project(dirs[type_index - 1]):
+            project_index = type_index - 1
+        elif (type_index + 1 < len(dirs)
+              and is_project(dirs[type_index + 1])):
+            project_index = type_index + 1
+    elif dirs:
+        for index, name in enumerate(dirs):
+            if is_project(name):
+                project_index = index
+                break
+
+    if project_index is None:
+        category = type_name
+        rest = [name for index, name in enumerate(dirs) if index != type_index]
+        desc = f"{type_name}。路径里没有项目名，先单独放在「{type_name}」。"
+    else:
+        category = dirs[project_index]
+        rest = [
+            name for index, name in enumerate(dirs)
+            if index not in (project_index, type_index)
+        ]
+        rest = [type_name] + rest
+        desc = f"{type_name}，项目「{category}」。不同项目分开，三类材料也分开。"
+    return ContextMatch(
+        direction="项目",
+        semester="",
+        category=category,
+        anchor_index=-1,
+        rule_desc=desc,
+        rule_key=f"project_output:{type_name}",
+        fixed_inner=os.sep.join(rest),
+    )
 
 
 def _unmatched_fallback(compiled: CompiledConfig, rel_path: str,
                         filename: str, base_reason: str,
                         semester: str = "", anchor: int = -1,
-                        category: str = "") -> ContextMatch:
+                        category: str = "",
+                        extra_text: str = "") -> ContextMatch:
     """待定兜底：检查 trigger=unmatched 的关键词规则。
 
     未命中关键词时保持调用方给出的原始锚点与类别（与 V1.1 一致）。
+    extra_text 只参与关键词，不参与目录判断。文件名已经能命中时，
+    不用图片文字改判。
     """
-    for i, rule in enumerate(compiled.keyword_unmatched, 1):
-        kw = _keyword_matches(rule, rel_path, filename)
-        if kw:
-            return ContextMatch(
-                direction=rule.direction,
-                semester=semester,
-                category=rule.target,
-                anchor_index=anchor,
-                rule_desc=f"关键词兜底「{kw}」→ {rule.direction}/{rule.target}",
-                rule_key=f"keyword_unmatched:{i}:{kw}",
-            )
+    output = _project_output_match(rel_path, compiled)
+    if output is not None:
+        return output
+    hit = _pick_keyword(
+        compiled.keyword_unmatched, rel_path, filename, extra_text)
+    if hit is not None:
+        i, rule, kw, source = hit
+        return ContextMatch(
+            direction=rule.direction,
+            semester=semester,
+            category=rule.target,
+            anchor_index=anchor,
+            rule_desc=(
+                f"关键词兜底「{kw}」→ {rule.direction}/{rule.target}"
+                f"{_ocr_mark(source)}"
+            ),
+            rule_key=f"keyword_unmatched:{i}:{kw}",
+        )
     return ContextMatch("待定", semester, category, anchor, base_reason,
                         "fallback")
 
 
-def classify_context(rel_path: str, compiled: CompiledConfig) -> ContextMatch:
+def _classify_context_impl(rel_path: str, compiled: CompiledConfig,
+                           extra_text: str = "") -> ContextMatch:
     """按配置对单个相对路径分类。
 
     匹配顺序（固定、可解释）：
@@ -1131,8 +1333,10 @@ def classify_context(rel_path: str, compiled: CompiledConfig) -> ContextMatch:
       2. 非学期时：顶层方向映射（parts[0] 精确匹配）；
       3. 学期内一级目录映射（含类别留空 → 关键词细分）；
       4. 通用目录前缀（未登记的学期内目录）；
-      5. 未登记目录按目录名锚定（方向=课程）；
-      6. 均未命中 → 待定（可选 unmatched 关键词兜底）。
+      5. 未登记的学期内目录先查未匹配关键词（含竞赛名单），命中则用该规则；
+      6. 仍未命中则按目录名锚定（方向=课程）；
+      7. 顶层散落、未登记顶层目录、学期根目录下的文件 → 待定
+         （同一份未匹配关键词，含竞赛名单）。
     锚点 anchor_index 指向最后一个已确定类别的目录组件；
     inner_path = parts[anchor_index + 1:-1]，文件名永不参与目录锚定。
     """
@@ -1172,10 +1376,11 @@ def classify_context(rel_path: str, compiled: CompiledConfig) -> ContextMatch:
             )
         if len(parts) == 1:
             return _unmatched_fallback(
-                compiled, rel_path, filename, "顶层散落文件")
+                compiled, rel_path, filename, "顶层散落文件",
+                extra_text=extra_text)
         return _unmatched_fallback(
             compiled, rel_path, filename, f"未登记顶层目录「{top}」",
-            category=top)
+            category=top, extra_text=extra_text)
 
     # 3) 学期内一级目录
     if sem_index >= 0:
@@ -1195,17 +1400,20 @@ def classify_context(rel_path: str, compiled: CompiledConfig) -> ContextMatch:
                     f"semester_dir:{sem_label}/{child_dir}",
                 )
             # 类别留空 → 关键词细分（按配置顺序取第一条命中）
-            for i, kw_rule in enumerate(compiled.keyword_subdir, 1):
-                kw = _keyword_matches(kw_rule, rel_path, filename)
-                if kw:
-                    # 类别留空时，方向和目标类别都以命中关键词规则为准；
-                    # 目录映射的方向只用于「关键词未命中」时的兜底。
-                    return ContextMatch(
-                        kw_rule.direction, sem_label, kw_rule.target, child_idx,
-                        f"学期「{sem_label}」/「{child_dir}」+关键词「{kw}」"
-                        f"→ {kw_rule.direction}/{kw_rule.target}",
-                        f"keyword_subdir:{sem_label}/{child_dir}:{i}",
-                    )
+            # 文件名或路径里的关键词优先于图片文字。
+            picked = _pick_keyword(
+                compiled.keyword_subdir, rel_path, filename, extra_text)
+            if picked is not None:
+                i, kw_rule, kw, source = picked
+                # 类别留空时，方向和目标类别都以命中关键词规则为准；
+                # 目录映射的方向只用于「关键词未命中」时的兜底。
+                return ContextMatch(
+                    kw_rule.direction, sem_label, kw_rule.target, child_idx,
+                    f"学期「{sem_label}」/「{child_dir}」+关键词「{kw}」"
+                    f"→ {kw_rule.direction}/{kw_rule.target}"
+                    f"{_ocr_mark(source)}",
+                    f"keyword_subdir:{sem_label}/{child_dir}:{i}",
+                )
             return ContextMatch(
                 rule.direction, sem_label, f"{child_dir}（未细分）", child_idx,
                 f"学期「{sem_label}」/「{child_dir}」关键词未命中，保留目录名",
@@ -1221,7 +1429,15 @@ def classify_context(rel_path: str, compiled: CompiledConfig) -> ContextMatch:
                         f"学期「{sem_label}」/「{child_dir}」→ {g.category}",
                         f"generic_dir:{g.prefix}",
                     )
-            # 5) 未登记目录按目录名锚定
+            # 5) 未登记目录：竞赛名单和未匹配关键词优先于「一律当课程」
+            hit = _unmatched_fallback(
+                compiled, rel_path, filename,
+                f"学期「{sem_label}」/「{child_dir}」",
+                semester=sem_label, anchor=child_idx, category=child_dir,
+                extra_text=extra_text,
+            )
+            if hit.rule_key != "fallback":
+                return hit
             return ContextMatch(
                 DEFAULT_DIRECTION, sem_label, child_dir, child_idx,
                 f"学期「{sem_label}」/「{child_dir}」（目录锚定）",
@@ -1233,6 +1449,45 @@ def classify_context(rel_path: str, compiled: CompiledConfig) -> ContextMatch:
             compiled, rel_path, filename,
             f"学期「{sem_label}」根目录下",
             semester=sem_label, anchor=sem_index,
-            category=parts[sem_index])
+            category=parts[sem_index], extra_text=extra_text)
 
-    return _unmatched_fallback(compiled, rel_path, filename, "无上下文")
+    return _unmatched_fallback(
+        compiled, rel_path, filename, "无上下文", extra_text=extra_text)
+
+
+def _circ_to_jizu(rel_path: str, match: ContextMatch) -> ContextMatch:
+    """Logisim 电路文件直接归计算机组成原理。
+
+    已经由「计组」目录认出的文件保持原锚点，子目录不会被打平。
+    其余 .circ 使用路径里的学期；路径里没有学期时用大二上。
+    """
+    filename = os.path.basename(rel_path)
+    if not filename.lower().endswith(".circ"):
+        return match
+    if (match.rule_key.startswith("semester_dir:")
+            and match.category == "计算机组成原理"):
+        return match
+    parent = os.path.dirname(rel_path)
+    if parent in ("", "."):
+        parent = ""
+    # 锚点已经能留下子目录时沿用锚点。没有锚点时，把现有目录整段留在计组下面。
+    fixed = parent if match.anchor_index < 0 and parent else None
+    return ContextMatch(
+        direction="课程",
+        semester=match.semester or "大二上",
+        category="计算机组成原理",
+        anchor_index=match.anchor_index,
+        rule_desc="Logisim 电路文件（.circ）→ 课程/计算机组成原理",
+        rule_key="ext:circ",
+        fixed_inner=fixed,
+    )
+
+
+def classify_context(rel_path: str, compiled: CompiledConfig,
+                     extra_text: str = "") -> ContextMatch:
+    """按配置分类；.circ 在目录规则没有认出计组时，直接归计算机组成原理。
+
+    extra_text 是图片里识别出的文字。它只参与关键词，不参与目录组件匹配。
+    """
+    return _circ_to_jizu(
+        rel_path, _classify_context_impl(rel_path, compiled, extra_text))

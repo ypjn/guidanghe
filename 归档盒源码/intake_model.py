@@ -147,6 +147,13 @@ class IntakeList:
                     "needs_root",
                     "尚未选择整理空间。可将该目录设为整理空间后再加入。",
                     candidate_root=p)
+            parent = normalize_path(os.path.dirname(p))
+            # 只提出候选，不在这里改当前空间。是否采用由界面明确确认。
+            if parent and parent != p and os.path.isdir(parent):
+                return AddResult(
+                    "needs_root",
+                    "尚未选择整理空间。可将该文件所在目录设为整理空间后再加入。",
+                    candidate_root=parent)
             return AddResult(
                 "needs_root",
                 "尚未选择整理空间。请先选择空间，再加入文件。")

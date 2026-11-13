@@ -1,9 +1,9 @@
 {
   "suite": "test_v17_daily_entry",
-  "ts": "2026-11-09 22:53:15",
+  "ts": "2026-11-12 21:31:40",
   "counts": {
-    "total": 10,
-    "pass": 10,
+    "total": 16,
+    "pass": 16,
     "fail": 0
   },
   "exit_code": 0,
@@ -31,7 +31,7 @@
     {
       "id": "E04",
       "status": "通过",
-      "evidence": "文件无空间=needs_root 目录候选根=needs_root 空间外=outside"
+      "evidence": "文件无空间=needs_root 文件候选根=/private/tmp/_v17_daily_entry/e04/a 目录候选根=needs_root 空间外=outside"
     },
     {
       "id": "E05",
@@ -57,6 +57,36 @@
       "id": "E09",
       "status": "通过",
       "evidence": "最近行数正确=True 清单行数=1?True"
+    },
+    {
+      "id": "E10",
+      "status": "通过",
+      "evidence": "两个文件=True 已覆盖目录=True 关闭=True 记下=True 再打开选中=True 已消费=True"
+    },
+    {
+      "id": "E11",
+      "status": "通过",
+      "evidence": "确认后加入=True 拒绝且同目录只问一次=True 提问次数=2"
+    },
+    {
+      "id": "E14",
+      "status": "通过",
+      "evidence": "成功不弹=True 失败合并弹窗=True 忙碌弹窗=True 成功着色=True 失败着色=True"
+    },
+    {
+      "id": "E12",
+      "status": "通过",
+      "evidence": "勾选=[True, False] 行={0} 额外调用=[] 状态=已选中「实验报告.docx」。其他文件已取消勾选，点「开始整理」只会移动这一个。"
+    },
+    {
+      "id": "E13",
+      "status": "通过",
+      "evidence": "准备=True 启动=[('/private/tmp/_v17_daily_entry/e13', ['/private/tmp/_v17_daily_entry/e13/作业.pdf'])] 选中=True 行={0} 状态=已选中「作业.pdf」。预览里只有这一个文件，点「开始整理」才会移动。"
+    },
+    {
+      "id": "E15",
+      "status": "通过",
+      "evidence": "只含选中文件=True 实际文件=['作业.pdf'] 预览已开始=True 启动=[('/tmp/_v17_daily_entry/e14', ['/private/tmp/_v17_daily_entry/e14/作业.pdf'])] 状态=正在计算这些文件会放到哪里。现在还不会移动。"
     }
   ]
 }

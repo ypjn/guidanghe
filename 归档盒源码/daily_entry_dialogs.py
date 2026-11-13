@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 from typing import Callable, List
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QItemSelectionModel, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView, QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout,
     QLabel, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 import recent_spaces
-from intake_model import IntakeList
+from intake_model import IntakeList, is_within, normalize_path
 
 
 class RecentSpacesDialog(QDialog):
@@ -201,6 +201,7 @@ class IntakeDialog(QDialog):
         lay.addWidget(self.scope_label)
 
         self.list_widget = _DropListWidget()
+        self.list_widget.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.list_widget.dropped.connect(self._on_dropped)
         lay.addWidget(self.list_widget, 1)
 
@@ -230,8 +231,9 @@ class IntakeDialog(QDialog):
         bb.rejected.connect(self.reject)
         bb.accepted.connect(self.reject)
         lay.addWidget(bb)
+        self.list_widget.itemSelectionChanged.connect(self._update_buttons)
 
-    def refresh(self):
+    def refresh(self, select_paths=None):
         root = self.get_root()
         self.list_widget.clear()
         items = self.get_items()
@@ -241,6 +243,7 @@ class IntakeDialog(QDialog):
             entry.setData(Qt.UserRole, item.path)
             entry.setToolTip(item.path)
             self.list_widget.addItem(entry)
+        self._select_paths(select_paths)
         root_text = root or "（尚未选择整理空间）"
         self.scope_label.setText(
             f"<b>当前整理空间：</b>{root_text}<br>"
@@ -249,6 +252,33 @@ class IntakeDialog(QDialog):
             "<span style='color:#37474F;'>拖入/添加只登记范围；"
             "不移动文件、不写执行历史。扫描仍经过保护与排除机制。</span>")
         self._update_buttons()
+
+    def _select_paths(self, select_paths):
+        """高亮刚拖入或刚加入的行。文件落在已有目录里时，选中那个目录。"""
+        wanted = []
+        for path in select_paths or []:
+            if not path:
+                continue
+            try:
+                wanted.append(normalize_path(path))
+            except (OSError, ValueError):
+                continue
+        if not wanted:
+            return
+        first = None
+        for row in range(self.list_widget.count()):
+            entry = self.list_widget.item(row)
+            item_path = entry.data(Qt.UserRole)
+            if any(is_within(item_path, path) for path in wanted):
+                entry.setSelected(True)
+                if first is None:
+                    first = row
+        if first is None:
+            return
+        index = self.list_widget.model().index(first, 0)
+        self.list_widget.selectionModel().setCurrentIndex(
+            index, QItemSelectionModel.SelectionFlag.Current)
+        self.list_widget.scrollToItem(self.list_widget.item(first))
 
     def _update_buttons(self):
         has_items = self.list_widget.count() > 0
@@ -261,8 +291,23 @@ class IntakeDialog(QDialog):
 
     def _add(self, paths):
         messages = self.add_paths(paths)
-        self.message.setText("\n".join(messages[-8:]))
-        self.refresh()
+        self._show_messages(messages)
+        self.refresh(select_paths=paths)
+        parent = self.parent()
+        if parent is not None and hasattr(parent, "_pending_intake_selection"):
+            parent._pending_intake_selection = []
+
+    def _show_messages(self, messages):
+        shown = [m for m in (messages or []) if m][-8:]
+        self.message.setText("\n".join(shown))
+        problem = any(not m.startswith("已加入") for m in shown)
+        if not shown:
+            color = "#37474F"
+        elif problem:
+            color = "#B71C1C"
+        else:
+            color = "#1B5E20"
+        self.message.setStyleSheet(f"color:{color};")
 
     def on_add_files(self):
         paths, _ = QFileDialog.getOpenFileNames(
@@ -279,9 +324,15 @@ class IntakeDialog(QDialog):
             self._add([path])
 
     def on_remove(self):
+        failed = 0
         for entry in list(self.list_widget.selectedItems()):
-            self.remove_path(entry.data(Qt.UserRole))
+            if not self.remove_path(entry.data(Qt.UserRole)):
+                failed += 1
         self.refresh()
+        if failed:
+            QMessageBox.warning(
+                self, "待整理清单",
+                "有项目没有移除。窗口正在关闭，或当前有后台任务。")
 
     def on_clear(self):
         if QMessageBox.question(

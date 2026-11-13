@@ -8,8 +8,9 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from scanner import ScanResult, FileEntry, classify_type
 from utils import sha256_file
@@ -19,6 +20,7 @@ from classification_config import (
     INNER_KEEP, INNER_CLEAR,
     default_config, DEFAULT_SEMESTER_MAP, DEFAULT_TOP_DIRECTION,
     DEFAULT_SEMESTER_DIRS, DEFAULT_KEYWORD_TO_COURSE, DEFAULT_GENERIC_DIR,
+    PENDING_DIRECTION,
 )
 
 
@@ -31,8 +33,8 @@ class CourseRule:
     course_name: str       # 目标课程名
     order: int = 0         # 在界面上的显示顺序（越小越优先）
 
-    def matches(self, filename_lower: str) -> bool:
-        return any(kw in filename_lower for kw in self.keywords)
+    def matches(self, text_lower: str) -> bool:
+        return any(kw in text_lower for kw in self.keywords)
 
     def describe(self) -> str:
         """人类可读的规则描述。"""
@@ -118,6 +120,9 @@ class PlanItem:
     # V1.4 单文件修正：手动修正信息（仅在当前计划生效；不写回配置）
     is_manual_overridden: bool = False
     override_note: str = ""      # 如：用户手动把课程改成"Python 进阶"
+    # 图片文字：None 表示这次没有识别；空字符串表示识别过但没有文字
+    ocr_text: Optional[str] = None
+    ocr_error: str = ""
 
     @property
     def has_duplicates(self) -> bool:
@@ -144,6 +149,8 @@ class OrganizePlan:
     config_snapshot: dict = field(default_factory=dict)
     # 试运行/预览未计算 SHA-256 时为 False，界面必须明确标注
     duplicates_computed: bool = True
+    # 规则和 OCR 之后的 AI 补充分类说明；空字符串表示这次没有问 AI
+    ai_note: str = ""
 
     # ---- 汇总 ----
     @property
@@ -178,19 +185,27 @@ class OrganizePlan:
 
 # ======================== 计划生成核心 ========================
 
-def _match_course(filename: str, rules: List[CourseRule]) -> Tuple[str, Optional[int], str]:
+def _match_course(filename: str, rules: List[CourseRule],
+                  extra_text: str = "") -> Tuple[str, Optional[int], str]:
     """
-    根据文件名匹配第一条命中的课程规则。
+    根据文件名匹配第一条命中的课程规则。文件名都未命中时，再看图片文字。
 
     返回：(课程名, 规则序号, 规则描述)
     - 未命中时：("未分类课程", None, "未匹配任何规则")
     """
     fn_lower = filename.lower()
+    extra_lower = (extra_text or "").lower()
     # 按 order 排序，保证显示顺序即优先级顺序
     sorted_rules = sorted(rules, key=lambda r: r.order)
-    for idx, rule in enumerate(sorted_rules):
+    image_hit = None
+    for rule in sorted_rules:
         if rule.matches(fn_lower):
             return rule.course_name, rule.order, rule.describe()
+        if image_hit is None and extra_lower and rule.matches(extra_lower):
+            image_hit = rule
+    if image_hit is not None:
+        return (image_hit.course_name, image_hit.order,
+                image_hit.describe() + "（图片文字）")
     return DEFAULT_UNCLASSIFIED, None, "未匹配任何规则"
 
 
@@ -343,6 +358,162 @@ def detect_duplicates(
     return dup_groups, file_sha_map
 
 
+# 没登记的目录名、相机自动编号，不能拿来当“内容重合”的证据。
+_NEIGHBOR_GENERIC = {
+    "images", "image", "img", "imgs", "pic", "pics", "photo", "photos",
+    "picture", "pictures", "screenshot", "screenshots", "scan", "scans",
+    "new", "copy", "tmp", "temp", "file", "files", "doc", "docs",
+    "图片", "照片", "截图", "图像", "新建文件夹", "未命名", "副本", "其他",
+    "下载", "文档", "资料", "附件", "压缩", "备份", "课程", "竞赛", "项目",
+    "校园事务", "待定",
+}
+_CJK_RUN = re.compile(r"[\u4e00-\u9fff]{4,12}")
+_CAMERA_NAME = re.compile(
+    r"^(?:img|dsc|pic|photo|screenshot|image)?[_-]?\d+$", re.IGNORECASE)
+
+
+def _open_unregistered(item: PlanItem) -> bool:
+    """规则没认出来、还停在待定的顶层目录或散落文件。"""
+    if item.rule_key != "fallback":
+        return False
+    text = item.rule_applied or ""
+    return text == "顶层散落文件" or text.startswith("未登记顶层目录「")
+
+
+def _neighbor_stem(filename: str) -> str:
+    stem = os.path.splitext(filename)[0].strip().lower()
+    stem = re.sub(r"\s+", "", stem)
+    if not stem or stem in _NEIGHBOR_GENERIC or _CAMERA_NAME.fullmatch(stem):
+        return ""
+    cjk = len(re.findall(r"[\u4e00-\u9fff]", stem))
+    latin = len(re.findall(r"[a-z0-9]", stem))
+    if cjk >= 3 or latin >= 4:
+        return stem
+    return ""
+
+
+def _text_has(phrase: str, text_lower: str) -> bool:
+    """中文按连续包含；英文按词边界，避免 code 撞上 encoder。"""
+    needle = (phrase or "").lower()
+    if not needle:
+        return False
+    if re.search(r"[a-z0-9]", needle) and not re.search(r"[\u4e00-\u9fff]", needle):
+        return re.search(
+            r"(?<![a-z0-9])" + re.escape(needle) + r"(?![a-z0-9])",
+            text_lower,
+        ) is not None
+    return needle in text_lower
+
+
+def _group_unregistered_with_neighbors(items: List[PlanItem], root: str) -> None:
+    """没登记的文件对照旁边已经归好的文件。
+
+    只看文件名、图片文字和对方的类别名。对得上同一类，就归进那一类，
+    并留下原来的目录，避免把整夹无关照片一起拖走。两边都能对上时不改。
+    """
+    for _ in range(4):
+        donors: dict = {}
+        for item in items:
+            if _open_unregistered(item) or not item.direction or item.direction == "待定":
+                continue
+            if not item.category:
+                continue
+            key = (item.direction, item.semester or "", item.category)
+            bucket = donors.setdefault(key, {"stems": set(), "phrases": set(), "sample": ""})
+            stem = _neighbor_stem(item.file.filename)
+            if stem:
+                bucket["stems"].add(stem)
+            if not bucket["sample"]:
+                bucket["sample"] = item.file.filename
+            blob = item.file.filename
+            if item.ocr_text:
+                blob = blob + "\n" + item.ocr_text[:500]
+            if len(bucket["phrases"]) < 80:
+                for phrase in _CJK_RUN.findall(blob):
+                    if phrase not in _NEIGHBOR_GENERIC:
+                        bucket["phrases"].add(phrase)
+                    if len(bucket["phrases"]) >= 80:
+                        break
+
+        adopted = 0
+        for item in items:
+            if not _open_unregistered(item):
+                continue
+            pending_bits = [item.file.filename]
+            if item.ocr_text:
+                pending_bits.append(item.ocr_text[:2000])
+            pending_text = "\n".join(pending_bits).lower()
+            pending_stem = _neighbor_stem(item.file.filename)
+            best = None
+            best_score = 0
+            second = 0
+            best_token = ""
+            best_sample = ""
+            for (direction, semester, category), bucket in donors.items():
+                score = 0
+                token = ""
+                if len(category) >= 2 and _text_has(category, pending_text):
+                    score += 3
+                    token = category
+                for stem in bucket["stems"]:
+                    if _text_has(stem, pending_text) or (
+                            pending_stem and (
+                                _text_has(pending_stem, stem)
+                                or _text_has(stem, pending_stem))):
+                        score += 2
+                        token = token or stem
+                        break
+                if score < 3:
+                    for phrase in bucket["phrases"]:
+                        if _text_has(phrase, pending_text):
+                            score += 2
+                            token = token or phrase
+                            break
+                if score > best_score:
+                    second = best_score
+                    best_score = score
+                    best = (direction, semester, category)
+                    best_token = token
+                    best_sample = bucket["sample"]
+                elif score > second:
+                    second = score
+            if best is None or best_score < 2 or best_score <= second:
+                continue
+            direction, semester, category = best
+            parts = item.file.rel_path.split(os.sep)
+            inner = os.sep.join(parts[:-1])
+            reason = (
+                f"{item.rule_applied}。与旁边的「{best_sample}」重合「{best_token}」，"
+                f"归入{direction}"
+                + (f"/{semester}" if semester else "")
+                + f"/{category}"
+            )
+            item.direction = direction
+            item.semester = semester or None
+            item.category = category
+            item.course = category or direction
+            item.inner_path = inner or None
+            item.rule_key = f"neighbor:{direction}/{semester}/{category}"
+            item.rule_applied = reason
+            item.auto_direction = item.direction
+            item.auto_semester = item.semester
+            item.auto_category = item.category
+            item.auto_inner_path = item.inner_path
+            item.auto_rule_key = item.rule_key
+            item.auto_rule_applied = reason
+            target_dir = _build_target_dir_v2(direction, semester, category, item.file_type)
+            if inner:
+                target_dir = os.path.join(target_dir, inner)
+            item.target_dir_rel = target_dir
+            item.target_filename = item.file.filename
+            item.conflict_with_existing = False
+            others = [other for other in items if other is not item]
+            _assign_unique_names(others, root, item)
+            adopted += 1
+        if adopted == 0:
+            break
+
+
 def classify_entries(
     scan_result: ScanResult,
     mode: str,
@@ -350,6 +521,8 @@ def classify_entries(
     config: Optional[ClassificationConfig] = None,
     cancel_event=None,
     progress_cb=None,
+    ocr_texts: Optional[Dict[str, str]] = None,
+    ocr_errors: Optional[Dict[str, str]] = None,
 ) -> Tuple[List[PlanItem], Optional[CompiledConfig]]:
     """按模式与显式配置分类，并构造目标目录（不做 SHA / 重复检测）。
 
@@ -375,14 +548,19 @@ def classify_entries(
         if cancel_event and cancel_event.is_set():
             break
 
+        extra = ""
+        if ocr_texts and fentry.rel_path in ocr_texts:
+            extra = (ocr_texts[fentry.rel_path] or "").strip()[:8000]
+
         if mode == MODE_BY_COURSE_THEN_TYPE:
-            course, rule_idx, rule_desc = _match_course(fentry.filename, sorted_rules)
+            course, rule_idx, rule_desc = _match_course(
+                fentry.filename, sorted_rules, extra)
             rule_key = f"course_rule:{rule_idx}" if rule_idx is not None \
                 else "course_rule:unmatched"
             direction = semester = category = inner_path = ""
             anchor_index = -1
         elif mode == MODE_BY_DIRECTION_SEMESTER:
-            match = classify_context(fentry.rel_path, compiled)
+            match = classify_context(fentry.rel_path, compiled, extra)
             direction, semester, category = (
                 match.direction, match.semester, match.category)
             anchor_index, rule_desc, rule_key = (
@@ -393,7 +571,9 @@ def classify_entries(
             # anchor_index 指向最后一个已确定类别的目录节点。
             # inner_path = 锚点之后、文件名之前的所有目录层级；文件名不在其中。
             parts = fentry.rel_path.split(os.sep)
-            if anchor_index >= 0 and anchor_index + 1 < len(parts) - 1:
+            if match.fixed_inner is not None:
+                inner_path = match.fixed_inner
+            elif anchor_index >= 0 and anchor_index + 1 < len(parts) - 1:
                 inner_path = os.sep.join(parts[anchor_index + 1:-1])
             else:
                 inner_path = ""
@@ -402,7 +582,7 @@ def classify_entries(
             # 优先级：当前计划的临时手动修正（在 plan_patch 里做，晚于本函数）
             #         > 已启用的长期规则（按配置顺序取第一条）
             #         > 上述原有推荐模式分类
-            lt_match = match_long_term_rule(fentry.rel_path, compiled)
+            lt_match = match_long_term_rule(fentry.rel_path, compiled, extra)
             if lt_match is not None:
                 lt_rule = lt_match.rule
                 direction = lt_rule.direction
@@ -459,13 +639,48 @@ def classify_entries(
             auto_rule_key=rule_key,
             auto_rule_applied=rule_desc,
         )
+        if ocr_texts is not None and fentry.rel_path in ocr_texts:
+            item.ocr_text = extra
+        if ocr_errors and fentry.rel_path in ocr_errors:
+            item.ocr_error = ocr_errors[fentry.rel_path] or ""
         item = _assign_unique_names(items, root, item)
         items.append(item)
 
         if progress_cb and total > 0:
             progress_cb(idx + 1, total, fentry.rel_path)
 
+    if (mode == MODE_BY_DIRECTION_SEMESTER and compiled is not None
+            and not (cancel_event and cancel_event.is_set())):
+        _group_unregistered_with_neighbors(items, root)
+
+    if mode == MODE_BY_DIRECTION_SEMESTER:
+        for item in items:
+            # 规则没判断出来、仍停在「待定」的项默认不勾选。
+            # 邻居归组或长期规则改判之后 rule_key 不再是 fallback，保持勾选。
+            if (item.rule_key == "fallback"
+                    and (item.direction or "") == PENDING_DIRECTION):
+                item.selected = False
+
     return items, compiled
+
+
+def ocr_maps_from_plan(plan: Optional["OrganizePlan"]):
+    """从已生成的计划里取出图片文字，供试运行复用，避免再读一遍图片。"""
+    if plan is None:
+        return None, None
+    texts: Dict[str, str] = {}
+    errors: Dict[str, str] = {}
+    used = False
+    for item in plan.items:
+        if item.ocr_text is not None:
+            texts[item.file.rel_path] = item.ocr_text
+            used = True
+        if item.ocr_error:
+            errors[item.file.rel_path] = item.ocr_error
+            used = True
+    if not used:
+        return None, None
+    return texts, errors
 
 
 def build_plan(
@@ -476,6 +691,8 @@ def build_plan(
     compute_duplicates: bool = True,
     cancel_event=None,
     progress_cb=None,
+    ocr_texts: Optional[Dict[str, str]] = None,
+    ocr_errors: Optional[Dict[str, str]] = None,
 ) -> OrganizePlan:
     """构造计划。compute_duplicates=False 时跳过 SHA-256（试运行/影响预览用）。
 
@@ -509,6 +726,7 @@ def build_plan(
         scan_result, mode, rules, config=config,
         cancel_event=cancel_event,
         progress_cb=(progress_cb if not compute_duplicates else None),
+        ocr_texts=ocr_texts, ocr_errors=ocr_errors,
     )
 
     rel_to_group: dict = {}
@@ -538,6 +756,8 @@ def generate_plan(
     cancel_event=None,
     progress_cb=None,
     config: Optional[ClassificationConfig] = None,
+    ocr_texts: Optional[Dict[str, str]] = None,
+    ocr_errors: Optional[Dict[str, str]] = None,
 ) -> OrganizePlan:
     """生成正式计划（含 SHA-256 与内容重复检测）。
 
@@ -548,6 +768,7 @@ def generate_plan(
     return build_plan(
         scan_result, mode, rules, config=config, compute_duplicates=True,
         cancel_event=cancel_event, progress_cb=progress_cb,
+        ocr_texts=ocr_texts, ocr_errors=ocr_errors,
     )
 
 

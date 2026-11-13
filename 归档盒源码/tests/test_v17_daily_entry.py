@@ -9,6 +9,7 @@ E05 范围解析：只纳入清单文件，保护目录被排除
 E06 主窗口：清单范围扫描结果、清单变化使旧计划失效
 E07 忙碌/关闭等待期间拒绝修改清单与入口禁用
 E08 最近记录与方案数据测试隔离（不写用户真实目录）
+E10 拖入或加入后，待整理清单高亮对应行
 
 运行：
   QT_QPA_PLATFORM=offscreen .venv/bin/python tests/test_v17_daily_entry.py
@@ -26,11 +27,12 @@ SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, SRC)
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 import recent_spaces
 import scheme_store
-from intake_model import IntakeList
+from intake_model import IntakeList, normalize_path
 from scanner import scan_directory
 from main import MainWindow
 
@@ -157,18 +159,20 @@ def main():
         outside = fresh("e04_outside")
         mk(root, "a/x.txt")
         lst = IntakeList()
-        no_root_file = lst.add(os.path.join(root, "a", "x.txt"), None)
+        file_path = os.path.join(root, "a", "x.txt")
+        no_root_file = lst.add(file_path, None)
         no_root_dir = lst.add(outside, None)
         outside_res = lst.add(outside, root)
+        file_parent = os.path.realpath(os.path.dirname(file_path))
         ok = (no_root_file.status == "needs_root"
-              and not no_root_file.candidate_root
+              and no_root_file.candidate_root == file_parent
               and no_root_dir.status == "needs_root"
               and no_root_dir.candidate_root == os.path.realpath(outside)
               and outside_res.status == "outside"
               and len(lst) == 0)
         rec("E04", "未选空间/空间外来源得到明确处理，不静默设共同父目录", ok,
-            f"文件无空间={no_root_file.status} 目录候选根="
-            f"{no_root_dir.status} 空间外={outside_res.status}")
+            f"文件无空间={no_root_file.status} 文件候选根={no_root_file.candidate_root} "
+            f"目录候选根={no_root_dir.status} 空间外={outside_res.status}")
     except Exception as e:
         rec("E04", "根目录归属", False, f"异常：{e}")
 
@@ -293,6 +297,281 @@ def main():
             f"最近行数正确={rows_ok} 清单行数=1?{list_ok}")
     except Exception as e:
         rec("E09", "窗口构造", False, f"异常：{e}")
+
+    # E10 加入后高亮刚拖入的行
+    try:
+        def selected_paths(dialog):
+            return {item.data(Qt.UserRole)
+                    for item in dialog.list_widget.selectedItems()}
+
+        root = fresh("e10")
+        x = mk(root, "a/x.txt")
+        y = mk(root, "a/y.txt")
+        z = mk(root, "b/z.txt")
+        w = MainWindow()
+        w.path_edit.setText(root)
+        w._reset_for_new_dir(root)
+        w.on_intake_dialog()
+        dlg = w._intake_dialog
+        dlg._add([x, y])
+        both = selected_paths(dlg) == {normalize_path(x), normalize_path(y)}
+        dlg._add([os.path.dirname(z)])
+        dlg._add([z])
+        covered = selected_paths(dlg) == {normalize_path(os.path.dirname(z))}
+        dlg.close()
+        pump(app)
+        closed = w._intake_dialog is None
+        w._focus_new_intake_items([x])
+        remembered = w._pending_intake_selection == [x]
+        w.on_intake_dialog()
+        later = selected_paths(w._intake_dialog) == {normalize_path(x)}
+        cleared = w._pending_intake_selection == []
+        ok = both and covered and closed and remembered and later and cleared
+        rec("E10", "拖入或加入后高亮清单中对应的行", ok,
+            f"两个文件={both} 已覆盖目录={covered} 关闭={closed} "
+            f"记下={remembered} 再打开选中={later} 已消费={cleared}")
+        w.close()
+        pump(app)
+    except Exception as e:
+        rec("E10", "拖入后高亮", False, f"异常：{e}")
+
+    # E11 未选空间时选择文件：确认后登记，拒绝后保持为空，同目录只问一次
+    try:
+        root = fresh("e11")
+        file_path = mk(root, "notes/a.txt")
+        parent = os.path.realpath(os.path.dirname(file_path))
+        w = MainWindow()
+        messages = w._add_intake_paths([file_path])
+        added = (os.path.realpath(w.path_edit.text().strip()) == parent
+                 and len(w.intake) == 1
+                 and w.intake.items[0].kind == "file"
+                 and w.intake.items[0].path == normalize_path(file_path)
+                 and any(m.startswith("已加入：") for m in messages))
+        w.close()
+        pump(app)
+
+        prompts = {"n": 0}
+        real_question = QMessageBox.question
+
+        def ask_no(*_a, **_k):
+            prompts["n"] += 1
+            return QMessageBox.No
+
+        QMessageBox.question = staticmethod(ask_no)
+        try:
+            other = fresh("e11_other")
+            first = mk(root, "notes/b.txt")
+            second = mk(root, "notes/c.txt")
+            elsewhere = mk(other, "d.txt")
+            w2 = MainWindow()
+            declined_messages = w2._add_intake_paths([first, second, elsewhere])
+            declined = (prompts["n"] == 2
+                        and w2.path_edit.text().strip() == ""
+                        and len(w2.intake) == 0
+                        and all("尚未选择整理空间" in m for m in declined_messages))
+            w2.close()
+            pump(app)
+        finally:
+            QMessageBox.question = real_question
+        ok = added and declined
+        rec("E11", "未选空间时加入文件会确认所在目录，拒绝则不登记", ok,
+            f"确认后加入={added} 拒绝且同目录只问一次={declined} "
+            f"提问次数={prompts['n']}")
+    except Exception as e:
+        rec("E11", "未选空间时加入文件", False, f"异常：{e}")
+
+    # E14 加入失败会弹出错误，成功加入不弹
+    try:
+        root = fresh("e12")
+        inside = mk(root, "a/in.txt")
+        outside_root = fresh("e12_out")
+        outside = mk(outside_root, "out.txt")
+        missing = os.path.join(root, "a", "missing.txt")
+        warnings = []
+        real_warning = QMessageBox.warning
+
+        def capture(parent, title, text, *_a, **_k):
+            warnings.append((title, text))
+            return QMessageBox.Ok
+
+        QMessageBox.warning = staticmethod(capture)
+        try:
+            w = MainWindow()
+            w.path_edit.setText(root)
+            w._reset_for_new_dir(root)
+            warnings.clear()
+            ok_msgs = w._add_intake_paths([inside])
+            success_silent = (warnings == []
+                              and any(m.startswith("已加入") for m in ok_msgs))
+            w._add_intake_paths([outside, missing, inside])
+            body = warnings[0][1] if warnings else ""
+            warned = (len(warnings) == 1
+                      and warnings[0][0] == "待整理清单"
+                      and "不在当前整理空间内" in body
+                      and "不存在或不可访问" in body
+                      and "已在清单中" in body
+                      and "已加入：" not in body
+                      and len(w.intake) == 1)
+            w._working = True
+            before = len(warnings)
+            blocked = w._add_intake_paths([inside])
+            busy = (len(warnings) == before + 1
+                    and "后台任务" in warnings[-1][1]
+                    and any("后台任务" in m for m in blocked))
+            w._working = False
+            w.on_intake_dialog()
+            dlg = w._intake_dialog
+            other = mk(root, "a/other.txt")
+            dlg._add([other])
+            ok_color = "1B5E20" in dlg.message.styleSheet()
+            dlg._add([outside])
+            bad_color = "B71C1C" in dlg.message.styleSheet()
+            dlg.close()
+            w.close()
+            pump(app)
+        finally:
+            QMessageBox.warning = real_warning
+        ok = success_silent and warned and busy and ok_color and bad_color
+        rec("E14", "加入失败弹出错误提示，成功加入不弹", ok,
+            f"成功不弹={success_silent} 失败合并弹窗={warned} "
+            f"忙碌弹窗={busy} 成功着色={ok_color} 失败着色={bad_color}")
+    except Exception as e:
+        rec("E14", "加入失败的错误提示", False, f"异常：{e}")
+
+    # E12 拖入已经在预览里的单个文件：只勾选并选中它
+    try:
+        from planner import MODE_BY_DIRECTION_SEMESTER, OrganizePlan, PlanItem
+        from scanner import FileEntry
+
+        root = fresh("e12")
+        keep = mk(root, "实验报告.docx", "a")
+        other = mk(root, "笔记.pdf", "b")
+        w = MainWindow()
+        calls = []
+        w._start_scan = lambda path, only_paths=None: calls.append(
+            ("scan", path, only_paths))
+        w._generate_and_show_plan = lambda: calls.append(("plan",))
+
+        def entry(path):
+            return FileEntry(
+                abs_path=path, rel_path=os.path.basename(path),
+                filename=os.path.basename(path), file_type="文档",
+                size=1, size_display="1 B")
+
+        plan = OrganizePlan(
+            root=root, mode=MODE_BY_DIRECTION_SEMESTER, rules=[],
+            items=[
+                PlanItem(file=entry(keep), course="", file_type="文档",
+                         rule_applied="测试", target_dir_rel="课程",
+                         target_filename="实验报告.docx",
+                         target_rel_path="课程/实验报告.docx", selected=True,
+                         direction="课程"),
+                PlanItem(file=entry(other), course="", file_type="文档",
+                         rule_applied="测试", target_dir_rel="课程",
+                         target_filename="笔记.pdf",
+                         target_rel_path="课程/笔记.pdf", selected=True,
+                         direction="课程"),
+            ])
+        w.current_plan = plan
+        w._plan_valid = True
+        w._populate_table(plan, reset_filters=True)
+        w._drop_files_to_select([keep])
+        selected_rows = {idx.row() for idx in w.table.selectedIndexes()}
+        ok = (plan.items[0].selected and not plan.items[1].selected
+              and selected_rows == {0} and not calls
+              and "已选中" in w.statusBar().currentMessage()
+              and "实验报告.docx" in w.statusBar().currentMessage())
+        rec("E12", "拖入预览中的单个文件后只勾选并选中该行", ok,
+            f"勾选={[i.selected for i in plan.items]} 行={selected_rows} "
+            f"额外调用={calls} 状态={w.statusBar().currentMessage()}")
+        w.close()
+        pump(app)
+    except Exception as e:
+        rec("E12", "拖入后选中单个文件", False, f"异常：{e}")
+
+    # E13 窗口开着、文件不在当前预览：只准备这一个文件，预览出来后选中
+    try:
+        from planner import MODE_BY_DIRECTION_SEMESTER, OrganizePlan, PlanItem
+        from scanner import FileEntry
+
+        desk = fresh("e13")
+        lone = mk(desk, "作业.pdf", "c")
+        w = MainWindow()
+        started = []
+        w._start_scan = lambda path, only_paths=None: started.append(
+            (path, list(only_paths or [])))
+        w._generate_and_show_plan = lambda: started.append("plan")
+        w._drop_files_to_select([lone])
+        only = started[0][1] if started and isinstance(started[0], tuple) else []
+        prepared = (
+            len(started) == 1
+            and started[0][0] == os.path.realpath(desk)
+            and normalize_path(lone) in only
+            and w._plan_scope == "intake"
+            and len(w.intake) == 1
+            and w.intake.items[0].kind == "file"
+            and w.intake.items[0].path == normalize_path(lone)
+            and w._pending_drop_select == [normalize_path(lone)]
+            and os.path.realpath(w.path_edit.text().strip()) == os.path.realpath(desk))
+        lone_entry = FileEntry(
+            abs_path=lone, rel_path="作业.pdf", filename="作业.pdf",
+            file_type="文档", size=1, size_display="1 B")
+        plan = OrganizePlan(
+            root=desk, mode=MODE_BY_DIRECTION_SEMESTER, rules=[],
+            items=[PlanItem(
+                file=lone_entry, course="", file_type="文档",
+                rule_applied="测试", target_dir_rel="课程",
+                target_filename="作业.pdf", target_rel_path="课程/作业.pdf",
+                selected=True, direction="课程")])
+        w.current_plan = plan
+        w._plan_valid = True
+        w._populate_table(plan, reset_filters=True)
+        w._apply_pending_drop_select()
+        selected_rows = {idx.row() for idx in w.table.selectedIndexes()}
+        chosen = (plan.items[0].selected and selected_rows == {0}
+                  and w._pending_drop_select == []
+                  and "作业.pdf" in w.statusBar().currentMessage())
+        ok = prepared and chosen
+        rec("E13", "拖入窗口外的单个文件后只准备它，预览完成时自动选中", ok,
+            f"准备={prepared} 启动={started} 选中={chosen} "
+            f"行={selected_rows} 状态={w.statusBar().currentMessage()}")
+        w.close()
+        pump(app)
+    except Exception as e:
+        rec("E13", "拖入窗口外的单个文件", False, f"异常：{e}")
+
+    # E14 选中或拖入的文件只计算自己的目标，不扫描同目录的其他文件
+    try:
+        from scanner import scan_paths
+
+        root = fresh("e14")
+        keep = mk(root, "作业.pdf", "pdf")
+        mk(root, "旁边的笔记.txt", "txt")
+        focused = scan_paths(root, [keep], detect_project_roots=False)
+        names = [os.path.basename(item.abs_path) for item in focused.files]
+        only_keep = names == ["作业.pdf"]
+
+        w = MainWindow()
+        w.path_edit.setText(root)
+        w._reset_for_new_dir(root)
+        started = []
+        w._start_scan = lambda path, only_paths=None: started.append(
+            (path, list(only_paths or [])))
+        w._add_and_preview_intake([keep])
+        pump(app)
+        previewing = (
+            len(started) == 1
+            and normalize_path(keep) in started[0][1]
+            and w._plan_scope == "intake"
+            and "正在计算" in w.statusBar().currentMessage())
+        ok = only_keep and previewing
+        rec("E15", "选中单个文件后直接计算它的目标位置，不扫描旁边的文件", ok,
+            f"只含选中文件={only_keep} 实际文件={names} 预览已开始={previewing} "
+            f"启动={started} 状态={w.statusBar().currentMessage()}")
+        w.close()
+        pump(app)
+    except Exception as e:
+        rec("E15", "选中后直接计算目标", False, f"异常：{e}")
 
     passed = sum(1 for r in RESULTS if r["status"] == "通过")
     failed = sum(1 for r in RESULTS if r["status"] == "未通过")

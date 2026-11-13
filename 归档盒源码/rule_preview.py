@@ -80,10 +80,12 @@ class ImpactResult:
 
 
 def _plan_items(scan_result: ScanResult, config: ClassificationConfig,
-                mode: str, rules, cancel_event=None, progress_cb=None):
+                mode: str, rules, cancel_event=None, progress_cb=None,
+                ocr_texts=None, ocr_errors=None):
     plan: OrganizePlan = build_plan(
         scan_result, mode, rules, config=config, compute_duplicates=False,
         cancel_event=cancel_event, progress_cb=progress_cb,
+        ocr_texts=ocr_texts, ocr_errors=ocr_errors,
     )
     return plan
 
@@ -96,6 +98,8 @@ def preview_impact(
     rules=None,
     cancel_event=None,
     progress_cb=None,
+    ocr_texts=None,
+    ocr_errors=None,
 ) -> ImpactResult:
     """计算草稿配置相对当前生效配置的影响（纯计算、零副作用）。"""
     rules = rules or []
@@ -108,7 +112,8 @@ def preview_impact(
 
     draft_plan = _plan_items(
         scan_result, draft, mode, rules,
-        cancel_event=cancel_event, progress_cb=_draft_progress)
+        cancel_event=cancel_event, progress_cb=_draft_progress,
+        ocr_texts=ocr_texts, ocr_errors=ocr_errors)
     if cancel_event and cancel_event.is_set():
         return ImpactResult(root=scan_result.root, mode=mode, sample_total=total)
 
@@ -118,7 +123,8 @@ def preview_impact(
 
     base_plan = _plan_items(
         scan_result, base, mode, rules,
-        cancel_event=cancel_event, progress_cb=_base_progress)
+        cancel_event=cancel_event, progress_cb=_base_progress,
+        ocr_texts=ocr_texts, ocr_errors=ocr_errors)
 
     # 命中统计（按稳定 rule_key 分组，标签用人类可读的分类依据）
     labels: "OrderedDict[str, str]" = OrderedDict()
@@ -180,7 +186,8 @@ class PreviewWorker(QThread):
 
     def __init__(self, seq: int, root: str, scan_result: ScanResult,
                  draft: ClassificationConfig, base: ClassificationConfig,
-                 mode: str, rules=None, parent=None):
+                 mode: str, rules=None, parent=None,
+                 ocr_texts=None, ocr_errors=None):
         super().__init__(parent)
         self.seq = seq
         self.root = root
@@ -189,6 +196,8 @@ class PreviewWorker(QThread):
         self.base = base
         self.mode = mode
         self.rules = rules or []
+        self.ocr_texts = ocr_texts
+        self.ocr_errors = ocr_errors
         self.cancel_event = threading.Event()
         self._last_emit = -1
 
@@ -210,6 +219,7 @@ class PreviewWorker(QThread):
                 self.scan_result, self.draft, self.base, mode=self.mode,
                 rules=self.rules, cancel_event=self.cancel_event,
                 progress_cb=_progress,
+                ocr_texts=self.ocr_texts, ocr_errors=self.ocr_errors,
             )
             if self.cancel_event.is_set():
                 self.cancelled.emit(self.seq, self.root)

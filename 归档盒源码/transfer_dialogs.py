@@ -227,7 +227,8 @@ class ApplyPreviewDialog(QDialog):
     def __init__(self, *, root: str, base_config: ClassificationConfig,
                  draft_config: ClassificationConfig, scan_result,
                  diff: ConfigDiff, worker_registry=None, mode: str = "",
-                 rules=None, title: str = "应用方案前确认", parent=None):
+                 rules=None, title: str = "应用方案前确认", parent=None,
+                 ocr_texts=None, ocr_errors=None):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.resize(820, 620)
@@ -237,6 +238,8 @@ class ApplyPreviewDialog(QDialog):
         self.scan_result = scan_result
         self.mode = mode or MODE_BY_DIRECTION_SEMESTER
         self.rules = rules or []
+        self.ocr_texts = ocr_texts
+        self.ocr_errors = ocr_errors
         self.worker_registry = worker_registry
         self._seq = 0
         self._worker = None
@@ -309,7 +312,9 @@ class ApplyPreviewDialog(QDialog):
             seq = self._seq
             worker = PreviewWorker(seq, self.root, self.scan_result,
                                    self.draft_config, self.base_config,
-                                   self.mode, self.rules)
+                                   self.mode, self.rules,
+                                   ocr_texts=self.ocr_texts,
+                                   ocr_errors=self.ocr_errors)
         except Exception as e:
             self.status.setText(f"影响预览无法启动：{e}")
             self.bb.button(QDialogButtonBox.Ok).setEnabled(True)
@@ -400,7 +405,8 @@ class SchemeCenterDialog(QDialog):
                  current_config: ClassificationConfig,
                  apply_callback: Callable[[ClassificationConfig], None],
                  restore_callback: Callable[[], str],
-                 scan_result=None, worker_registry=None, parent=None):
+                 scan_result=None, worker_registry=None, parent=None,
+                 ocr_texts=None, ocr_errors=None):
         super().__init__(parent)
         self.setWindowTitle("整理方案库 — 导入、导出与应用")
         self.resize(1000, 680)
@@ -410,6 +416,8 @@ class SchemeCenterDialog(QDialog):
         self.restore_callback = restore_callback
         self.scan_result = scan_result
         self.worker_registry = worker_registry
+        self.ocr_texts = ocr_texts
+        self.ocr_errors = ocr_errors
         self._records = []
 
         lay = QVBoxLayout(self)
@@ -674,7 +682,8 @@ class SchemeCenterDialog(QDialog):
             root=self.root, base_config=clone_config(self.current_config),
             draft_config=cfg, scan_result=self.scan_result, diff=diff,
             worker_registry=self.worker_registry,
-            title=f"应用方案 — {source_label}", parent=self)
+            title=f"应用方案 — {source_label}", parent=self,
+            ocr_texts=self.ocr_texts, ocr_errors=self.ocr_errors)
         if preview.exec() != QDialog.Accepted:
             return
         try:
@@ -686,14 +695,16 @@ class SchemeCenterDialog(QDialog):
         self.refresh_list()
         QMessageBox.information(
             self, "应用方案",
-            "方案已应用到当前目录。旧预览已失效，请点击「重新预览」"
+            "方案已应用到当前目录。旧预览已失效，请点击「重新生成预览」"
             "按新配置生成计划后再执行。")
 
     def on_restore(self):
         if QMessageBox.question(
                 self, "恢复上一次配置",
                 "将恢复最近一次应用方案前的分类配置（只改变配置，"
-                "不会移动或撤销文件）。\n继续吗？",
+                "不会移动或撤销文件）。\n"
+                "当前配置会被覆盖：恢复前会自动生成一份当前配置的新备份，"
+                "本次使用的备份文件也会保留。\n继续吗？",
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
             return
         try:

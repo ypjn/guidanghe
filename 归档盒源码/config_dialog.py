@@ -8,7 +8,7 @@
 - 保存失败时留在对话框内并指出具体规则，不显示虚假的“已保存”。
 
 「按类型」「按课程再按类型」不使用本配置；课程关键词规则仍在主窗口
-「编辑课程规则…」中维护（只影响「按课程再按类型」）。
+「课程关键词」中维护（只影响「按课程再按类型」）。
 """
 
 from __future__ import annotations
@@ -212,7 +212,8 @@ class ClassificationConfigDialog(QDialog):
     def __init__(self, root: str, config: ClassificationConfig,
                  using_defaults: bool = False, config_error: str = "",
                  scan_result=None, base_config: Optional[ClassificationConfig] = None,
-                 save_callback=None, worker_registry=None, parent=None):
+                 save_callback=None, worker_registry=None, parent=None,
+                 ocr_texts=None, ocr_errors=None):
         super().__init__(parent)
         self.setWindowTitle(f"推荐模式分类配置 — {os.path.basename(root) or root}")
         self.resize(1080, 720)
@@ -222,6 +223,8 @@ class ClassificationConfigDialog(QDialog):
         self.base_config = base_config or config
         self.save_callback = save_callback
         self.worker_registry = worker_registry
+        self.ocr_texts = ocr_texts
+        self.ocr_errors = ocr_errors
         self.result_config: Optional[ClassificationConfig] = None
         self._draft = default_config()
         self._preview_seq = 0
@@ -240,10 +243,11 @@ class ClassificationConfigDialog(QDialog):
         tip = QLabel(
             "本配置只影响「按方向/学期/类别（推荐）」模式。"
             "「按类型」「按课程再按类型」不使用这里的映射；"
-            "课程关键词规则请用主窗口的「编辑课程规则…」（只影响「按课程再按类型」）。\n"
+            "课程关键词规则请用主窗口的「课程关键词」（只影响「按课程再按类型」）。\n"
             "匹配顺序：临时手动修正（仅当前计划）→ 长期修正规则（从上到下取第一条）"
             "→ 学期映射 → 顶层方向 → 学期内目录"
-            "（类别留空时用关键词细分）→ 通用目录前缀 → 未登记目录锚定 → 待定。\n"
+            "（类别留空时用关键词细分）→ 通用目录前缀 → "
+            "未匹配关键词（竞赛名单、各专业课程、校园事务）→ 未登记目录锚定 → 待定。\n"
             "每张表中，启用勾选与从上到下的行顺序就是实际匹配优先级。"
         )
         tip.setWordWrap(True)
@@ -655,7 +659,8 @@ class ClassificationConfigDialog(QDialog):
         # 线程由主窗口登记表保活，真正结束后再回收。
         worker = PreviewWorker(
             seq, self.root, self.scan_result, cfg,
-            self.base_config, MODE_BY_DIRECTION_SEMESTER, rules=[])
+            self.base_config, MODE_BY_DIRECTION_SEMESTER, rules=[],
+            ocr_texts=self.ocr_texts, ocr_errors=self.ocr_errors)
         self._worker = worker
         worker.progress.connect(self._on_preview_progress)
         worker.finished_ok.connect(self._on_preview_done)
