@@ -1,0 +1,9 @@
+﻿execute: 成功 800 batch 2
+undo.summary: 完整撤销：恢复 5 项
+is_complete: True restored: 5 conflict: 0 errors: 0
+errors_list: ['撤销已取消：已完成 5 项，剩余项目保持原状态。']
+batches: [(1, 'undone', '撤销 恢复 800 / 冲突 0 / 错误 0'), (2, 'undone', '撤销 恢复 5 / 冲突 0 / 错误 0')]
+undo_is_available: False
+action_status: [('moved', 795), ('undone', 805)]
+files_left_in_target: 795
+source_files_declared: 800

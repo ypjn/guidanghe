@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>归档盒 V1.7 — 独立全流程审查报告（2026-11-13）</title>
+<style>
+  :root{
+    --ink:#0f172a; --muted:#5b6b7c; --line:#e2e8f0; --bg:#f8fafc;
+    --p0:#b91c1c; --p1:#c2410c; --p2:#a16207; --ok:#15803d; --blue:#1d4ed8;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.75 "Microsoft YaHei","PingFang SC",system-ui,sans-serif;}
+  .wrap{max-width:1040px;margin:0 auto;padding:40px 28px 80px;background:#fff;}
+  h1{font-size:27px;line-height:1.35;margin:0 0 6px}
+  .sub{color:var(--muted);font-size:13.5px;margin-bottom:26px}
+  h2{font-size:20px;margin:38px 0 12px;padding-bottom:8px;border-bottom:2px solid var(--line)}
+  h3{font-size:16px;margin:24px 0 8px}
+  p{margin:8px 0}
+  code{background:#f1f5f9;padding:1px 5px;border-radius:4px;
+       font:12.5px/1.6 Consolas,"Courier New",monospace;color:#334155}
+  table{border-collapse:collapse;width:100%;margin:12px 0 18px;font-size:13.5px}
+  th,td{border:1px solid var(--line);padding:7px 10px;vertical-align:top;text-align:left}
+  th{background:#f8fafc;font-weight:600;color:#334155}
+  .tag{display:inline-block;padding:1px 7px;border-radius:999px;color:#fff;
+       font-size:11.5px;font-weight:600;letter-spacing:.3px;white-space:nowrap}
+  .t0{background:var(--p0)} .t1{background:var(--p1)} .t2{background:var(--p2)}
+  .tok{background:var(--ok)} .tinfo{background:#475569}
+  .card{border:1px solid var(--line);border-left:4px solid var(--line);
+        border-radius:8px;padding:14px 18px;margin:14px 0;background:#fff}
+  .card.p0{border-left-color:var(--p0)} .card.p1{border-left-color:var(--p1)}
+  .card.p2{border-left-color:var(--p2)}
+  .card h4{margin:0 0 6px;font-size:15.5px}
+  .kv{color:var(--muted);font-size:13px}
+  .figs{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0}
+  .fig{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
+  .fig img{width:100%;display:block}
+  .fig figcaption{font-size:12.5px;color:var(--muted);padding:7px 10px;border-top:1px solid var(--line)}
+  blockquote{margin:12px 0;padding:10px 14px;background:#fffbeb;border-left:3px solid #f59e0b;
+             color:#78350f;font-size:13.5px}
+  ul,ol{margin:8px 0 8px 22px;padding:0}
+  li{margin:3px 0}
+  .hero{background:linear-gradient(135deg,#eff6ff,#f8fafc);border:1px solid #dbeafe;
+        border-radius:10px;padding:18px 22px;margin:18px 0}
+  .hero b{color:var(--blue)}
+  .meta td:first-child{width:170px;color:var(--muted);background:#f8fafc}
+  .small{font-size:12.5px;color:var(--muted)}
+  @media print{.wrap{max-width:none;padding:0} .figs{page-break-inside:avoid}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>归档盒 V1.7 独立全流程审查</h1>
+<div class="sub">站在使用者角度 · 真实 Windows 桌面操作 · 逻辑 / 操作 / 界面三套审查 · 2026-11-13</div>
+
+<div class="hero">
+  <p style="margin:0"><b>结论：bug 还没有修完。</b>主流程（扫描 → 预览 → 修正 → 整理 → 历史 → 撤销 → 重复查看 → 待整理清单）可以完整走通，近几轮修复的确认框默认安全、junction 跳过、部分撤销提示等在实测中成立；但仍有 <b>2 个高危问题</b>（撤销可谎报成功并让剩余文件永久失去撤销入口；根目录被误判为项目导致整目录无法整理），以及 <b>深色主题下多处文字/勾选框不可读</b>、<b>分类结果与用户直觉冲突</b>等一批中等问题。</p>
+</div>
+
+<h2>一、测试环境与方法</h2>
+<table class="meta">
+<tr><td>被测源码</td><td><code>C:\Users\Lenovo\Documents\Trae-CN\temp_20261113_01\_work\归档盒源码</code>（HEAD <code>7081113</code>，P0/P1/P2 修复后的当前版本；测试用快照 <code>_run_20261113\app_src</code>，<code>main.py</code> SHA-256 <code>1B2F9FBC…D32E52</code>）</td></tr>
+<tr><td>运行时</td><td>原生 Windows 11，Python 3.14.8 + PySide6 6.12.0（免安装包 runtime），系统缩放 150%，<b>系统为深色主题</b>；未使用 offscreen / WSL</td></tr>
+<tr><td>隔离</td><td><code>ARCHIVEBOX_RECENT_FILE</code> / <code>ARCHIVEBOX_APP_DIR</code> / <code>ARCHIVEBOX_SCHEME_DIR</code> 全部指向测试目录；沙箱目录独立创建，不触碰真实课程资料</td></tr>
+<tr><td>驱动方式</td><td>从产品生产入口启动（同一套 QSS、启动日志、MainWindow）；真实鼠标点击按钮/复选框、真实弹出模态框并由看护定时器点击；真实文件移动、SQLite 记录、磁盘核对</td></tr>
+<tr><td>替代项（仅一处）</td><td>系统自带的“选择文件夹/文件”对话框以桩返回路径（OS 对话框本身不属于产品逻辑）；其余对话框均为真实控件，记录标题、正文、按钮 enabled/default/autoDefault</td></tr>
+<tr><td>测试样本</td><td>普通课程资料目录（高数/数据结构/大物/英语/学年学期目录/照片/视频/压缩包/未命名/0 字节/超长名/同名/同内容/深层嵌套/只读/junction/.git 项目目录）、空目录、含 <code>requirements.txt</code> 的根目录、800 文件批量目录、多种学期命名目录</td></tr>
+</table>
+
+<p class="small">证据目录：<code>证据\*.json / *.txt</code>；截图：<code>_run_20261113\shots\*.png</code>；复跑驱动与完整运行目录只保存在本机测试工作区（未入库）。<br>
+注：驱动日志中“最近空间已记录”一项显示 FAIL，是断言按未转义路径比对 JSON 造成的误判（<code>recent.json</code> 实际已写入正确路径），不属于产品缺陷；其余 FAIL 均为真实问题（见下文）。</p>
+
+<h2>二、实测：主流程通过的部分</h2>
+<table>
+<tr><th style="width:210px">项目</th><th>实测结果</th></tr>
+<tr><td>首次启动 / 选目录 / 扫描</td><td><span class="tag tok">通过</span> 18 个文件 0.2 s 完成扫描与预览；首屏提示、按钮可用性正确</td></tr>
+<tr><td>预览筛选 / 搜索 / 选中行说明</td><td><span class="tag tok">通过</span> 搜索“高数”只剩 1 行；类型筛选生效；右侧说明随选中行更新</td></tr>
+<tr><td>单文件修正</td><td><span class="tag tok">通过</span> 把「待定」改为「课程/大二上/高等数学（手动修正）」，目标路径与依据同步更新，并标注仅本次生效</td></tr>
+<tr><td>执行确认框</td><td><span class="tag tok">通过</span> 「确认开始整理」不是默认按钮，默认按钮为「取消」（default=True）——P0 修复成立</td></tr>
+<tr><td>整理执行与记录</td><td><span class="tag tok">通过</span> 7 项全部移动到位、源位置清空、写入 <code>.organizer/history.db</code>；表格清空、按钮进入正确状态</td></tr>
+<tr><td>操作历史</td><td><span class="tag tok">通过</span> 批次 #1「已完成」，明细 7 行（含状态、原因、分类来源）；已完成批次不提供撤销</td></tr>
+<tr><td>撤销（正常路径）</td><td><span class="tag tok">通过</span> 恢复 7 项、文件回到原路径、无残留空目录、按钮禁用</td></tr>
+<tr><td>撤销（目标文件被占用）</td><td><span class="tag tok">通过</span> 锁住目标文件后撤销：恢复 6 / 冲突 1，界面明确“部分撤销”，批次标记 <code>partial_failed_undone</code>，没有假成功</td></tr>
+<tr><td>重复文件查看</td><td><span class="tag tok">通过</span> 内容重复 1 组/2 份、同名不同内容 1 组/3 份；只读，不移动文件</td></tr>
+<tr><td>待整理清单 / 只扫描清单</td><td><span class="tag tok">通过</span> 加入 2 个文件后，预览只包含这 2 个文件</td></tr>
+<tr><td>扫描中关闭窗口</td><td><span class="tag tok">通过</span> 等待后台任务结束后退出（0.25 s），无残留</td></tr>
+<tr><td>junction / 项目目录 / 隐藏文件</td><td><span class="tag tok">通过</span> junction 目录整体跳过并在提示中列出路径；含 <code>.git</code> 的课程设计目录被保护</td></tr>
+</table>
+
+<h2>三、问题清单</h2>
+
+<div class="card p0">
+<h4><span class="tag t0">P0-1</span> 撤销被取消后仍报“完整撤销成功”，剩余文件永久失去撤销入口</h4>
+<p class="kv">场景：撤销一批很多/很大的文件时，用户点「停止撤销」，或此时关闭程序（关闭窗口会取消撤销）。</p>
+<p>实测（800 个文件，撤销进行到第 5 项时取消）：</p>
+<ul>
+<li>返回结果：<code>完整撤销：恢复 5 项</code>，<code>is_complete = True</code>，界面会弹「✓ 完整撤销成功！」</li>
+<li>批次却被写成 <code>undone</code>，<code>undo_is_available = False</code></li>
+<li>磁盘上还有 <b>795 个文件</b>留在 <code>_已整理</code>，而「撤销上一次」再也无法恢复它们</li>
+</ul>
+<p class="kv">原因：取消分支只往说明里追加一行，没有计入 conflict/errors；批次最终状态只看“恢复数 &gt; 0 且无冲突”，因此被判为完整成功。<br>
+证据：<code>evidence\undo_cancel_logic.txt</code>；代码：<code>executor.py:382-387</code>、<code>executor.py:459-479</code>、<code>main.py:4850-4859</code>、关闭时取消 <code>main.py:5251-5258</code>。</p>
+<p><b>建议：</b>取消应视为不完整（单独状态），不写 <code>undone</code>；剩余 moved 项必须仍可撤销；界面文案改为“已停止，恢复 5/N，可继续撤销”。</p>
+</div>
+
+<div class="card p0">
+<h4><span class="tag t0">P0-2</span> 根目录含 <code>requirements.txt</code> 等标记时，整个根目录被判为“项目”，计划 0 项</h4>
+<p class="kv">场景：学生把课程资料放在一个也含 <code>requirements.txt</code> / <code>package.json</code> / <code>.git</code> 的目录里（很常见）。</p>
+<p>实测：扫描结果 <code>项目保护 3（1 个根）</code>，计划 0 个文件；弹窗写着「以下目录被整体保护：[自动识别] &lt;根目录&gt;（项目标记 requirements.txt 存在）」，但用户没有任何“继续整理”的入口——只能先把文件挪走。</p>
+<p class="kv">代码：<code>scanner.py:198-211</code>、<code>scanner.py:478-493</code>；与 <code>protect_config.py:69-70</code>「根目录不得被保护」的约定矛盾。<br>
+证据：<code>evidence\result_inspect_sandbox_rootreq.json</code>（弹窗原文：“[自动识别] …（项目标记 requirements.txt 存在）… 共 3 个文件因项目保护被跳过”）。</p>
+<p><b>建议：</b>项目标记只在子目录生效；根目录命中时应降级为“保护其中特定子目录”，并给出可操作提示。</p>
+</div>
+
+<div class="card p1">
+<h4><span class="tag t1">P1-1</span> 深色系统主题下，勾选框与多处说明文字不可读</h4>
+<p>实测调色板：Window <code>#1e1e1e</code>、Text <code>#ffffff</code>；但界面是浅色底（<code>#F8FAFC</code>/白色），而 QSS 只给 <code>QCheckBox</code> 设了 padding，没有设文字色和勾选框样式。</p>
+<ul>
+<li>表格“勾选”列：未勾选 = 实心黑方块，已勾选 = 黑方块 + 白勾，二者在小尺寸下几乎无法区分</li>
+<li>筛选行「待定」「将改名」两个复选框：<b>文字完全不可见</b>，界面上只剩两个黑方块</li>
+<li>侧栏「识别图片文字」「待定或识别失败时问 DeepSeek」：白字落在近白底上，读不出来</li>
+<li>重复文件窗口顶部「范围 / 根目录 / 核对时间 / 统计」四行白底白字，只剩最后一行（显式指定了颜色）可见</li>
+</ul>
+<div class="figs">
+<figure class="fig"><img src="截图/crop_check_col.png" alt="勾选框"><figcaption>勾选列：未勾选也是实心黑块</figcaption></figure>
+<figure class="fig"><img src="截图/crop_filters2.png" alt="筛选行"><figcaption>「待定」「将改名」只剩黑方块，文字不可见</figcaption></figure>
+</div>
+<figure class="fig"><img src="截图/main_09_duplicates.png" alt="重复文件窗口"><figcaption>重复文件窗口：顶部四行说明不可读；深色列表与主界面白底风格割裂</figcaption></figure>
+<p class="kv">代码：<code>main.py:5398-5528</code>（全局 QSS 未处理 QCheckBox 字色/indicator）、<code>duplicate_dialog.py:194-200</code>（前四行未指定颜色）。</p>
+<p><b>建议：</b>启动时统一强制浅色调色板（或提供深色模式），给 QCheckBox 设 <code>color</code> 与 <code>::indicator</code>，所有富文本标签显式设颜色。</p>
+</div>
+
+<div class="card p1">
+<h4><span class="tag t1">P1-2</span> 首屏看不到「分类」区：模式选择、OCR/AI 开关、规则入口都在侧栏折叠线以下</h4>
+<p>1280×780 窗口实测纵坐标：模式下拉 <b>820</b>、OCR 开关 <b>854</b>、AI 开关 <b>880</b>、「学期和目录规则」<b>950</b>、「勾选看到的文件」<b>1113</b>——全部超过窗口高度 780，必须滚动侧栏才能看到。而低频的「最近打开」在首屏，且侧栏没有滚动提示。</p>
+<figure class="fig"><img src="截图/crop_sidebar_full.png" alt="侧栏首屏"><figcaption>首屏侧栏到「将生成的目录」就结束，分类区全部在下方</figcaption></figure>
+<p><b>建议：</b>把「分类方式 / 规则入口」上移，或做成顶部可见的分段控件；「最近打开」「待整理清单」等降级到次级区域。</p>
+</div>
+
+<div class="card p1">
+<h4><span class="tag t1">P1-3</span> 顶层课程目录的内部结构被压平（与模式说明“保留内部结构”不符）</h4>
+<p>实测：<code>高等数学\往年题\2019\期末试卷.pdf</code> → <code>_已整理\课程\未识别学期\高等数学\文档\期末试卷.pdf</code>，<code>往年题\2019</code> 两级目录丢失；不同子目录里的同名文件会互相改名成 <code>(1)</code>。</p>
+<p class="kv">代码：<code>planner.py:619-630</code>（关键词兜底 anchor=-1 时 inner_path 为空）；模式说明见 <code>planner.py:73</code>。<br>
+证据：<code>evidence\result_inspect_sandbox_logic.json</code>。</p>
+</div>
+
+<div class="card p1">
+<h4><span class="tag t1">P1-4</span> 课程论文被抢到「项目 / 论文」</h4>
+<p>实测：<code>高等数学\课程论文.docx</code> → <code>_已整理\项目\高等数学\论文\课程论文.docx</code>，分类依据走“项目输出识别”，并且<b>默认勾选</b>。对用户来说这是“把课程作业搬去项目区”的不可预期行为。</p>
+<p class="kv">代码：<code>classification_config.py:1446-1449</code>。</p>
+</div>
+
+<div class="card p1">
+<h4><span class="tag t1">P1-5</span> “邻居文件名相似”会把无关文件夹并入某门课，且默认勾选</h4>
+<p>实测：<code>新建文件夹\实验报告2.docx</code> → <code>课程\未识别学期\高等数学\文档\新建文件夹\…</code>，依据是“与旁边的「习题解答.pdf」重合「实验报告」，归入课程/高等数学”。目录名「新建文件夹」被保留，用户很难理解为什么它变成了高数。</p>
+<p class="kv">代码：<code>planner.py:456-555</code>（4 轮启发式，命中后 rule_key 不再是 fallback → 自动勾选）。</p>
+</div>
+
+<div class="card p1">
+<h4><span class="tag t1">P1-6</span> 首次使用 61% 文件是「待定」且默认不勾选，但界面没有“还有多少没分类”的提示</h4>
+<p>实测普通课程目录：18 个文件里 <b>11 个待定</b>（顶层散落的图片、视频、压缩包、README、0 字节文件、未登记目录等），默认只勾选 7 个。确认框只写「已选文件：7 / 18」，没有“11 个未勾选会被跳过”的提醒；用户很容易直接开始整理，事后才发现一半资料没动。</p>
+<figure class="fig"><img src="截图/main_03_plan.png" alt="主界面"><figcaption>预览界面：18 行中 11 行未勾选，界面上没有任何“未分类”汇总或颜色标记</figcaption></figure>
+<p><b>建议：</b>在表格上方给出「未分类 11 / 已选 7」的可点击汇总；确认框明确写出“将跳过 N 个未勾选文件”。</p>
+</div>
+
+<div class="card p2">
+<h4><span class="tag t2">P2-1</span> 学期目录命名只认部分写法，同属一个学期的文件被拆到「未识别学期」</h4>
+<p>实测：<code>2024-2025-1</code>、<code>2024-2025学年第一学期</code> 能识别；<code>2023-2024第一学期</code>、<code>2023秋季学期</code> 识别失败，落到 <code>课程\未识别学期\…</code>。</p>
+<p class="kv">代码：<code>classification_config.py:1158-1167</code>。<br>建议：放宽为“学年 + 第X学期 / 秋春”组合，并把学期识别失败在预览里标出来。</p>
+</div>
+
+<div class="card p2">
+<h4><span class="tag t2">P2-2</span> 文件名关键词会压过文件所在的课程目录</h4>
+<p>实测：<code>高等数学\英语作业.pdf</code> → <code>课程\…\大学英语\文档\</code>。同一个课程文件夹里的文件被拆到别的课程，用户无法预期。</p>
+</div>
+
+<div class="card p2">
+<h4><span class="tag t2">P2-3</span> 每次扫描都弹「扫描提示」，内容只是程序自己的 <code>.organizer</code></h4>
+<p>首次使用之后，每次「重新扫描」都会弹一个模态框：“以下 1 个目录/文件被跳过 … .organizer（保留目录名）”；空目录也一样。这是程序自己的产物，属于纯噪音，用户必须每次点确定。</p>
+<p class="kv">建议：程序产物目录静默跳过；只有用户目录被跳过时才提示。</p>
+</div>
+
+<div class="card p2">
+<h4><span class="tag t2">P2-4</span> 表格信息层级不合理：「分类依据」被截断，「状态」列恒为“正常”</h4>
+<p>「分类依据」固定 200 px，实际显示为“关键词兜底「线性代数」→ 课程/…”（只有 tooltip 能看全）；「状态」列 18 行全部是“正常”，没有信息量；真正需要关注的是“待定/未勾选”，却没有任何列或颜色提示。</p>
+</div>
+
+<div class="card p2">
+<h4><span class="tag t2">P2-5</span> 常驻的右侧详情面板挤压表格</h4>
+<p>未选中行时右侧 280 px 全是“—”。1280 宽窗口下中间表格视口只有 <b>721 px</b>（列宽 44+192+192+200+44+49 正好占满），原位置/目标位置只能截断显示。</p>
+</div>
+
+<div class="card p2">
+<h4><span class="tag t2">P2-6</span> 空目录 / 0 文件没有任何引导</h4>
+<p>空文件夹扫描后状态栏只有「✓ 计划 0 个文件，已选 0 | 类型分布：」，没有“这个文件夹里没有可整理的文件，换个目录或把文件拖进来”的说明。</p>
+</div>
+
+<div class="card p2">
+<h4><span class="tag t2">P2-7</span> 撤销一次之后按钮仍可用，可继续撤上一批次，确认框不显示批次号</h4>
+<p>多个批次时，用户点「撤销上一次」可能撤掉更早的一批；确认框只写“最近一个尚未完全撤销的整理批次”，不显示批次号与将恢复的文件数。</p>
+<p class="kv">代码：<code>main.py:4431</code>、<code>main.py:4794-4804</code>（本次实测只有 1 个批次，撤销后按钮已禁用）。</p>
+</div>
+
+<div class="card p2">
+<h4><span class="tag t2">P2-8</span> 历史窗口每页 7 条，没有条数选项</h4>
+<p>实测「第 1/1 页 · 共 7 项」；批次或条目多时要反复翻页，且没有“每页 N 条”或“全部显示”。</p>
+<figure class="fig"><img src="截图/main_07_history.png" alt="历史窗口"><figcaption>操作历史：表格可用，但分页粒度很小；上半区留白过多</figcaption></figure>
+</div>
+
+<h2>四、界面截图（首屏 / 小屏 / 重复查看 / 待整理清单）</h2>
+<div class="figs">
+<figure class="fig"><img src="截图/main_01_start.png" alt="首屏"><figcaption>首屏：分类区在折叠线以下</figcaption></figure>
+<figure class="fig"><img src="截图/main_12_small_window.png" alt="1024x700"><figcaption>1024×700 缩放后：关键按钮仍可见</figcaption></figure>
+<figure class="fig"><img src="截图/main_10_intake.png" alt="待整理清单"><figcaption>待整理清单：深色列表与白底界面割裂</figcaption></figure>
+<figure class="fig"><img src="截图/main_dialog03.png" alt="确认框"><figcaption>执行确认框：危险操作红色按钮，默认焦点在「取消」</figcaption></figure>
+</div>
+
+<h2>五、静态审查补充（未实测复现，供后续验证）</h2>
+<ul>
+<li><b>跨盘 + 源文件只读</b>：复制到临时文件后删除源失败，回滚也失败，可能留下“目标副本 + 源文件”，却提示“已回滚，源文件保留”。</li>
+<li><b>临时文件残留</b>：跨盘复制中途被杀/磁盘满，<code>*.archivetmp</code> 不会清理，下次扫描会把它当成普通文件收录。</li>
+<li><b>覆盖竞态</b>：执行器的“目标已存在”二次检查与 <code>os.replace</code> 之间，其他程序创建同名文件仍可能被覆盖。</li>
+<li><b>备份裁剪顺序</b>：恢复配置时先选中备份、再创建新备份并裁剪到 5 份；若最新 5 份都损坏，唯一有效的旧备份可能被裁掉，随后恢复失败。</li>
+<li><b>0 字节文件口径</b>：计划阶段把 0 字节文件算作“内容重复”，重复文件窗口却明确排除 0 字节。</li>
+<li><b>中断恢复后</b> 对 paused/planned 也写 finished_at，可能让新执行与旧批次交错。</li>
+<li><b>强制退出</b>：<code>os._exit(0)</code> 与“仍在进行的单个文件操作会先完成再退出”的提示不完全一致。</li>
+</ul>
+
+<h2>六、结论与建议优先级</h2>
+<ol>
+<li><b>先修 P0-1</b>：撤销取消必须进入“部分撤销/未完成”状态，绝不能再报完整成功，也不能让剩余文件失去撤销入口。这是唯一会直接影响“文件是否还能回去”的问题。</li>
+<li><b>再修 P0-2</b>：根目录不得因项目标记被整体保护；命中时降级保护子目录并给出可操作提示。</li>
+<li><b>然后修 P1-1</b>：强制浅色调色板或补齐深色样式——这是所有 Windows 深色主题用户第一眼就会遇到的问题。</li>
+<li>分类类问题（P1-3~P1-6、P2-1~P2-2）建议先用 10–20 个真实目录做一次“分类结果对照表”，再决定规则优先级（目录 > 文件名、学期写法、项目输出识别的边界）。</li>
+<li>界面类（P1-2、P2-3~P2-8）可以按“首屏可见性 → 噪音弹窗 → 信息层级”的顺序收敛。</li>
+</ol>
+
+<p class="small" style="margin-top:34px">说明：本报告全部结论来自本轮独立实测（真实窗口、真实文件、真实 SQLite 记录）或代码定位；“五、静态审查补充”未做故障注入复现，不应直接当作已验证缺陷。测试过程对源码只读，未修改任何产品文件，也未触碰真实个人资料。</p>
+
+</div>
+</body>
+</html>

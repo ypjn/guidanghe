@@ -1,0 +1,209 @@
+{
+  "scenario": "inspect",
+  "root": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261113_02\\_run_20261113\\sandbox_empty",
+  "steps": [
+    {
+      "name": "启动-调色板",
+      "ok": true,
+      "detail": "style= palette={'Window': '#1e1e1e', 'Base': '#2d2d2d', 'Text': '#ffffff', 'Button': '#3c3c3c', 'ButtonText': '#ffffff', 'Highlight': '#3f3f3f', 'HighlightedText': '#ffffff'}",
+      "data": null,
+      "t": "12:32:55"
+    },
+    {
+      "name": "启动-主窗口可见",
+      "ok": true,
+      "detail": "title='归档盒 V1.7' size=1280x780 minHint=899x342 screen=1707x1019 dpr=1.5",
+      "data": {
+        "geometry": [
+          213,
+          149,
+          1280,
+          780
+        ],
+        "screen": [
+          1707,
+          1019
+        ]
+      },
+      "t": "12:32:55"
+    },
+    {
+      "name": "启动-首屏文案",
+      "ok": true,
+      "detail": "path提示='还没有选择文件夹，也可以把文件拖进窗口' 状态栏='请先选择文件夹，再重新扫描。' 扫描按钮='重新扫描'(enabled=False) 开始整理='开始整理'(enabled=False)",
+      "data": null,
+      "t": "12:32:55"
+    },
+    {
+      "name": "启动-侧栏入口数量",
+      "ok": true,
+      "detail": "nav按钮=['最近打开', '待整理清单', '只扫描清单', '查看重复文件', '撤销上一次', '操作历史', '将生成的目录', '不整理的目录', '课程关键词', '学期和目录规则', '导入或保存方案', '重新生成预览', '勾选看到的文件', '取消这些勾选', '对调这些勾选']",
+      "data": null,
+      "t": "12:32:55"
+    },
+    {
+      "name": "选择文件夹",
+      "ok": true,
+      "detail": "path_edit='C:\\\\Users\\\\Lenovo\\\\Documents\\\\Trae-CN\\\\temp_20261113_02\\\\_run_20261113\\\\sandbox_empty' 扫描enabled=True 状态栏='已选择：C:\\\\Users\\\\Lenovo\\\\Documents\\\\Trae-CN\\\\temp_20261113_02\\\\_run_20261113\\\\sandbox_empty' config_label='正在使用内置默认的学期和目录规则。'",
+      "data": null,
+      "t": "12:32:56"
+    },
+    {
+      "name": "最近空间已记录",
+      "ok": false,
+      "detail": "recent_exists=True",
+      "data": null,
+      "t": "12:32:56"
+    },
+    {
+      "name": "扫描与预览完成",
+      "ok": true,
+      "detail": "scan='共扫描 0 个文件，跳过保留目录 1，空目录 1' status='✓ 计划 0 个文件，已选 0 | 类型分布：（仍可更改，点击「开始整理」才会移动文件）'",
+      "data": null,
+      "t": "12:32:56"
+    },
+    {
+      "name": "预览-统计",
+      "ok": true,
+      "detail": "计划 0 个文件，已选 0 | 类型分布： | 表格行=0 已勾选=0/0 待定=0",
+      "data": null,
+      "t": "12:32:56"
+    },
+    {
+      "name": "预览-目标路径合法",
+      "ok": true,
+      "detail": "非法字符=0 越界=0 重名目标=0",
+      "data": null,
+      "t": "12:32:56"
+    },
+    {
+      "name": "预览-待定项",
+      "ok": true,
+      "detail": "未勾选=0：",
+      "data": null,
+      "t": "12:32:56"
+    },
+    {
+      "name": "预览-目标目录分布",
+      "ok": true,
+      "detail": "{}",
+      "data": null,
+      "t": "12:32:56"
+    },
+    {
+      "name": "预览-表格可见文本",
+      "ok": true,
+      "detail": "[]",
+      "data": null,
+      "t": "12:32:56"
+    },
+    {
+      "name": "筛选-搜索高数",
+      "ok": false,
+      "detail": "可见行=0",
+      "data": null,
+      "t": "12:32:56"
+    },
+    {
+      "name": "筛选-类型下拉",
+      "ok": true,
+      "detail": "类型选项=['全部类型'] 可见行=0",
+      "data": null,
+      "t": "12:32:57"
+    },
+    {
+      "name": "关闭窗口",
+      "ok": true,
+      "detail": "耗时=0.01s visible=False",
+      "data": null,
+      "t": "12:32:57"
+    }
+  ],
+  "dialogs": [
+    {
+      "index": 1,
+      "class": "QMessageBox",
+      "title": "扫描提示",
+      "texts": [
+        "以下 1 个目录/文件被跳过（不会进入整理计划）：\n\n  • C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261113_02\\_run_20261113\\sandbox_empty\\.organizer（保留目录名）"
+      ],
+      "buttons": [
+        {
+          "text": "确定",
+          "enabled": true,
+          "default": true,
+          "autoDefault": true
+        }
+      ],
+      "shot": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261113_02\\_run_20261113\\shots\\inspect_dialog01.png",
+      "chosen": "确定"
+    }
+  ],
+  "events": [
+    [
+      "12:32:55",
+      "[PASS] 启动-调色板 :: style= palette={'Window': '#1e1e1e', 'Base': '#2d2d2d', 'Text': '#ffffff', 'Button': '#3c3c3c', 'ButtonText': '#ffffff', 'Highlight': '#3f3f3f', 'HighlightedText': '#ffffff'}"
+    ],
+    [
+      "12:32:55",
+      "[PASS] 启动-主窗口可见 :: title='归档盒 V1.7' size=1280x780 minHint=899x342 screen=1707x1019 dpr=1.5"
+    ],
+    [
+      "12:32:55",
+      "[PASS] 启动-首屏文案 :: path提示='还没有选择文件夹，也可以把文件拖进窗口' 状态栏='请先选择文件夹，再重新扫描。' 扫描按钮='重新扫描'(enabled=False) 开始整理='开始整理'(enabled=False)"
+    ],
+    [
+      "12:32:55",
+      "[PASS] 启动-侧栏入口数量 :: nav按钮=['最近打开', '待整理清单', '只扫描清单', '查看重复文件', '撤销上一次', '操作历史', '将生成的目录', '不整理的目录', '课程关键词', '学期和目录规则', '导入或保存方案', '重新生成预览', '勾选看到的文件', '取消这些勾选', '对调这些勾选']"
+    ],
+    [
+      "12:32:56",
+      "[PASS] 选择文件夹 :: path_edit='C:\\\\Users\\\\Lenovo\\\\Documents\\\\Trae-CN\\\\temp_20261113_02\\\\_run_20261113\\\\sandbox_empty' 扫描enabled=True 状态栏='已选择：C:\\\\Users\\\\Lenovo\\\\Documents\\\\Trae-CN\\\\temp_20261113_02\\\\_run_20261113\\\\sandbox_empty' config_label='正在使用内置默认的学期和目录规则。'"
+    ],
+    [
+      "12:32:56",
+      "[FAIL] 最近空间已记录 :: recent_exists=True"
+    ],
+    [
+      "12:32:56",
+      "[DIALOG] 扫描提示 -> 确定"
+    ],
+    [
+      "12:32:56",
+      "[PASS] 扫描与预览完成 :: scan='共扫描 0 个文件，跳过保留目录 1，空目录 1' status='✓ 计划 0 个文件，已选 0 | 类型分布：（仍可更改，点击「开始整理」才会移动文件）'"
+    ],
+    [
+      "12:32:56",
+      "[PASS] 预览-统计 :: 计划 0 个文件，已选 0 | 类型分布： | 表格行=0 已勾选=0/0 待定=0"
+    ],
+    [
+      "12:32:56",
+      "[PASS] 预览-目标路径合法 :: 非法字符=0 越界=0 重名目标=0"
+    ],
+    [
+      "12:32:56",
+      "[PASS] 预览-待定项 :: 未勾选=0："
+    ],
+    [
+      "12:32:56",
+      "[PASS] 预览-目标目录分布 :: {}"
+    ],
+    [
+      "12:32:56",
+      "[PASS] 预览-表格可见文本 :: []"
+    ],
+    [
+      "12:32:56",
+      "[FAIL] 筛选-搜索高数 :: 可见行=0"
+    ],
+    [
+      "12:32:57",
+      "[PASS] 筛选-类型下拉 :: 类型选项=['全部类型'] 可见行=0"
+    ],
+    [
+      "12:32:57",
+      "[PASS] 关闭窗口 :: 耗时=0.01s visible=False"
+    ]
+  ],
+  "fatal": ""
+}
