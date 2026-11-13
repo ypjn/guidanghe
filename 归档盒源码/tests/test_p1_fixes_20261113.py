@@ -154,6 +154,52 @@ def t02_semester():
 
 # ==================== 3) 大小写归一 S2-19/25 ====================
 
+def t02b_senior_semester():
+    """学长资料的学期名和本人学期表对不上，课程仍要认出来，但不能并进本人学期。"""
+    ev = []
+    foreign = classify("2023-2024-2/计组/实验报告.pdf")
+    ev.append(
+        f"计组：学期={foreign.semester!r} 方向={foreign.direction} "
+        f"类别={foreign.category} 规则={foreign.rule_key}")
+    known = classify("大二上/数据结构/作业.pdf")
+    ev.append(
+        f"本人学期：学期={known.semester!r} 规则={known.rule_key}")
+    registered_empty = classify("大三上/数据结构/作业.pdf")
+    ev.append(
+        f"已登记但没有这门课的学期：学期={registered_empty.semester!r} "
+        f"类别={registered_empty.category} 规则={registered_empty.rule_key}")
+
+    import scanner as scanner_mod
+    from planner import build_plan, MODE_BY_DIRECTION_SEMESTER
+    root = fresh("senior_semester")
+    mk(root, "2023-2024-2/计组/实验报告.pdf")
+    mk(root, "大二上/数据结构/作业.pdf")
+    scan = scanner_mod.scan_directory(root, detect_project_roots=False)
+    plan = build_plan(scan, MODE_BY_DIRECTION_SEMESTER, [],
+                      config=default_config(), compute_duplicates=False)
+    paths = {i.file.rel_path.replace("\\", "/"): i.target_rel_path.replace("\\", "/")
+             for i in plan.items}
+    ev.append("目标：" + str(paths))
+    senior_path = paths.get("2023-2024-2/计组/实验报告.pdf", "")
+    own_path = paths.get("大二上/数据结构/作业.pdf", "")
+    ok_ = (
+        foreign.semester == "2023-2024-2"
+        and foreign.direction == "课程"
+        and foreign.category == "计算机组成原理"
+        and foreign.rule_key.startswith("semester_dir_borrowed:")
+        and "大二上" not in senior_path
+        and "2023-2024-2" in senior_path
+        and "计算机组成原理" in senior_path
+        and known.rule_key.startswith("semester_dir:")
+        and not known.rule_key.startswith("semester_dir_borrowed:")
+        and "/大二上/" in own_path
+        and registered_empty.semester == "大三上"
+        and registered_empty.category == "数据结构"
+        and "大二上" not in registered_empty.semester
+    )
+    ok("学长学期", "他人学年目录按课程归档，不并入本人的学期", ok_, "\n".join(ev))
+
+
 def t03_normcase():
     ev = []
     m = classify("code/main.py")
@@ -443,7 +489,8 @@ def t10_recent_corrupt():
 
 def main() -> int:
     print(f"工作目录：{WORK}\n")
-    for fn in (t01_keywords, t02_semester, t03_normcase, t04_preview_equals_exec,
+    for fn in (t01_keywords, t02_semester, t02b_senior_semester, t03_normcase,
+               t04_preview_equals_exec,
                t05_stable_names, t06_corrupt_backup, t07_csv, t08_errors,
                t09_save_backup, t10_recent_corrupt):
         try:

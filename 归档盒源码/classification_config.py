@@ -1094,6 +1094,27 @@ def looks_like_semester(name: str) -> bool:
     return bool(text) and _SEMESTER_NAME_RE.match(text) is not None
 
 
+def _unique_semester_dir(compiled: CompiledConfig,
+                         child_dir: str) -> Optional[SemesterDirRule]:
+    """其他学期里，同名目录是否只对应一种方向和类别。
+
+    学长资料经常用 2024-2025-1、2023秋 这类和本人学期表对不上的目录名。
+    目录名本身（数据结构、计组）往往还是同一门课。只有所有学期都给出
+    同一个结果时才借用，避免把含义相反的目录猜错。
+    """
+    key = (child_dir or "").casefold()
+    if not key:
+        return None
+    found: Dict[Tuple[str, str], SemesterDirRule] = {}
+    for (_semester, source), rule in compiled.semester_dirs.items():
+        if source != key:
+            continue
+        found[(rule.direction, rule.category or "")] = rule
+    if len(found) != 1:
+        return None
+    return next(iter(found.values()))
+
+
 def keyword_matches(text_lower: str, keyword: str) -> bool:
     """关键词匹配（S2-14/15）。
 
@@ -1441,14 +1462,34 @@ def _classify_context_impl(rel_path: str, compiled: CompiledConfig,
         rule = (compiled.semester_dirs.get(
                     (sem_label.casefold(), child_dir.casefold()))
                 if child_dir else None)
+        borrowed = False
+        if rule is None and child_dir:
+            rule = _unique_semester_dir(compiled, child_dir)
+            borrowed = rule is not None
 
         if rule is not None:
             if rule.category:
+                if not borrowed:
+                    desc = (f"学期「{sem_label}」/「{child_dir}」→ "
+                            f"{rule.direction}/{rule.category}")
+                    key = f"semester_dir:{sem_label}/{child_dir}"
+                elif sem_rule is None:
+                    desc = (
+                        f"学期「{sem_label}」不在你的学期表里，常见于学长资料。"
+                        f"目录「{child_dir}」仍是"
+                        f"{rule.direction}/{rule.category}，"
+                        f"不并入其他学期")
+                    key = f"semester_dir_borrowed:{sem_label}/{child_dir}"
+                else:
+                    desc = (
+                        f"学期「{sem_label}」没有登记目录「{child_dir}」，"
+                        f"按其他学期的同名目录归为"
+                        f"{rule.direction}/{rule.category}，"
+                        f"仍放在「{sem_label}」下")
+                    key = f"semester_dir_borrowed:{sem_label}/{child_dir}"
                 return ContextMatch(
                     rule.direction, sem_label, rule.category, child_idx,
-                    f"学期「{sem_label}」/「{child_dir}」→ "
-                    f"{rule.direction}/{rule.category}",
-                    f"semester_dir:{sem_label}/{child_dir}",
+                    desc, key,
                 )
             # 类别留空 → 关键词细分（按配置顺序取第一条命中）
             # 文件名或路径里的关键词优先于图片文字。
