@@ -1,0 +1,885 @@
+﻿diff --git "a/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/config_transfer.py" "b/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/config_transfer.py"
+index 55ee744..d08054e 100644
+--- "a/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/config_transfer.py"
++++ "b/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/config_transfer.py"
+@@ -642,19 +642,25 @@ def list_backups(root: str) -> List[BackupInfo]:
+ 
+ 
+ def restore_latest_backup(root: str) -> Tuple[str, str]:
+-    """恢复最近一次备份（恢复后该备份被消费）。
++    """恢复最近一次备份（S1-09：不再一次性消费）。
+ 
+     返回 (state, message)。state 为 default / custom。
+     备份损坏时抛 ClassificationConfigError，且不消费备份文件。
++    - 恢复前先把当前配置备份一份（备份失败则拒绝恢复，不做任何改动）；
++    - 恢复后不删除所用备份。
+     """
+     infos = list_backups(root)
+     if not infos:
+         raise ClassificationConfigError("该目录没有可用的配置备份。")
++    # 先取"恢复所用"的备份（再备份当前配置会生成更新的备份文件，
++    # 必须在备份当前配置之前确定要恢复哪一份）
+     info = infos[0]
+     if not info.valid:
+         raise ClassificationConfigError(
+             "最近一次备份无法作为有效配置启用（原始文件仍保留）：\n"
+             f"{info.path}\n{info.error}")
++    # S1-09：恢复前先备份当前配置；备份失败则中止，不做任何改动
++    new_backup_path = create_backup(root)
+     path = config_path(root)
+     if info.state == "default":
+         if os.path.exists(path):
+@@ -678,10 +684,10 @@ def restore_latest_backup(root: str) -> Tuple[str, str]:
+         payload.update(config_to_dict(cfg))
+         _atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=2))
+         message = "已恢复上一次应用的配置。"
+-    try:
+-        os.remove(info.path)
+-    except OSError:
+-        pass
++    # S1-09：不再删除所用备份；告知用户当前配置已另存为新备份
++    message += (
++        f"\n恢复前的当前配置已备份为 {os.path.basename(new_backup_path)}；"
++        f"本次使用的备份 {os.path.basename(info.path)} 已保留。")
+     return info.state, message
+ 
+ 
+diff --git "a/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/executor.py" "b/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/executor.py"
+index 8afc2aa..9e09221 100644
+--- "a/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/executor.py"
++++ "b/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/executor.py"
+@@ -70,14 +70,23 @@ class UndoResult:
+     errors: int = 0
+     errors_list: List[str] = field(default_factory=list)
+     batch_id: int = 0
++    # S1-02/S1-03：批次状态未确定（planning/executing/planned/paused）时拒绝撤销
++    refused: bool = False
+ 
+     @property
+     def is_complete(self) -> bool:
+-        return self.conflict == 0 and self.errors == 0
++        # S1-02/S1-03：完整撤销必须满足——没有拒绝、没有冲突/错误，
++        # 并且确实有恢复。恢复 0 项不能叫完整成功。
++        return (not self.refused and self.restored > 0
++                and self.conflict == 0 and self.errors == 0)
+ 
+     def summary(self) -> str:
++        if self.refused:
++            return "撤销未执行（已拒绝）"
+         if self.is_complete:
+             return f"完整撤销：恢复 {self.restored} 项"
++        if self.restored == 0 and self.conflict == 0 and self.errors == 0:
++            return "未恢复任何文件"
+         return f"部分撤销：恢复 {self.restored} / 冲突 {self.conflict} / 错误 {self.errors}"
+ 
+ 
+@@ -134,15 +143,39 @@ def execute_plan(
+     result.batch_id = storage.create_batch(plan, f"待执行 {len(selected_items)} 项")
+ 
+     # 步骤 2：先持久化所有执行意图
++    # S1-02：意图写库失败时立刻中止——批次留在 planning（未完成），
++    # 之后会被「核对恢复」流程接手，绝不能在记录不全的情况下继续移动文件。
+     for idx, item in enumerate(selected_items):
+         src_path = os.path.join(root, item.file.rel_path)
+         sha = item.source_sha256 or sha256_file(src_path) or ""
+-        storage.create_action(result.batch_id, item, idx, sha)
+-
++        try:
++            storage.create_action(result.batch_id, item, idx, sha)
++        except Exception as e:
++            result.errors.append(
++                f"写入执行意图失败（{item.file.rel_path}），已中止整理：{e}")
++            try:
++                storage.update_batch_status(result.batch_id, BATCH_PLANNING)
++                storage.conn.commit()
++            except Exception:
++                pass
++            return result
+     storage.update_batch_status(result.batch_id, BATCH_EXECUTING)
+ 
+     # 步骤 3-4：逐项执行
+     created_dirs: set[str] = set()
++    # S1-02：单项写库失败不能让异常穿透整个执行循环——记录下来，
++    # 循环结束后把批次明确标成未完成并提交。
++    db_write_failed = False
++
++    def _record(action_idx: int, status: str, error: str = "") -> None:
++        nonlocal db_write_failed
++        try:
++            storage.update_action(result.batch_id, action_idx, status,
++                                  error=error)
++        except Exception as e:
++            db_write_failed = True
++            result.errors.append(
++                f"写入整理记录失败（第 {action_idx + 1} 项，状态 {status}）：{e}")
+ 
+     for idx, item in enumerate(selected_items):
+         # ---- 取消检查（在每个文件操作前/后）----
+@@ -151,8 +184,7 @@ def execute_plan(
+             remaining = selected_items[idx:]
+             for remaining_idx, _ in enumerate(remaining):
+                 real_idx = idx + remaining_idx
+-                storage.update_action(result.batch_id, real_idx, STATUS_CANCELLED,
+-                                      error="用户取消")
++                _record(real_idx, STATUS_CANCELLED, error="用户取消")
+                 result.cancelled += 1
+             result.was_cancelled = True
+             break
+@@ -166,8 +198,7 @@ def execute_plan(
+ 
+         # ---- 核验 ----
+         if not os.path.isfile(src_path):
+-            storage.update_action(result.batch_id, idx, STATUS_SKIPPED,
+-                                  error="源文件已不存在")
++            _record(idx, STATUS_SKIPPED, error="源文件已不存在")
+             result.skipped += 1
+             continue
+ 
+@@ -178,14 +209,12 @@ def execute_plan(
+                 break
+         current_sha = sha256_file(src_path)
+         if stored_sha and current_sha and stored_sha != current_sha:
+-            storage.update_action(result.batch_id, idx, STATUS_SKIPPED,
+-                                  error="源文件内容已变化")
++            _record(idx, STATUS_SKIPPED, error="源文件内容已变化")
+             result.skipped += 1
+             continue
+ 
+         if os.path.exists(target_path):
+-            storage.update_action(result.batch_id, idx, STATUS_SKIPPED,
+-                                  error="目标路径已被占用")
++            _record(idx, STATUS_SKIPPED, error="目标路径已被占用")
+             result.skipped += 1
+             continue
+ 
+@@ -198,29 +227,37 @@ def execute_plan(
+                     storage.record_created_dir(result.batch_id, rel_dir)
+                     created_dirs.add(rel_dir)
+             except OSError as e:
+-                storage.update_action(result.batch_id, idx, STATUS_FAILED,
+-                                      error=f"创建目录失败：{e}")
++                _record(idx, STATUS_FAILED, error=f"创建目录失败：{e}")
+                 result.failed += 1
+                 continue
+ 
+         # ---- 移动（原子操作，不中断）----
+         try:
+             os.rename(src_path, target_path)
+-            storage.update_action(result.batch_id, idx, STATUS_MOVED)
+-            result.moved += 1
+-        except OSError as e:
+-            try:
+-                shutil.move(src_path, target_path)
+-                storage.update_action(result.batch_id, idx, STATUS_MOVED)
+-                result.moved += 1
+-            except OSError as e2:
+-                storage.update_action(result.batch_id, idx, STATUS_FAILED,
+-                                      error=f"移动失败：{e2}")
+-                result.failed += 1
+-                result.errors.append(f"移动失败：{item.file.rel_path} → {e2}")
++        except OSError:
++            # S1-04：不再用 shutil.move 兜底——它在目标已存在时会静默覆盖。
++            # 改为：复制到临时名 → 再次确认目标不存在 → 原子替换 → 删源。
++            # 目标已存在时跳过：不覆盖、不删源。
++            moved_ok, move_err, is_conflict = _copy_then_replace(
++                src_path, target_path)
++            if not moved_ok:
++                if is_conflict:
++                    _record(idx, STATUS_SKIPPED, error=f"未移动：{move_err}")
++                    result.skipped += 1
++                else:
++                    _record(idx, STATUS_FAILED, error=f"移动失败：{move_err}")
++                    result.failed += 1
++                result.errors.append(
++                    f"移动失败（保留源文件）：{item.file.rel_path} → {move_err}")
++                continue
++        _record(idx, STATUS_MOVED)
++        result.moved += 1
+ 
+     # ---- 批次最终状态 ----
+-    _finalize_batch(storage, result.batch_id, result)
++    # S1-02：写库失败过的批次必须标成未完成并提交，
++    # 不允许以 done 收尾导致撤销/核对恢复流程被跳过。
++    _finalize_batch(storage, result.batch_id, result,
++                    force_unfinished=db_write_failed)
+     return result
+ 
+ 
+@@ -230,7 +267,14 @@ def undo_latest_batch(
+     storage: Storage,
+     progress_cb: Optional[Callable[[int, int, str], None]] = None,
+ ) -> UndoResult:
+-    """撤销最近批次。支持 conflict 状态重试（V0.4）。"""
++    """撤销最近批次。支持 conflict 状态重试（V0.4）。
++
++    S1-02/S1-03：撤销不能再报假成功——
++    - 批次还在 planning/executing，或仍有 planned/paused 条目时，拒绝撤销
++      （这些项的实际状态未确定，需要先「核对恢复」）；
++    - 「完整撤销」要求确实恢复了至少 1 项，且没有冲突/错误；
++    - 恢复 0 项时不把批次标成 undone，不算完整成功。
++    """
+     result = UndoResult()
+     batch = storage.get_pending_batch()
+     if batch is None:
+@@ -240,7 +284,31 @@ def undo_latest_batch(
+     result.batch_id = batch.batch_id
+     root = os.path.abspath(batch.root)
+ 
++    # ---- 拒绝条件 1：批次本身状态未确定（还在 planning/executing）----
++    if batch.status in (BATCH_PLANNING, BATCH_EXECUTING):
++        result.refused = True
++        result.errors_list.append(
++            f"批次 #{batch.batch_id} 的状态还是「{batch.status}」"
++            "（执行过程未确认结束），撤销被拒绝。\n"
++            "请先通过「核对恢复」确认每项的真实状态，再决定是否撤销。")
++        return result
++
+     actions = storage.get_actions(batch.batch_id)
++
++    # ---- 拒绝条件 2：仍有 planned / paused 条目（单项状态未确定）----
++    unfinished = [a for a in actions
++                  if a.status in (STATUS_PLANNED, STATUS_PAUSED)]
++    if unfinished:
++        result.refused = True
++        result.errors_list.append(
++            f"批次 #{batch.batch_id} 还有 {len(unfinished)} 个状态未确定的条目"
++            "（planned/paused），撤销被拒绝：\n"
++            "  " + "\n  ".join(a.source_rel for a in unfinished[:10])
++            + ("…" if len(unfinished) > 10 else "")
++            + "\n请先「核对恢复」或人工处理这些条目，再执行撤销。")
++        return result
++
++    db_write_failed = False
+     recoverables = [a for a in actions if a.status in (STATUS_MOVED, STATUS_CONFLICT)]
+ 
+     for idx, action in enumerate(recoverables):
+@@ -251,21 +319,33 @@ def undo_latest_batch(
+             progress_cb(idx + 1, len(recoverables), action.source_rel)
+ 
+         if not os.path.isfile(target_abs):
+-            storage.update_action(batch.batch_id, action.action_index, STATUS_CONFLICT,
+-                                  error="目标文件已消失")
++            try:
++                storage.update_action(batch.batch_id, action.action_index,
++                                      STATUS_CONFLICT, error="目标文件已消失")
++            except Exception as e:
++                db_write_failed = True
++                result.errors_list.append(f"写库失败（目标文件已消失）：{e}")
+             result.conflict += 1
+             continue
+ 
+         current_sha = sha256_file(target_abs)
+         if current_sha != action.source_sha256:
+-            storage.update_action(batch.batch_id, action.action_index, STATUS_CONFLICT,
+-                                  error="目标内容已被修改")
++            try:
++                storage.update_action(batch.batch_id, action.action_index,
++                                      STATUS_CONFLICT, error="目标内容已被修改")
++            except Exception as e:
++                db_write_failed = True
++                result.errors_list.append(f"写库失败（目标内容已被修改）：{e}")
+             result.conflict += 1
+             continue
+ 
+         if os.path.exists(source_abs):
+-            storage.update_action(batch.batch_id, action.action_index, STATUS_CONFLICT,
+-                                  error="原路径已被占用")
++            try:
++                storage.update_action(batch.batch_id, action.action_index,
++                                      STATUS_CONFLICT, error="原路径已被占用")
++            except Exception as e:
++                db_write_failed = True
++                result.errors_list.append(f"写库失败（原路径已被占用）：{e}")
+             result.conflict += 1
+             continue
+ 
+@@ -274,18 +354,32 @@ def undo_latest_batch(
+             if source_dir:
+                 os.makedirs(source_dir, exist_ok=True)
+             os.rename(target_abs, source_abs)
+-            storage.update_action(batch.batch_id, action.action_index, STATUS_UNDONE)
+-            result.restored += 1
+         except OSError:
+-            try:
+-                shutil.move(target_abs, source_abs)
+-                storage.update_action(batch.batch_id, action.action_index, STATUS_UNDONE)
+-                result.restored += 1
+-            except OSError as e2:
+-                storage.update_action(batch.batch_id, action.action_index, STATUS_CONFLICT,
+-                                      error=f"恢复失败：{e2}")
++            # S1-04：同执行器——shutil.move 兜底会静默覆盖，改为
++            # 复制到临时名 → 确认原位置为空 → 原子替换 → 删目标。
++            moved_ok, move_err, _is_conflict = _copy_then_replace(
++                target_abs, source_abs)
++            if not moved_ok:
++                try:
++                    storage.update_action(
++                        batch.batch_id, action.action_index, STATUS_CONFLICT,
++                        error=f"恢复失败：{move_err}")
++                except Exception as e:
++                    db_write_failed = True
+                 result.errors += 1
+-                result.errors_list.append(f"恢复失败：{action.source_rel} ← {e2}")
++                result.errors_list.append(
++                    f"恢复失败：{action.source_rel} ← {move_err}")
++                continue
++        try:
++            storage.update_action(batch.batch_id, action.action_index, STATUS_UNDONE)
++        except Exception as e:
++            # 文件已恢复但写库失败：不能假装撤销完成，批次保持未撤销状态，
++            # 记录错误供人工核对（此时文件在源位置，重试撤销会按冲突处理）。
++            db_write_failed = True
++            result.errors += 1
++            result.errors_list.append(
++                f"文件已恢复但写入记录失败（{action.source_rel}）：{e}")
++        result.restored += 1
+ 
+     # 清理本批次创建且当前为空的目录
+     for rel_dir in batch.created_dirs:
+@@ -297,12 +391,20 @@ def undo_latest_batch(
+             except OSError:
+                 pass
+ 
+-    if result.conflict == 0 and result.errors == 0 and result.restored > 0:
++    # ---- 批次最终状态（S1-02/S1-03：不得假成功）----
++    if db_write_failed:
++        # 写库失败的批次保持原状态（未撤销），不标记 undone
++        pass
++    elif result.conflict == 0 and result.errors == 0 and result.restored > 0:
+         storage.update_batch_status(batch.batch_id, BATCH_UNDONE, finished_at=True)
++    elif result.restored == 0 and result.conflict == 0 and result.errors == 0:
++        # 没有任何项被恢复：不标记 undone、不算完整成功，批次保持原状态
++        result.errors_list.append(
++            "没有恢复任何文件（可能已全部撤销过，或本批次没有可恢复的移动项），"
++            "批次保持原状态，未标记为已撤销。")
+     elif result.conflict > 0 or result.errors > 0:
+-        storage.update_batch_status(batch.batch_id, BATCH_PARTIAL_FAILED_UNDONE, finished_at=True)
+-    else:
+-        storage.update_batch_status(batch.batch_id, BATCH_UNDONE, finished_at=True)
++        storage.update_batch_status(batch.batch_id, BATCH_PARTIAL_FAILED_UNDONE,
++                                    finished_at=True)
+ 
+     storage.conn.execute(
+         "UPDATE batches SET summary = ? WHERE id = ?",
+@@ -503,9 +605,66 @@ def recover_batch(storage: Storage, batch_id: Optional[int] = None,
+ 
+ # ======================== 辅助 ========================
+ 
+-def _finalize_batch(storage: Storage, batch_id: int, result: ExecuteResult):
+-    """根据执行结果更新批次最终状态。"""
+-    if result.was_cancelled:
++def _copy_then_replace(src_path: str, dst_path: str) -> tuple[bool, str, bool]:
++    """S1-04：os.rename 失败后的"不覆盖"移动兜底，替代 shutil.move。
++
++    shutil.move 在目标已存在时会静默覆盖用户文件。这里改为：
++      1) 复制源文件到目标同目录下的临时名（copy2 保留元数据）；
++      2) 再次确认目标不存在——存在则记冲突：不覆盖、不删源、清掉临时副本；
++      3) os.replace 原子替换（临时名与目标同目录，同文件系统，原子有效）；
++      4) 删除源文件；删除失败则回滚目标，保留源，报错（宁可没移动，
++         也不留两份或丢文件）。
++
++    返回 (是否成功, 错误说明, 是否为"目标已存在"冲突)。
++    """
++    tmp_path = dst_path + ".archivetmp"
++    counter = 0
++    while os.path.exists(tmp_path):
++        counter += 1
++        tmp_path = f"{dst_path}.archivetmp{counter}"
++    try:
++        shutil.copy2(src_path, tmp_path)
++    except OSError as e:
++        return False, f"复制到临时文件失败：{e}", False
++
++    if os.path.exists(dst_path):
++        try:
++            os.unlink(tmp_path)
++        except OSError:
++            pass
++        return False, "目标路径已存在，为避免覆盖未移动", True
++
++    try:
++        os.replace(tmp_path, dst_path)
++    except OSError as e:
++        try:
++            os.unlink(tmp_path)
++        except OSError:
++            pass
++        return False, f"原子替换目标失败：{e}", False
++
++    try:
++        os.unlink(src_path)
++    except OSError as e:
++        # 源删除失败：回滚目标，保留源，宁可不动也不留两份
++        try:
++            os.unlink(dst_path)
++        except OSError:
++            pass
++        return False, f"已复制但删除源失败（已回滚，源文件保留）：{e}", False
++    return True, "", False
++
++
++def _finalize_batch(storage: Storage, batch_id: int, result: ExecuteResult,
++                    force_unfinished: bool = False):
++    """根据执行结果更新批次最终状态。
++
++    S1-02：force_unfinished=True（执行期间发生过写库失败）时，
++    批次必须落在"未完成"状态并提交，绝不能标成 done。
++    """
++    if force_unfinished:
++        final_status = BATCH_CANCELLED if result.was_cancelled else BATCH_PARTIAL
++    elif result.was_cancelled:
+         if result.moved == 0 and result.skipped == 0 and result.failed == 0:
+             final_status = BATCH_CANCELLED_CLEAN
+         else:
+@@ -515,15 +674,27 @@ def _finalize_batch(storage: Storage, batch_id: int, result: ExecuteResult):
+     else:
+         final_status = BATCH_PARTIAL
+ 
+-    storage.update_batch_status(batch_id, final_status, finished_at=True)
+-
+-    storage.conn.execute(
+-        "UPDATE batches SET summary = ? WHERE id = ?",
+-        (f"移动 {result.moved} / 跳过 {result.skipped} / 失败 {result.failed}"
+-         f" / 取消 {result.cancelled}",
+-         batch_id),
+-    )
+-    storage.conn.commit()
++    try:
++        storage.update_batch_status(batch_id, final_status, finished_at=True)
++        storage.conn.execute(
++            "UPDATE batches SET summary = ? WHERE id = ?",
++            (f"移动 {result.moved} / 跳过 {result.skipped} / 失败 {result.failed}"
++             f" / 取消 {result.cancelled}"
++             + ("（含写库失败，批次未完成）" if force_unfinished else ""),
++             batch_id),
++        )
++        storage.conn.commit()
++    except Exception as e:
++        # 连最终状态都写不进去：尽力直接提交状态，至少不再静默吞掉
++        try:
++            storage.conn.execute(
++                "UPDATE batches SET status = ? WHERE id = ?",
++                (BATCH_PARTIAL, batch_id),
++            )
++            storage.conn.commit()
++        except Exception:
++            pass
++        result.errors.append(f"标记批次最终状态失败：{e}")
+ 
+ 
+ def undo_is_available(storage: Storage) -> bool:
+diff --git "a/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/main.py" "b/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/main.py"
+index 09f5dee..7cd7a57 100644
+--- "a/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/main.py"
++++ "b/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/main.py"
+@@ -24,6 +24,8 @@ import os
+ import subprocess
+ import sys
+ import threading
++import time
++import traceback
+ 
+ from PySide6.QtCore import Qt, QThread, Signal, QTimer, QCoreApplication, QEvent
+ from PySide6.QtGui import QColor
+@@ -441,13 +443,18 @@ class ExecuteConfirmDialog(QDialog):
+                 "（仅本次计划的临时修正，不写回配置）"
+             )
+         scope_html = (f"<br><b>本次范围：</b>{scope_note}" if scope_note else "")
+-        layout.addWidget(QLabel(
++        # S3-01：根目录显示完整路径——wordWrap + 可选中，
++        # 长路径换行而不是被对话框宽度裁掉。
++        info_label = QLabel(
+             f"<b>根目录：</b>{root}<br>"
+             f"<b>分类模式：</b>{MODE_LABELS.get(plan.mode, plan.mode)}<br>"
+             f"<b>已选文件：</b>{plan.selected_count} / {plan.total}"
+             f"{extra_lines}{scope_html}<br>"
+-            f"<b>目标目录：</b>{os.path.basename(root)}/_已整理/…<br>"
+-        ))
++            f"<b>目标目录：</b>{os.path.join(root, '_已整理')}/…<br>"
++        )
++        info_label.setWordWrap(True)
++        info_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
++        layout.addWidget(info_label)
+ 
+         if plan.conflict_count:
+             warn = QLabel(f"<span style='color:#E65100;'>⚠ 注意：有 {plan.conflict_count} 个目标路径磁盘上已存在同名文件，计划已自动分配唯一名称。</span>")
+@@ -473,12 +480,35 @@ class ExecuteConfirmDialog(QDialog):
+         btns = QDialogButtonBox(
+             QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+         )
+-        btns.button(QDialogButtonBox.Ok).setText("确认开始整理")
+-        btns.button(QDialogButtonBox.Cancel).setText("取消")
++        ok_btn = btns.button(QDialogButtonBox.Ok)
++        ok_btn.setText("确认开始整理")
++        # S3-01：确认按钮用危险色，且不成为默认按钮（回车不会触发移动）
++        ok_btn.setStyleSheet(
++            "QPushButton{background:#C62828;color:#FFFFFF;font-weight:600;"
++            "padding:4px 14px;border:1px solid #8E0000;border-radius:4px;}"
++            "QPushButton:hover{background:#D32F2F;}"
++            "QPushButton:pressed{background:#8E0000;}"
++            "QPushButton:disabled{background:#E0A0A0;color:#FFFFFF;}"
++        )
++        ok_btn.setAutoDefault(False)
++        ok_btn.setDefault(False)
++        cancel_btn = btns.button(QDialogButtonBox.Cancel)
++        cancel_btn.setText("取消")
++        # 默认按钮与初始焦点都放在「取消」上
++        cancel_btn.setAutoDefault(True)
++        cancel_btn.setDefault(True)
++        cancel_btn.setFocus()
++        self._cancel_btn = cancel_btn
+         btns.accepted.connect(self.accept)
+         btns.rejected.connect(self.reject)
+         layout.addWidget(btns)
+ 
++    def showEvent(self, event):
++        # S3-01：对话框显示时 Qt 会把焦点给第一个可聚焦控件（确认按钮），
++        # 这里显式把初始焦点拉回「取消」，保证回车不会触发移动。
++        super().showEvent(event)
++        self._cancel_btn.setFocus(Qt.OtherFocusReason)
++
+ 
+ # ======================== 保护目录对话框 ========================
+ 
+@@ -1747,8 +1777,10 @@ class MainWindow(QMainWindow):
+             return
+ 
+         pending = self._storage.get_pending_batch()
+-        if pending is not None:
++        # S2-09：状态已是 done 的批次不算「未完成」，打开目录时不再弹撤销建议。
++        if pending is not None and pending.status != "done":
+             self.btn_undo.setEnabled(True)
++            # S2-09：不再默认建议撤销——默认按钮改为「否」。
+             reply = QMessageBox.question(
+                 self, "归档盒",
+                 f"检测到该目录存在一个未完成的整理批次（#{pending.batch_id}，"
+@@ -1756,7 +1788,7 @@ class MainWindow(QMainWindow):
+                 f"可以选择继续扫描、或者先撤销该批次。\n\n"
+                 f"是否现在尝试撤销？",
+                 QMessageBox.Yes | QMessageBox.No,
+-                QMessageBox.Yes,
++                QMessageBox.No,
+             )
+             if reply == QMessageBox.Yes:
+                 self.on_undo()
+@@ -1796,6 +1828,11 @@ class MainWindow(QMainWindow):
+         # 已有计划任务在跑时，先让它全部过期，避免旧结果落到新扫描上
+         self._abandon_plan_generation()
+ 
++        # S1-06：新扫描一开始就作废旧计划——扫描期间/扫描失败后，
++        # 旧预览都不能再被执行（空表上点「开始整理」会真的移动文件）。
++        if self.current_plan is not None or self._plan_valid:
++            self._discard_plan("正在重新扫描，旧预览已失效；扫描完成后会重新生成计划")
++
+         self.table.setRowCount(0)
+         self.task.begin("scan", root, phase="扫描中……")
+         self._set_working(True, "扫描中……")
+@@ -1867,6 +1904,18 @@ class MainWindow(QMainWindow):
+                 + "\n".join(protect_lines)
+             )
+ 
++        # S1-01：junction / 重解析点被整体跳过——要告诉用户具体是哪些路径，
++        # 不能只给一个计数（用户需要知道链接目标里的文件没有被动过）。
++        if result.junction_dirs:
++            QMessageBox.information(
++                self, "归档盒",
++                "以下目录是 junction / 重解析点（指向其他位置的链接目录），"
++                "已整体跳过，其中的文件不会进入整理计划：\n\n"
++                + "\n".join(f"  • {p}" for p in result.junction_dirs[:20])
++                + ("\n  …" if len(result.junction_dirs) > 20 else "")
++                + "\n\n如需整理这些位置，请对链接目标的真实目录单独扫描。"
++            )
++
+         self._generate_and_show_plan()
+ 
+         if result.permission_errors:
+@@ -1902,7 +1951,11 @@ class MainWindow(QMainWindow):
+         self.protect_label.show()
+ 
+     def _on_scan_failed(self, err: str):
+-        self.statusBar().showMessage("扫描失败")
++        # S1-06：扫描失败后旧计划必须彻底失效——不能留下「可执行但预览已清空」的
++        # 状态，否则在空表上点「开始整理」会按旧计划移动文件。
++        self._discard_plan(
++            "扫描失败，旧预览已失效；请排除问题后重新扫描生成新预览")
++        self.statusBar().showMessage("扫描失败：旧预览已失效")
+         if self._close_pending or self._closing:
+             return
+         QMessageBox.critical(self, "归档盒", f"扫描时发生异常：\n{err}")
+@@ -3415,6 +3468,10 @@ class MainWindow(QMainWindow):
+             return
+         # 文件已移动：旧重复核对结果与目标位置均失效
+         self._invalidate_duplicate_cache(close=True)
++        # S1-05：执行结束（成功或失败）作废当前计划——不重新扫描生成预览
++        # 就不能再执行，避免对同一计划重复执行出「成功 0」的空批次。
++        self._discard_plan(
++            "整理已结束，本次预览已失效；如需再次整理请重新扫描生成预览")
+         # 刷新按钮状态（撤销现在应该可用）
+         self._update_button_states()
+ 
+@@ -3453,6 +3510,9 @@ class MainWindow(QMainWindow):
+             QMessageBox.information(self, "归档盒", "\n".join(msg_lines))
+ 
+     def _on_execute_failed(self, err: str):
++        # S1-05：执行异常同样作废当前计划，未重新预览不允许再执行
++        self._discard_plan(
++            "整理失败，本次预览已失效；请排查后重新扫描生成预览")
+         self.statusBar().showMessage("整理失败")
+         if self._close_pending or self._closing:
+             return
+@@ -3518,14 +3578,18 @@ class MainWindow(QMainWindow):
+         if result.errors_list:
+             msg += "\n\n冲突/错误详情：\n" + "\n".join(result.errors_list[:20])
+ 
+-        if result.is_complete:
++        # S1-02/S1-03：撤销被拒绝（批次状态未确定 / 仍有 planned、paused）时，
++        # 明确说明原因，不弹「完整撤销成功」。
++        if result.refused:
++            QMessageBox.warning(self, "归档盒", msg)
++        elif result.is_complete:
+             QMessageBox.information(self, "归档盒", msg + "\n\n✓ 完整撤销成功！")
+         elif result.restored > 0:
+             QMessageBox.warning(self, "归档盒",
+                                 msg + "\n\n⚠ 部分撤销完成，有文件因冲突未恢复。")
+         else:
+             QMessageBox.warning(self, "归档盒",
+-                                msg + "\n\n⚠ 没有任何文件被恢复，可能已全部撤销过。")
++                                msg + "\n\n⚠ 没有任何文件被恢复，不能算完整撤销。")
+ 
+     def _on_undo_failed(self, err: str):
+         self.statusBar().showMessage("撤销失败")
+@@ -3918,19 +3982,91 @@ class MainWindow(QMainWindow):
+         self.close()
+ 
+ 
++# ======================== 启动日志 / 未捕获异常（S1-11） ========================
++
++def startup_log_path() -> str:
++    """免安装包的「启动日志.txt」路径。
++
++    包结构为 <包>/app/main.py + <包>/runtime/…，日志在包根目录，
++    与启动器写入的是同一个文件。源码运行时退化为源码目录下的同名文件；
++    都不可写时退到系统临时目录，保证异常信息不会完全丢失。
++    """
++    app_dir = os.path.dirname(os.path.abspath(__file__))
++    candidates = [
++        os.path.join(os.path.dirname(app_dir), "启动日志.txt"),
++        os.path.join(app_dir, "启动日志.txt"),
++    ]
++    for path in candidates:
++        try:
++            parent = os.path.dirname(path)
++            if os.path.isdir(parent) and os.access(parent, os.W_OK):
++                return path
++        except OSError:
++            continue
++    return os.path.join(os.environ.get("TEMP") or os.getcwd(),
++                        "归档盒-启动日志.txt")
++
++
++def append_startup_log(text: str) -> None:
++    """尽力追加一行启动日志；写不进去也不能影响程序运行。"""
++    try:
++        with open(startup_log_path(), "a", encoding="utf-8") as f:
++            f.write(text)
++            if not text.endswith("\n"):
++                f.write("\n")
++    except OSError:
++        pass
++
++
++def _install_crash_logging() -> None:
++    """把未捕获异常写进启动日志（含时间），再交回默认处理。
++
++    S1-11：启动日志以前是 0 字节，无法区分「没启动」和「启动后异常」。
++    pythonw.exe 没有控制台，未捕获异常默认完全不可见，这里落盘到启动日志。
++    """
++    def _excepthook(exc_type, exc_value, exc_tb):
++        append_startup_log(
++            f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 未捕获异常：\n"
++            + "".join(traceback.format_exception(exc_type, exc_value, exc_tb)))
++        sys.__excepthook__(exc_type, exc_value, exc_tb)
++
++    def _thread_excepthook(args):
++        if args.exc_type is SystemExit:
++            return
++        append_startup_log(
++            f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 线程未捕获异常"
++            f"（{getattr(args.thread, 'name', '?')}）：\n"
++            + "".join(traceback.format_exception(
++                args.exc_type, args.exc_value, args.exc_traceback)))
++
++    sys.excepthook = _excepthook
++    threading.excepthook = _thread_excepthook
++
++
+ # ======================== 入口 ========================
+ 
+ def main():
++    _install_crash_logging()
+     app = QApplication(sys.argv)
+     app.setStyle("Fusion")
+     app.setStyleSheet("""
+         QMainWindow { background: #FAFAFA; }
+         QTableWidget {
+             background: white;
++            color: #212121;
+             border: 1px solid #E0E0E0;
+             border-radius: 4px;
+             gridline-color: #EEEEEE;
+         }
++        /* S1-10：表格背景被刷成白色，必须显式给条目设深色文字；
++           深色 Windows 调色板的默认文字是白色，白底白字会让预览行只剩勾选框。 */
++        QTableWidget::item {
++            color: #212121;
++        }
++        QTableWidget::item:selected {
++            color: #FFFFFF;
++            background: #1E88E5;
++        }
+         QHeaderView::section {
+             background: #F5F5F5;
+             padding: 6px 8px;
+@@ -3953,6 +4089,10 @@ def main():
+ 
+     win = MainWindow()
+     win.show()
++    # S1-11：启动日志不再留 0 字节——正常启动留一行时间戳，
++    # 异常时由 excepthook 追加堆栈，两者都能与「启动器根本没运行」区分开。
++    append_startup_log(
++        f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] 归档盒已启动，进入事件循环")
+     code = app.exec()
+     shutdown_widgets()
+     sys.exit(code)
+diff --git "a/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/planner.py" "b/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/planner.py"
+index bd14deb..ac2ec99 100644
+--- "a/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/planner.py"
++++ "b/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/planner.py"
+@@ -19,6 +19,7 @@ from classification_config import (
+     INNER_KEEP, INNER_CLEAR,
+     default_config, DEFAULT_SEMESTER_MAP, DEFAULT_TOP_DIRECTION,
+     DEFAULT_SEMESTER_DIRS, DEFAULT_KEYWORD_TO_COURSE, DEFAULT_GENERIC_DIR,
++    PENDING_DIRECTION,
+ )
+ 
+ 
+@@ -460,6 +461,14 @@ def classify_entries(
+             auto_rule_applied=rule_desc,
+         )
+         item = _assign_unique_names(items, root, item)
++        # S2-49：方向只是兜底判成「待定」（rule_key == "fallback"）的项
++        # 默认不勾选——无法判断的文件不能一键全部搬进 _已整理\待定\。
++        # 用户显式配置的 unmatched 关键词规则、长期规则即使指向「待定」，
++        # 也算明确分类命中，保持默认勾选。
++        if (mode == MODE_BY_DIRECTION_SEMESTER
++                and direction == PENDING_DIRECTION
++                and rule_key == "fallback"):
++            item.selected = False
+         items.append(item)
+ 
+         if progress_cb and total > 0:
+diff --git "a/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/scanner.py" "b/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/scanner.py"
+index 83cfd84..1b3a7f5 100644
+--- "a/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/scanner.py"
++++ "b/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/scanner.py"
+@@ -155,6 +155,26 @@ def _looks_like_project_root(dirpath: str) -> Optional[str]:
+     return None
+ 
+ 
++def _is_junction_or_reparse(path: str) -> bool:
++    """判断目录是否为 NTFS junction / 其他重解析点（不含普通符号链接）。
++
++    S1-01：Windows 上 os.path.islink() 对 junction（目录联接）返回 False，
++    但 os.walk(followlinks=False) 仍会走进去，导致链接目标里的真实文件
++    被当成扫描根内的普通文件整理走。判断依据：
++    - Python 3.12+：优先 os.path.isjunction；
++    - 旧版本：stat.st_reparse_tag != 0（symlink 也有 tag，调用方需先排除
++      islink，本函数只用于"不是符号链接但仍是重解析点"的场景）。
++    非 Windows 平台上 st_reparse_tag 不存在，恒返回 False。
++    """
++    if hasattr(os.path, "isjunction") and os.path.isjunction(path):
++        return True
++    try:
++        st = os.lstat(path)
++    except OSError:
++        return False
++    return getattr(st, "st_reparse_tag", 0) != 0
++
++
+ def _find_all_project_roots(root_dir: str) -> Dict[str, str]:
+     """扫描 root_dir 下所有目录，返回所有像项目根的目录。
+ 
+@@ -163,15 +183,21 @@ def _find_all_project_roots(root_dir: str) -> Dict[str, str]:
+ 
+     walk 时仍跳过隐藏目录（.git/.venv 等）——不需要进入它们内部来识别项目根，
+     _looks_like_project_root 只看当前层的直接子项（listdir）。
++    S1-01：junction / 重解析点目录同样不进入（walk 会跟随 junction）。
+     """
+     roots: Dict[str, str] = {}
+     try:
+         for dirpath, dirnames, _filenames in os.walk(root_dir, followlinks=False):
+-            # 跳过隐藏目录（.git/.venv 等）和明确的 skip 目录
+-            dirnames[:] = [
+-                d for d in dirnames
+-                if not d.startswith(".") and d.lower() not in SKIP_DIRS
+-            ]
++            # 跳过隐藏目录（.git/.venv 等）、明确的 skip 目录和 junction/重解析点
++            kept = []
++            for d in dirnames:
++                if d.startswith(".") or d.lower() in SKIP_DIRS:
++                    continue
++                full = os.path.join(dirpath, d)
++                if not os.path.islink(full) and _is_junction_or_reparse(full):
++                    continue
++                kept.append(d)
++            dirnames[:] = kept
+             reason = _looks_like_project_root(dirpath)
+             if reason is not None:
+                 roots[dirpath] = reason
+@@ -213,6 +239,8 @@ class ScanResult:
+     protected_roots: Dict[str, str] = field(default_factory=dict)  # {绝对路径: 保护原因}
+     protected_kinds: Dict[str, str] = field(default_factory=dict)  # {绝对路径: default/auto/manual 组合}
+     protected_count: int = 0  # 被保护跳过的文件数
++    # S1-01：被跳过的 junction / 重解析点目录（绝对路径，含告知用户用的）
++    junction_dirs: List[str] = field(default_factory=list)
+ 
+     @property
+     def total_files(self) -> int:
+@@ -235,6 +263,8 @@ class ScanResult:
+             parts.append(f"跳过保留目录 {self.skipdir_count}")
+         if self.protected_count:
+             parts.append(f"项目保护 {self.protected_count}（{len(self.protected_roots)} 个根）")
++        if self.junction_dirs:
++            parts.append(f"跳过 junction/重解析点 {len(self.junction_dirs)}")
+         if self.permission_errors:
+             parts.append(f"权限错误 {self.permission_errors}")
+         if self.empty_dirs:
+@@ -315,6 +345,13 @@ def scan_directory(
+                 result.symlink_count += 1
+                 dirs_to_remove.append(d)
+                 continue
++            # 1b. junction / 重解析点目录（S1-01）
++            # Windows 上 islink() 对 junction 为 False，但 os.walk 仍会走进去；
++            # 整个跳过并记录路径告知用户，不整理链接目标里的真实文件。
++            if _is_junction_or_reparse(full):
++                result.junction_dirs.append(full)
++                dirs_to_remove.append(d)
++                continue
+             # 2. 显式跳过的目录名（大小写不敏感）
+             if d.lower() in SKIP_DIRS:
+                 if d.lower() == ".git":
+diff --git "a/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/transfer_dialogs.py" "b/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/transfer_dialogs.py"
+index 204fc20..c3cd3f4 100644
+--- "a/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/transfer_dialogs.py"
++++ "b/\345\275\222\346\241\243\347\233\222\346\272\220\347\240\201/transfer_dialogs.py"
+@@ -693,7 +693,9 @@ class SchemeCenterDialog(QDialog):
+         if QMessageBox.question(
+                 self, "恢复上一次配置",
+                 "将恢复最近一次应用方案前的分类配置（只改变配置，"
+-                "不会移动或撤销文件）。\n继续吗？",
++                "不会移动或撤销文件）。\n"
++                "⚠ 当前配置会被覆盖：恢复前会自动生成一份当前配置的新备份，"
++                "本次使用的备份文件也会保留。\n继续吗？",
+                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+             return
+         try:

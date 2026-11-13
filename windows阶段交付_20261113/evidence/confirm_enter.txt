@@ -1,0 +1,10 @@
+﻿{
+  "focus_is_cancel": "取消",
+  "ok_autoDefault": false,
+  "ok_isDefault": false,
+  "cancel_autoDefault": true,
+  "enter_result": 0,
+  "enter_rejected": true,
+  "ok_click_accepts": true
+}
+RESULT: PASS

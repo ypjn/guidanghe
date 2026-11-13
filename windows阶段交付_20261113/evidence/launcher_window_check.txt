@@ -1,0 +1,19 @@
+﻿包目录: C:\Users\Lenovo\Documents\Trae-CN\temp_20261113_01\归档盒-Windows-P0验证包
+pythonw PID: 37604
+全部顶层窗口:
+  4197188|True|Qt6120QWindowIcon|归档盒 V1.7 — 可配置、可预览、可撤销的课程文件整理器
+  330644|False|_q_titlebar|_q_titlebar
+  265308|False|Qt6120ThemeChangeObserverWindow|
+  1640986|False|Qt6120ScreenChangeObserverWindow|
+  264968|False|MSCTFIME UI|MSCTFIME UI
+  852312|False|IME|Default IME
+启动日志.txt 内容:
+  启动时间: 2026-11-13 10:05:20
+  启动器: 启动归档盒.exe（修复版，正常显示窗口）
+  Python: C:\Users\Lenovo\Documents\Trae-CN\temp_20261113_01\归档盒-Windows-P0验证包\runtime\pythonw.exe
+  程序: C:\Users\Lenovo\Documents\Trae-CN\temp_20261113_01\归档盒-Windows-P0验证包\app\main.py
+  [2026-11-13 10:05:21] 归档盒已启动，进入事件循环
+  
+
+[PASS] 在 2s 内检测到可见主窗口
+已结束 pythonw PID=37604

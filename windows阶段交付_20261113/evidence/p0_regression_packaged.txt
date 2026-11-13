@@ -1,0 +1,50 @@
+﻿工作目录：C:\Users\Lenovo\AppData\Local\Temp\p0_fixes_su263mxc
+
+[PASS] S1-01 扫描跳过 junction / 重解析点
+        isjunction(link)=True isjunction(普通目录)=False
+        扫描到的文件=[]
+        跳过的 junction=['C:\\Users\\Lenovo\\AppData\\Local\\Temp\\p0_fixes_su263mxc\\s1_01_junction\\space\\链接目录']
+        summary=共扫描 0 个文件，跳过 junction/重解析点 1，空目录 1
+[PASS] S1-02 执行写库失败 → 批次非 done；撤销拒绝且恢复 0 项不叫完整成功
+        批次状态=partial
+        执行错误=['写入整理记录失败（第 1 项，状态 moved）：模拟写库失败']
+        撤销 refused=True restored=0 is_complete=False
+        summary=撤销未执行（已拒绝）
+        文件仍在整理目录=True
+[PASS] S1-03 planning/executing/planned/paused 时拒绝撤销；恢复 0 项不算完整
+        executing: refused=True restored=0
+        planned: refused=True restored=0
+        paused: refused=True restored=0
+        无可恢复: restored=0 is_complete=False
+[PASS] S1-04 rename 失败兜底：目标已存在不覆盖、不删源；目标不存在可移动
+        冲突：moved=False conflict=True msg=目标路径已存在，为避免覆盖未移动 目标内容='用户已有内容' 源仍在=True
+        正常：moved=True msg= 目标内容='新内容' 源已删=True
+[PASS] S2-49 「待定」默认不勾选，已命中分类的项仍默认勾选
+        一堆没头没脑的文件.txt → 方向=待定 规则=fallback 勾选=False
+        大二上\数据结构\实验一.pdf → 方向=课程 规则=semester_dir:大二上/数据结构 勾选=True
+[SKIP] S1-07/08 AI 默认关闭且源码里没有内置密钥
+        当前 归档盒源码/ 不含 ai_fallback.py / ai_config.py（AI 模块只存在于 2026-11-12 的 Windows 包，未进本仓库），无代码可改；本项只验证了密钥扫描。
+        包含密钥前缀的文件：无
+[PASS] S1-09 恢复配置前先备份当前配置，且所用备份不被删除
+        恢复后学期来源含测试学期A=True 仍含测试学期B=False
+        备份数量=2 所用备份仍在=True 新备份存在=True
+        返回消息=已恢复上一次应用的配置。
+        恢复前的当前配置已备份为 config-backup-20261113-100553-918287.json；本次使用的备份 config-backup-20261113-100553-880390.json 已保留。
+[PASS] S1-10 计划表白底设置了明确的深色文字
+        main.py 全局 QSS 含 QTableWidget 与 QTableWidget::item 的 深色文字声明=True
+[PASS] S1-11 未捕获异常（含时间与堆栈）写入启动日志
+        日志路径=C:\Users\Lenovo\Documents\Trae-CN\temp_20261113_01\归档盒-Windows-P0验证包\启动日志.txt
+        日志新增内容前 200 字='emp_20261113_01\\归档盒-Windows-P0验证包\\app\\tests\\test_p0_fixes_20261113.py", line 481, in t10_startup_log\n    raise ValueError("模拟启动异常")\nValueError: 模拟启动异常\n'
+[PASS] 回归 正常「整理→撤销」仍是完整撤销（新拒绝规则不误伤）
+        moved=1 restored=1 is_complete=True refused=False 批次状态=undone 源文件已恢复=True
+[PASS] S1-05/06 执行后 / 重新扫描开始 / 扫描失败后，旧计划都不可执行
+        执行后不可执行=True
+        新扫描开始即作废=True
+        扫描失败后不可执行=True
+        提示='⚠ 扫描失败，旧预览已失效；请排除问题后重新扫描生成新预览'
+[PASS] S3-01 确认框默认取消、确认按钮危险色、根目录完整显示
+        Ok.isDefault=False Ok.autoDefault=False Cancel.isDefault=False
+        危险色=True 完整根目录=True 初始焦点在取消=True
+
+结果：PASS 11 / FAIL 0 / SKIP 1
+结果已写入 C:\Users\Lenovo\Documents\Trae-CN\temp_20261113_01\归档盒-Windows-P0验证包\app\tests\results_p0_fixes_20261113.json
