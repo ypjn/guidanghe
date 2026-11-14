@@ -880,6 +880,90 @@ def _write_all(fd: int, data: bytes) -> tuple[bool, str]:
     return True, ""
 
 
+def _restore_to_path(read_fd: int, target_path: str, expected_size: int,
+                     mode: int, atime_ns: int, mtime_ns: int,
+                     root: str) -> tuple[bool, str]:
+    """把仍打开的 fd 里的字节重新落成 target_path 上的普通文件。
+
+    用于「目标目录项在删源之后被换走」的恢复：src 已被删除，目标目录项
+    也不再属于我们，但目标 inode 仍被 fd 持有，字节还能读出来。这里用
+    O_CREAT|O_EXCL|O_NOFOLLOW 重建源路径，绝不覆盖任何已存在的文件；
+    真实路径越出 root 时放弃。
+    """
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    binary = getattr(os, "O_BINARY", 0)
+    try:
+        os.lseek(read_fd, 0, os.SEEK_SET)
+    except OSError as e:
+        return False, f"无法读回原内容：{e}"
+
+    if not _is_within_root(target_path, root):
+        return False, "写回路径越出整理空间"
+
+    try:
+        out_fd = os.open(
+            win_long_path(target_path),
+            os.O_CREAT | os.O_EXCL | os.O_WRONLY | nofollow | binary,
+            0o600,
+        )
+    except OSError as e:
+        return False, f"无法重建源文件：{e}"
+
+    try:
+        out_st = os.fstat(out_fd)
+    except OSError as e:
+        try:
+            os.close(out_fd)
+        except OSError:
+            pass
+        return False, f"无法读取重建文件属性：{e}"
+
+    def _drop() -> None:
+        try:
+            os.close(out_fd)
+        except OSError:
+            pass
+        _unlink_if_ours(target_path, out_st.st_ino, out_st.st_dev)
+
+    # 创建后再核边界：父目录可能在打开前被换链
+    if not _is_within_root(target_path, root):
+        _drop()
+        return False, "写回路径在创建后越出整理空间"
+
+    total = 0
+    try:
+        while True:
+            chunk = os.read(read_fd, 1024 * 1024)
+            if not chunk:
+                break
+            ok_chunk, chunk_err = _write_all(out_fd, chunk)
+            if not ok_chunk:
+                _drop()
+                return False, f"写回源文件失败：{chunk_err}"
+            total += len(chunk)
+        if total != expected_size:
+            _drop()
+            return False, f"写回源文件大小不一致（{total}/{expected_size} 字节）"
+        fchmod = getattr(os, "fchmod", None)
+        if fchmod is not None:
+            fchmod(out_fd, mode)
+        else:
+            os.chmod(win_long_path(target_path), mode)
+        try:
+            os.utime(out_fd, ns=(atime_ns, mtime_ns))
+        except (TypeError, NotImplementedError):
+            os.utime(win_long_path(target_path), ns=(atime_ns, mtime_ns))
+        os.fsync(out_fd)
+    except OSError as e:
+        _drop()
+        return False, f"写回源文件失败：{e}"
+    try:
+        os.close(out_fd)
+    except OSError:
+        pass
+    return True, ""
+
+
 def _copy_then_replace(src_path: str, dst_path: str, root: str) -> tuple[bool, str, bool]:
     """不覆盖的移动：源 → 临时副本 → 独占创建目标 → 直接写 fd → 两次身份核对 → 删源。
 
@@ -893,6 +977,10 @@ def _copy_then_replace(src_path: str, dst_path: str, root: str) -> tuple[bool, s
         就不删源、不记 moved（撤销同理不记 undone）。
       - 权限与 mtime：新文件不是 rename 来的，确认 inode 属于本次创建后，
         用 fchmod/futimens 显式恢复源文件的权限位与 mtime。
+      - 删源之后仍要核对一次（D5）：目标 fd 一直开到落盘成功/回滚结束；
+        unlink(源) 返回后立刻 lstat 目标并与 fd 比 inode/设备号。目录项被
+        换掉时不碰被换上的文件，用仍打开的 fd 把原字节写回源路径；写回
+        失败就保留临时副本并在错误里给出路径，绝不返回成功。
 
     返回 (是否成功, 错误说明, 是否为"目标已存在"冲突)。
     """
@@ -1025,7 +1113,7 @@ def _copy_then_replace(src_path: str, dst_path: str, root: str) -> tuple[bool, s
     try:
         dst_fd = os.open(
             win_long_path(dst_path),
-            os.O_CREAT | os.O_EXCL | os.O_WRONLY | nofollow | binary,
+            os.O_CREAT | os.O_EXCL | os.O_RDWR | nofollow | binary,
             0o600,
         )
     except FileExistsError:
@@ -1049,12 +1137,15 @@ def _copy_then_replace(src_path: str, dst_path: str, root: str) -> tuple[bool, s
         _close_src()
         return False, "无法读取目标文件属性", False
 
-    # 创建后边界：目录可能在检查后被换成空间外链接，只删我们自己建的 inode。
-    if not _is_within_root(dst_path, root):
+    def _close_dst() -> None:
         try:
             os.close(dst_fd)
         except OSError:
             pass
+
+    # 创建后边界：目录可能在检查后被换成空间外链接，只删我们自己建的 inode。
+    if not _is_within_root(dst_path, root):
+        _close_dst()
         _unlink_if_ours(dst_path, our_ino, our_dev)
         _rollback_tmp()
         _close_src()
@@ -1091,10 +1182,7 @@ def _copy_then_replace(src_path: str, dst_path: str, root: str) -> tuple[bool, s
                 pass
 
     if write_err:
-        try:
-            os.close(dst_fd)
-        except OSError:
-            pass
+        _close_dst()
         _unlink_if_ours(dst_path, our_ino, our_dev)
         _rollback_tmp()
         _close_src()
@@ -1102,10 +1190,7 @@ def _copy_then_replace(src_path: str, dst_path: str, root: str) -> tuple[bool, s
 
     # ---- 第一次身份核对：路径必须仍指向我们创建的 inode（C1）----
     if not _path_is_inode(dst_path, dst_st):
-        try:
-            os.close(dst_fd)
-        except OSError:
-            pass
+        _close_dst()
         _rollback_tmp()
         _close_src()
         return False, "目标占位在落盘期间被替换，为避免覆盖未移动", False
@@ -1124,21 +1209,18 @@ def _copy_then_replace(src_path: str, dst_path: str, root: str) -> tuple[bool, s
             # 某些平台不接受 fd：此时路径已核对过是我们刚创建的 inode
             os.utime(win_long_path(dst_path), ns=(src_atime_ns, src_mtime_ns))
     except OSError as e:
-        try:
-            os.close(dst_fd)
-        except OSError:
-            pass
+        _close_dst()
         _unlink_if_ours(dst_path, our_ino, our_dev)
         _rollback_tmp()
         _close_src()
         return False, f"恢复目标权限/时间失败：{e}", False
-    try:
-        os.close(dst_fd)
-    except OSError:
-        pass
+
+    # 目标 fd 从这里开始一直保持打开：即使目录项被摘掉，inode 里的字节
+    # 仍可读回，用来把原内容写回源路径。
 
     # ---- 源内容核对：复制后被改就不删源 ----
     if not _is_within_root(src_path, root):
+        _close_dst()
         _unlink_if_ours(dst_path, our_ino, our_dev)
         _rollback_tmp()
         _close_src()
@@ -1146,19 +1228,22 @@ def _copy_then_replace(src_path: str, dst_path: str, root: str) -> tuple[bool, s
     src_sha = sha256_file(src_path)
     if src_sha is None or src_sha != tmp_sha:
         # 源被改/读不出：回滚目标（只删我们的 inode），保留源
+        _close_dst()
         _unlink_if_ours(dst_path, our_ino, our_dev)
         _rollback_tmp()
         _close_src()
         return False, "源文件在复制后被修改或无法再次核验，已回滚目标并保留源文件", False
 
-    # ---- 第二次身份核对：SHA 返回前后目标可能被换（S3）----
+    # ---- 第二次身份核对：SHA 返回前后目标可能被换（D4a）----
     if not _path_is_inode(dst_path, dst_st):
+        _close_dst()
         _rollback_tmp()
         _close_src()
         return False, "目标文件在内容核对后被替换，为避免覆盖未移动", False
 
     # ---- 删除源 ----
     if not _is_within_root(src_path, root):
+        _close_dst()
         _unlink_if_ours(dst_path, our_ino, our_dev)
         _rollback_tmp()
         _close_src()
@@ -1166,12 +1251,38 @@ def _copy_then_replace(src_path: str, dst_path: str, root: str) -> tuple[bool, s
     try:
         os.unlink(win_long_path(src_path))
     except OSError as e:
+        _close_dst()
         _unlink_if_ours(dst_path, our_ino, our_dev)
         _rollback_tmp()
         _close_src()
         return False, f"已复制但删除源失败（已回滚目标，源文件保留）：{e}", False
 
+    # ---- 删源返回后立刻再核对目标目录项（D5）----
+    # 这里不再相信删源前的 lstat：目录项可能在 unlink(源) 一开始就被换掉。
+    # 仍打开的 dst_fd 持有原 inode，字节可读。只有目录项仍是本次 inode，
+    # 才删除临时副本并返回成功。
+    if not _path_is_inode(dst_path, dst_st):
+        restore_ok, restore_err = _restore_to_path(
+            dst_fd, src_path, src_size, src_mode,
+            src_atime_ns, src_mtime_ns, root)
+        if not restore_ok:
+            # 写回失败：保留临时副本，并在错误里写明它的路径
+            _close_dst()
+            _close_src()
+            return False, (
+                f"目标文件在删除源后被替换，原内容写回失败（{restore_err}）。"
+                f"原字节仍在临时副本：{tmp_path}；源文件：{src_path}"
+            ), False
+        _rollback_tmp()
+        _close_dst()
+        _close_src()
+        return False, (
+            "目标文件在删除源后被替换，已把原内容写回源路径；"
+            "未覆盖被换上的文件，本次不计为已移动"
+        ), False
+
     _rollback_tmp()
+    _close_dst()
     _close_src()
     return True, "", False
 

@@ -427,6 +427,98 @@ def test_mode_and_mtime():
     _mode_mtime_case(0o751)
 
 
+# ============ 5. 删源一开始就把目标换走（D5） ============
+
+def test_target_swapped_at_unlink_execute():
+    """第二次 lstat 通过后、unlink(源) 一开始就替换目标：原字节必须仍有副本。"""
+    with tempfile.TemporaryDirectory() as d:
+        root = os.path.join(d, "root")
+        os.makedirs(root)
+        src = os.path.join(root, "a.txt")
+        dst = os.path.join(root, "_已整理", "a.txt")
+        plan = make_plan(root, "a.txt", "_已整理/a.txt", APPROVED)
+        store = Storage(root)
+
+        real_unlink = os.unlink
+        state = {"swapped": False}
+
+        def hooked_unlink(path):
+            # 只拦截删除源文件这一次系统调用：先把目标换成别的文件，再真正删源
+            if (os.path.abspath(str(path)) == os.path.abspath(src)
+                    and not state["swapped"]):
+                state["swapped"] = True
+                if os.path.lexists(dst):
+                    real_unlink(dst)
+                with open(dst, "wb") as f:
+                    f.write(OTHER)
+            return real_unlink(path)
+
+        try:
+            executor.os.unlink = hooked_unlink
+            res = executor.execute_plan(plan, store)
+        finally:
+            executor.os.unlink = real_unlink
+        status = action_status(store, res.batch_id) if res.batch_id else ""
+        store.close()
+
+        check("R8-注入生效（整理）", state["swapped"])
+        check("R8-原字节仍有一份完整副本", read_bytes(src) == APPROVED,
+              f"src={read_bytes(src)!r}")
+        check("R8-被换上的文件仍是新内容", read_bytes(dst) == OTHER,
+              f"dst={read_bytes(dst)!r}")
+        check("R8-动作不是 moved", res.moved == 0 and status != "moved",
+              f"moved={res.moved} status={status}")
+        check("R8-临时副本不残留",
+              tmp_leftovers(os.path.dirname(dst)) == [],
+              f"leftovers={tmp_leftovers(os.path.dirname(dst))}")
+
+
+def test_target_swapped_at_unlink_undo():
+    """撤销：unlink(整理目录原件) 一开始就替换原路径，原字节必须仍有副本。"""
+    with tempfile.TemporaryDirectory() as d:
+        root = os.path.join(d, "root")
+        os.makedirs(root)
+        src = os.path.join(root, "a.txt")
+        dst = os.path.join(root, "_已整理", "a.txt")
+        original = b"ORIGINAL-CONTENT"
+        plan = make_plan(root, "a.txt", "_已整理/a.txt", original)
+        store = Storage(root)
+        moved = executor.execute_plan(plan, store)
+        check("R9-前置整理成功", moved.moved == 1, f"moved={moved.moved}")
+        check("R9-前置目标内容正确", read_bytes(dst) == original)
+
+        real_unlink = os.unlink
+        state = {"swapped": False}
+
+        def hooked_unlink(path):
+            # 撤销时 _copy_then_replace 先删整理目录里的原件；进入时替换原路径
+            if (os.path.abspath(str(path)) == os.path.abspath(dst)
+                    and not state["swapped"]):
+                state["swapped"] = True
+                if os.path.lexists(src):
+                    real_unlink(src)
+                with open(src, "wb") as f:
+                    f.write(OTHER)
+            return real_unlink(path)
+
+        try:
+            executor.os.unlink = hooked_unlink
+            undo = executor.undo_latest_batch(store)
+        finally:
+            executor.os.unlink = real_unlink
+        status = action_status(store, moved.batch_id)
+        store.close()
+
+        check("R9-注入生效（撤销）", state["swapped"])
+        check("R9-原字节仍有一份完整副本", read_bytes(dst) == original,
+              f"dst={read_bytes(dst)!r}")
+        check("R9-被换上的原路径仍是新内容", read_bytes(src) == OTHER,
+              f"src={read_bytes(src)!r}")
+        check("R9-历史不是 undone",
+              status != "undone" and undo.restored == 0,
+              f"status={status} restored={undo.restored}")
+
+
 if __name__ == "__main__":
     test_short_write()
     test_tmp_checksum_unreadable()
@@ -436,5 +528,7 @@ if __name__ == "__main__":
     test_target_swapped_after_sha_execute()
     test_target_swapped_after_sha_undo()
     test_mode_and_mtime()
+    test_target_swapped_at_unlink_execute()
+    test_target_swapped_at_unlink_undo()
     print(f"\n合计：通过 {PASS} / 未通过 {FAIL}")
     sys.exit(0 if FAIL == 0 else 1)
