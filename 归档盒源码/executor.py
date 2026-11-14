@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import errno
 import os
 import shutil
 import stat
@@ -957,11 +958,126 @@ def _restore_to_path(read_fd: int, target_path: str, expected_size: int,
     except OSError as e:
         _drop()
         return False, f"写回源文件失败：{e}"
+    if not _path_is_inode(target_path, out_st):
+        try:
+            os.close(out_fd)
+        except OSError:
+            pass
+        return False, "写回路径在完成后被替换"
     try:
         os.close(out_fd)
     except OSError:
         pass
     return True, ""
+
+
+def _read_fd_all(fd: int, expected_size: int) -> tuple[Optional[bytes], str]:
+    """把仍打开的 fd 从开头读满 expected_size 字节。短读或异常都算失败。"""
+    try:
+        os.lseek(fd, 0, os.SEEK_SET)
+    except OSError as e:
+        return None, f"无法读回原内容：{e}"
+    chunks: List[bytes] = []
+    total = 0
+    try:
+        while total < expected_size:
+            chunk = os.read(fd, min(1024 * 1024, expected_size - total))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+    except OSError as e:
+        return None, f"无法读回原内容：{e}"
+    if total != expected_size:
+        return None, f"读回大小不一致（{total}/{expected_size} 字节）"
+    return b"".join(chunks), ""
+
+
+def _write_bytes_exclusive(path: str, data: bytes, mode: int,
+                           atime_ns: int, mtime_ns: int,
+                           root: str) -> tuple[bool, str]:
+    """用 O_EXCL|O_NOFOLLOW 把 data 写成 path 上的新文件，不覆盖已有文件。"""
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    binary = getattr(os, "O_BINARY", 0)
+    if not _is_within_root(path, root):
+        return False, "写回路径越出整理空间"
+    try:
+        out_fd = os.open(
+            win_long_path(path),
+            os.O_CREAT | os.O_EXCL | os.O_WRONLY | nofollow | binary,
+            0o600,
+        )
+    except FileExistsError:
+        return False, "文件已存在"
+    except OSError as e:
+        if e.errno == errno.EEXIST:
+            return False, "文件已存在"
+        return False, f"无法创建写回文件：{e}"
+    try:
+        out_st = os.fstat(out_fd)
+    except OSError as e:
+        try:
+            os.close(out_fd)
+        except OSError:
+            pass
+        return False, f"无法读取写回文件属性：{e}"
+
+    def _drop() -> None:
+        try:
+            os.close(out_fd)
+        except OSError:
+            pass
+        _unlink_if_ours(path, out_st.st_ino, out_st.st_dev)
+
+    if not _is_within_root(path, root):
+        _drop()
+        return False, "写回路径在创建后越出整理空间"
+    ok_chunk, chunk_err = _write_all(out_fd, data)
+    if not ok_chunk:
+        _drop()
+        return False, f"写回失败：{chunk_err}"
+    try:
+        fchmod = getattr(os, "fchmod", None)
+        if fchmod is not None:
+            fchmod(out_fd, mode)
+        else:
+            os.chmod(win_long_path(path), mode)
+        try:
+            os.utime(out_fd, ns=(atime_ns, mtime_ns))
+        except (TypeError, NotImplementedError):
+            os.utime(win_long_path(path), ns=(atime_ns, mtime_ns))
+        os.fsync(out_fd)
+    except OSError as e:
+        _drop()
+        return False, f"写回失败：{e}"
+    if not _path_is_inode(path, out_st):
+        try:
+            os.close(out_fd)
+        except OSError:
+            pass
+        return False, "写回路径在完成后被替换"
+    try:
+        os.close(out_fd)
+    except OSError:
+        pass
+    return True, ""
+
+
+def _spill_bytes(root: str, data: bytes, mode: int,
+                 atime_ns: int, mtime_ns: int) -> tuple[str, str]:
+    """写回源路径失败时，把原字节落到整理空间根目录里的新文件。"""
+    last = ""
+    for n in range(100):
+        name = ".abkeep" if n == 0 else f".abkeep{n}"
+        path = os.path.join(root, name)
+        ok, err = _write_bytes_exclusive(
+            path, data, mode, atime_ns, mtime_ns, root)
+        if ok:
+            return path, ""
+        last = err
+        if err != "文件已存在":
+            break
+    return "", last or "无法在整理空间内另存原字节"
 
 
 def _copy_then_replace(src_path: str, dst_path: str, root: str) -> tuple[bool, str, bool]:
@@ -977,10 +1093,14 @@ def _copy_then_replace(src_path: str, dst_path: str, root: str) -> tuple[bool, s
         就不删源、不记 moved（撤销同理不记 undone）。
       - 权限与 mtime：新文件不是 rename 来的，确认 inode 属于本次创建后，
         用 fchmod/futimens 显式恢复源文件的权限位与 mtime。
-      - 删源之后仍要核对一次（D5）：目标 fd 一直开到落盘成功/回滚结束；
+      - 删源之后仍要核对一次（D5）：目标 fd 保持打开，直到原字节已经读入内存；
         unlink(源) 返回后立刻 lstat 目标并与 fd 比 inode/设备号。目录项被
         换掉时不碰被换上的文件，用仍打开的 fd 把原字节写回源路径；写回
         失败就保留临时副本并在错误里给出路径，绝不返回成功。
+      - 清理之后再核对一次（D6）：删源后的核对通过时，先把 fd 里的字节读进
+        内存，再删除临时副本并关闭句柄，然后重新 lstat。目录项已变就用
+        内存写回源路径；写回失败则落到整理空间内的新文件并报路径。这次
+        lstat 仍指向本次 inode 时立刻返回成功，后面不再删除任何副本。
 
     返回 (是否成功, 错误说明, 是否为"目标已存在"冲突)。
     """
@@ -1281,9 +1401,42 @@ def _copy_then_replace(src_path: str, dst_path: str, root: str) -> tuple[bool, s
             "未覆盖被换上的文件，本次不计为已移动"
         ), False
 
+    # ---- 清理前先把原字节留在内存（D6）----
+    # 随后的 unlink(.abtmp) 和 close(目标 fd) 都可能把目录项换掉。
+    # 字节先进内存，清理完成后再 lstat；不一致就写回，不返回成功。
+    payload, payload_err = _read_fd_all(dst_fd, src_size)
+    if payload is None:
+        _close_dst()
+        _close_src()
+        return False, (
+            f"删除源后无法读回原内容（{payload_err}）。"
+            f"原字节仍在临时副本：{tmp_path}"
+        ), False
+
     _rollback_tmp()
     _close_dst()
     _close_src()
+
+    if not _path_is_inode(dst_path, dst_st):
+        restore_ok, restore_err = _write_bytes_exclusive(
+            src_path, payload, src_mode, src_atime_ns, src_mtime_ns, root)
+        if restore_ok:
+            return False, (
+                "目标文件在清理临时副本或关闭句柄后被替换，"
+                "已把原内容写回源路径；未覆盖被换上的文件，本次不计为已移动"
+            ), False
+        saved, save_err = _spill_bytes(
+            root, payload, src_mode, src_atime_ns, src_mtime_ns)
+        if saved:
+            return False, (
+                f"目标文件在清理后被替换，写回源路径失败（{restore_err}）。"
+                f"原字节已另存为：{saved}"
+            ), False
+        return False, (
+            f"目标文件在清理后被替换，写回源路径失败（{restore_err}），"
+            f"另存也失败（{save_err}）。"
+        ), False
+
     return True, "", False
 
 

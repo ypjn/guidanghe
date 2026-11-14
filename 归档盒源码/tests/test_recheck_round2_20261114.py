@@ -519,6 +519,169 @@ def test_target_swapped_at_unlink_undo():
               f"status={status} restored={undo.restored}")
 
 
+def _replace_file(path, content, real_unlink):
+    if os.path.lexists(path):
+        real_unlink(path)
+    with open(path, "wb") as f:
+        f.write(content)
+
+
+# ============ 6. 清理临时副本或关闭句柄时换掉目标（D6） ============
+
+def test_target_swapped_at_tmp_unlink_execute():
+    """删除 .abtmp 时替换目标：原字节必须写回，历史不得是 moved。"""
+    with tempfile.TemporaryDirectory() as d:
+        root = os.path.join(d, "root")
+        os.makedirs(root)
+        src = os.path.join(root, "a.txt")
+        dst = os.path.join(root, "_已整理", "a.txt")
+        plan = make_plan(root, "a.txt", "_已整理/a.txt", APPROVED)
+        store = Storage(root)
+        real_unlink = os.unlink
+        state = {"swapped": False}
+
+        def hooked_unlink(path):
+            if os.path.basename(str(path)) == ".abtmp" and not state["swapped"]:
+                state["swapped"] = True
+                _replace_file(dst, OTHER, real_unlink)
+            return real_unlink(path)
+
+        try:
+            executor.os.unlink = hooked_unlink
+            res = executor.execute_plan(plan, store)
+        finally:
+            executor.os.unlink = real_unlink
+        status = action_status(store, res.batch_id) if res.batch_id else ""
+        store.close()
+
+        check("R10-注入生效（整理）", state["swapped"])
+        check("R10-原字节仍有一份完整副本", read_bytes(src) == APPROVED,
+              f"src={read_bytes(src)!r}")
+        check("R10-被换上的文件仍是新内容", read_bytes(dst) == OTHER,
+              f"dst={read_bytes(dst)!r}")
+        check("R10-动作不是 moved", res.moved == 0 and status != "moved",
+              f"moved={res.moved} status={status}")
+
+
+def test_target_swapped_at_tmp_unlink_undo():
+    """撤销：删除 .abtmp 时替换原路径，整理目录里的原字节必须还在。"""
+    with tempfile.TemporaryDirectory() as d:
+        root = os.path.join(d, "root")
+        os.makedirs(root)
+        src = os.path.join(root, "a.txt")
+        dst = os.path.join(root, "_已整理", "a.txt")
+        original = b"ORIGINAL-CONTENT"
+        plan = make_plan(root, "a.txt", "_已整理/a.txt", original)
+        store = Storage(root)
+        moved = executor.execute_plan(plan, store)
+        check("R10u-前置整理成功", moved.moved == 1, f"moved={moved.moved}")
+        check("R10u-前置目标内容正确", read_bytes(dst) == original)
+
+        real_unlink = os.unlink
+        state = {"swapped": False}
+
+        def hooked_unlink(path):
+            if os.path.basename(str(path)) == ".abtmp" and not state["swapped"]:
+                state["swapped"] = True
+                _replace_file(src, OTHER, real_unlink)
+            return real_unlink(path)
+
+        try:
+            executor.os.unlink = hooked_unlink
+            undo = executor.undo_latest_batch(store)
+        finally:
+            executor.os.unlink = real_unlink
+        status = action_status(store, moved.batch_id)
+        store.close()
+
+        check("R10u-注入生效（撤销）", state["swapped"])
+        check("R10u-原字节仍有一份完整副本", read_bytes(dst) == original,
+              f"dst={read_bytes(dst)!r}")
+        check("R10u-被换上的原路径仍是新内容", read_bytes(src) == OTHER,
+              f"src={read_bytes(src)!r}")
+        check("R10u-历史不是 undone",
+              status != "undone" and undo.restored == 0,
+              f"status={status} restored={undo.restored}")
+
+
+def test_target_swapped_at_close_execute():
+    """源已删除后，关闭句柄时替换目标：原字节必须写回。"""
+    with tempfile.TemporaryDirectory() as d:
+        root = os.path.join(d, "root")
+        os.makedirs(root)
+        src = os.path.join(root, "a.txt")
+        dst = os.path.join(root, "_已整理", "a.txt")
+        plan = make_plan(root, "a.txt", "_已整理/a.txt", APPROVED)
+        store = Storage(root)
+        real_close = os.close
+        real_unlink = os.unlink
+        state = {"swapped": False}
+
+        def hooked_close(fd):
+            if (not os.path.exists(src)) and not state["swapped"]:
+                state["swapped"] = True
+                _replace_file(dst, OTHER, real_unlink)
+            return real_close(fd)
+
+        try:
+            executor.os.close = hooked_close
+            res = executor.execute_plan(plan, store)
+        finally:
+            executor.os.close = real_close
+        status = action_status(store, res.batch_id) if res.batch_id else ""
+        store.close()
+
+        check("R11-注入生效（整理）", state["swapped"])
+        check("R11-原字节仍有一份完整副本", read_bytes(src) == APPROVED,
+              f"src={read_bytes(src)!r}")
+        check("R11-被换上的文件仍是新内容", read_bytes(dst) == OTHER,
+              f"dst={read_bytes(dst)!r}")
+        check("R11-动作不是 moved", res.moved == 0 and status != "moved",
+              f"moved={res.moved} status={status}")
+
+
+def test_target_swapped_at_close_undo():
+    """撤销：整理件已删除后，关闭句柄时替换原路径。"""
+    with tempfile.TemporaryDirectory() as d:
+        root = os.path.join(d, "root")
+        os.makedirs(root)
+        src = os.path.join(root, "a.txt")
+        dst = os.path.join(root, "_已整理", "a.txt")
+        original = b"ORIGINAL-CONTENT"
+        plan = make_plan(root, "a.txt", "_已整理/a.txt", original)
+        store = Storage(root)
+        moved = executor.execute_plan(plan, store)
+        check("R11u-前置整理成功", moved.moved == 1, f"moved={moved.moved}")
+        check("R11u-前置目标内容正确", read_bytes(dst) == original)
+
+        real_close = os.close
+        real_unlink = os.unlink
+        state = {"swapped": False}
+
+        def hooked_close(fd):
+            if (not os.path.exists(dst)) and not state["swapped"]:
+                state["swapped"] = True
+                _replace_file(src, OTHER, real_unlink)
+            return real_close(fd)
+
+        try:
+            executor.os.close = hooked_close
+            undo = executor.undo_latest_batch(store)
+        finally:
+            executor.os.close = real_close
+        status = action_status(store, moved.batch_id)
+        store.close()
+
+        check("R11u-注入生效（撤销）", state["swapped"])
+        check("R11u-原字节仍有一份完整副本", read_bytes(dst) == original,
+              f"dst={read_bytes(dst)!r}")
+        check("R11u-被换上的原路径仍是新内容", read_bytes(src) == OTHER,
+              f"src={read_bytes(src)!r}")
+        check("R11u-历史不是 undone",
+              status != "undone" and undo.restored == 0,
+              f"status={status} restored={undo.restored}")
+
+
 if __name__ == "__main__":
     test_short_write()
     test_tmp_checksum_unreadable()
@@ -530,5 +693,9 @@ if __name__ == "__main__":
     test_mode_and_mtime()
     test_target_swapped_at_unlink_execute()
     test_target_swapped_at_unlink_undo()
+    test_target_swapped_at_tmp_unlink_execute()
+    test_target_swapped_at_tmp_unlink_undo()
+    test_target_swapped_at_close_execute()
+    test_target_swapped_at_close_undo()
     print(f"\n合计：通过 {PASS} / 未通过 {FAIL}")
     sys.exit(0 if FAIL == 0 else 1)
