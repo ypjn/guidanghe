@@ -233,6 +233,17 @@ def execute_plan(
         target_path = os.path.join(root, item.target_rel_path)
         target_dir = os.path.dirname(target_path)
 
+        # ---- 边界校验：目标真实路径必须留在整理空间内 ----
+        # 防止 _已整理 等目录是指向空间外的符号链接，导致文件被移到空间外。
+        if not _is_within_root(target_path, root):
+            _record(idx, STATUS_FAILED,
+                    error="目标路径越出整理空间（符号链接逃逸）")
+            result.failed += 1
+            result.errors.append(
+                f"失败（目标越出整理空间）：{item.file.rel_path} → "
+                f"{item.target_rel_path}")
+            continue
+
         if progress_cb:
             progress_cb(idx + 1, len(selected_items), item.file.rel_path)
 
@@ -282,25 +293,22 @@ def execute_plan(
                     f"{item.target_rel_path}：{e}")
                 continue
 
-        # ---- 移动（原子操作，不中断）----
-        try:
-            os.rename(win_long_path(src_path), win_long_path(target_path))
-        except OSError:
-            # S1-04：不再用 shutil.move 兜底——它在目标已存在时会静默覆盖。
-            # 改为：复制到临时名 → 再次确认目标不存在 → 原子替换 → 删源。
-            # 目标已存在时跳过：不覆盖、不删源。
-            moved_ok, move_err, is_conflict = _copy_then_replace(
-                src_path, target_path)
-            if not moved_ok:
-                if is_conflict:
-                    _record(idx, STATUS_SKIPPED, error=f"未移动：{move_err}")
-                    result.skipped += 1
-                else:
-                    _record(idx, STATUS_FAILED, error=f"移动失败：{move_err}")
-                    result.failed += 1
-                result.errors.append(
-                    f"移动失败（保留源文件）：{item.file.rel_path} → {move_err}")
-                continue
+        # ---- 移动（不覆盖：复制到临时名 → 独占创建目标 → 原子替换 → 删源）----
+        # 不直接用 os.rename：macOS 上 os.rename 在目标已存在时会静默覆盖，
+        # 「exists 检查 → os.rename」之间存在 TOCTOU 窗口。_copy_then_replace
+        # 用 O_CREAT|O_EXCL 独占创建目标，目标已存在时返回冲突，绝不覆盖。
+        moved_ok, move_err, is_conflict = _copy_then_replace(
+            src_path, target_path)
+        if not moved_ok:
+            if is_conflict:
+                _record(idx, STATUS_SKIPPED, error=f"未移动：{move_err}")
+                result.skipped += 1
+            else:
+                _record(idx, STATUS_FAILED, error=f"移动失败：{move_err}")
+                result.failed += 1
+            result.errors.append(
+                f"移动失败（保留源文件）：{item.file.rel_path} → {move_err}")
+            continue
         _record(idx, STATUS_MOVED)
         result.moved += 1
 
@@ -440,21 +448,34 @@ def undo_latest_batch(
                         except Exception:
                             pass
                         batch.created_dirs.append(rel_dir)
-            os.rename(win_long_path(target_abs), win_long_path(source_abs))
-        except OSError:
-            # S1-04：同执行器——shutil.move 兜底会静默覆盖，改为
-            # 复制到临时名 → 确认原位置为空 → 原子替换 → 删目标。
-            moved_ok, move_err, _is_conflict = _copy_then_replace(
-                target_abs, source_abs)
-            if not moved_ok:
-                pending_updates.append(
-                    (action.action_index, STATUS_CONFLICT,
-                     f"恢复失败：{move_err}"))
+        except OSError as e:
+            pending_updates.append(
+                (action.action_index, STATUS_CONFLICT,
+                 f"恢复失败（创建父目录）：{e}"))
+            result.errors += 1
+            result.errors_list.append(
+                f"恢复失败：{action.source_rel} ← 创建父目录：{e}")
+            _flush_undo()
+            continue
+
+        # 不覆盖的落盘：与执行器同一套。原路径已被占用时返回冲突，
+        # 绝不覆盖原路径上新出现的文件。
+        moved_ok, move_err, is_conflict = _copy_then_replace(
+            target_abs, source_abs)
+        if not moved_ok:
+            pending_updates.append(
+                (action.action_index, STATUS_CONFLICT,
+                 f"恢复失败：{move_err}"))
+            if is_conflict:
+                result.conflict += 1
+                result.conflicts.append(
+                    f"{action.source_rel}：{move_err}")
+            else:
                 result.errors += 1
-                result.errors_list.append(
-                    f"恢复失败：{action.source_rel} ← {move_err}")
-                _flush_undo()
-                continue
+            result.errors_list.append(
+                f"恢复失败：{action.source_rel} ← {move_err}")
+            _flush_undo()
+            continue
         pending_updates.append(
             (action.action_index, STATUS_UNDONE, nd_note))
         if nd_note:
@@ -716,11 +737,28 @@ def recover_batch(storage: Storage, batch_id: Optional[int] = None,
 
 # ======================== 辅助 ========================
 
+def _is_within_root(path: str, root: str) -> bool:
+    """解析符号链接后，path 的真实路径是否仍在 root 的真实路径之内。
+
+    用于拦截「_已整理 等目录是指向空间外的符号链接」导致文件/目录逃逸。
+    用户选定的整理空间本身若是符号链接，以 realpath(root) 为基准，
+    因此仍允许在该空间内整理；只拦截从空间内部逃到空间外的路径。
+    """
+    real_root = os.path.realpath(root)
+    real_path = os.path.realpath(path)
+    root_key = os.path.normcase(real_root)
+    path_key = os.path.normcase(real_path)
+    return path_key == root_key or path_key.startswith(root_key + os.sep)
+
+
 def _makedirs_tracked(root: str, target_dir: str) -> List[str]:
     """逐级创建目录，返回本次新建的每一级相对路径（父 → 子）。
 
     S3 / F-19：只记录叶子目录会让撤销后残留 `_已整理` 等父目录。
     """
+    # 边界：目标目录的真实路径必须留在整理空间内，防止符号链接逃逸到空间外建目录。
+    if not _is_within_root(target_dir, root):
+        raise OSError(f"目标目录越出整理空间（符号链接逃逸）：{target_dir}")
     root_abs = os.path.abspath(root)
     target_abs = os.path.abspath(target_dir)
     missing: List[str] = []
