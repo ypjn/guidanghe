@@ -307,11 +307,12 @@ def execute_plan(
                 continue
 
         # ---- 移动（不覆盖：复制到临时名 → 独占创建目标 → 原子替换 → 删源）----
-        # 不直接用 os.rename：macOS 上 os.rename 在目标已存在时会静默覆盖，
-        # 「exists 检查 → os.rename」之间存在 TOCTOU 窗口。_copy_then_replace
-        # 用 O_CREAT|O_EXCL 独占创建目标，目标已存在时返回冲突，绝不覆盖。
-        moved_ok, move_err, is_conflict = _copy_then_replace(
-            src_path, target_path, root)
+        # 同卷优先一次「目标存在就失败」的重命名（renamex_np RENAME_EXCL）；
+        # 跨卷/不支持时才走复制路径。两条路都不覆盖已存在的目标。
+        moved_ok, move_err, is_conflict = _move_file(
+            src_path, target_path, root,
+            on_tmp_ready=lambda rel, i=idx: storage.set_action_temp(
+                result.batch_id, i, rel))
         if not moved_ok:
             if is_conflict:
                 _record(idx, STATUS_SKIPPED, error=f"未移动：{move_err}")
@@ -322,6 +323,7 @@ def execute_plan(
             result.errors.append(
                 f"移动失败（保留源文件）：{item.file.rel_path} → {move_err}")
             continue
+        storage.set_action_temp(result.batch_id, idx, "")
         _record(idx, STATUS_MOVED)
         result.moved += 1
 
@@ -482,8 +484,10 @@ def undo_latest_batch(
 
         # 不覆盖的落盘：与执行器同一套。原路径已被占用时返回冲突，
         # 绝不覆盖原路径上新出现的文件。
-        moved_ok, move_err, is_conflict = _copy_then_replace(
-            target_abs, source_abs, root)
+        moved_ok, move_err, is_conflict = _move_file(
+            target_abs, source_abs, root,
+            on_tmp_ready=lambda rel, i=action.action_index: storage.set_action_temp(
+                batch.batch_id, i, rel))
         if not moved_ok:
             pending_updates.append(
                 (action.action_index, STATUS_CONFLICT,
@@ -500,6 +504,7 @@ def undo_latest_batch(
             continue
         pending_updates.append(
             (action.action_index, STATUS_UNDONE, nd_note))
+        storage.set_action_temp(batch.batch_id, action.action_index, "")
         if nd_note:
             result.notes.append(f"{action.source_rel}：{nd_note}")
         result.restored += 1
@@ -971,116 +976,225 @@ def _restore_to_path(read_fd: int, target_path: str, expected_size: int,
     return True, ""
 
 
-def _read_fd_all(fd: int, expected_size: int) -> tuple[Optional[bytes], str]:
-    """把仍打开的 fd 从开头读满 expected_size 字节。短读或异常都算失败。"""
-    try:
-        os.lseek(fd, 0, os.SEEK_SET)
-    except OSError as e:
-        return None, f"无法读回原内容：{e}"
-    chunks: List[bytes] = []
-    total = 0
-    try:
-        while total < expected_size:
-            chunk = os.read(fd, min(1024 * 1024, expected_size - total))
-            if not chunk:
-                break
-            chunks.append(chunk)
-            total += len(chunk)
-    except OSError as e:
-        return None, f"无法读回原内容：{e}"
-    if total != expected_size:
-        return None, f"读回大小不一致（{total}/{expected_size} 字节）"
-    return b"".join(chunks), ""
+_RENAME_EXCL = 0x4
+_renamex_np = None
+_renamex_checked = False
 
 
-def _write_bytes_exclusive(path: str, data: bytes, mode: int,
-                           atime_ns: int, mtime_ns: int,
-                           root: str) -> tuple[bool, str]:
-    """用 O_EXCL|O_NOFOLLOW 把 data 写成 path 上的新文件，不覆盖已有文件。"""
+def _rename_no_replace(src_path: str, dst_path: str) -> tuple[str, str]:
+    """macOS 同卷「目标存在就失败」的重命名。
+
+    返回值：("ok"|"exists"|"unsupported"|"error", 说明)。
+    使用 renamex_np(RENAME_EXCL, 0x4)：目标名已存在时返回 EEXIST，绝不覆盖。
+    不回退到 os.replace / os.rename（它们的覆盖语义会丢文件）。
+    """
+    global _renamex_np, _renamex_checked
+    if not _renamex_checked:
+        _renamex_checked = True
+        try:
+            import ctypes
+            libc = ctypes.CDLL(None, use_errno=True)
+            fn = libc.renamex_np
+            fn.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+            fn.restype = ctypes.c_int
+            _renamex_np = fn
+        except (OSError, AttributeError, ImportError):
+            _renamex_np = None
+    if _renamex_np is None:
+        return "unsupported", "当前平台没有 renamex_np"
+
+    import ctypes
+    ret = _renamex_np(os.fsencode(src_path), os.fsencode(dst_path), _RENAME_EXCL)
+    if ret == 0:
+        return "ok", ""
+    err = ctypes.get_errno()
+    if err == errno.EEXIST:
+        return "exists", ""
+    if err in (errno.EXDEV, errno.ENOTSUP, errno.EINVAL, errno.ENOSYS, errno.ENOTTY):
+        return "unsupported", os.strerror(err)
+    return "error", f"{os.strerror(err)}（errno={err}）"
+
+
+def _link_backup(tmp_path: str, tmp_st, dst_path: str,
+                 root: str) -> tuple[str, int, int, str]:
+    """给临时副本做一个同 inode 的硬链接备份（不复制数据、不读入内存）。
+
+    返回 (绝对路径, inode, 设备号, 相对 root 路径)；失败返回空串。
+    备份名固定为 `.abkeep`（占用时递增），便于写入历史与错误提示。
+    """
+    if not _path_is_inode(tmp_path, tmp_st):
+        return "", -1, -1, ""
+    base_dir = os.path.dirname(dst_path) or root
+    counter = 0
+    while True:
+        name = ".abkeep" if counter == 0 else f".abkeep{counter}"
+        backup = os.path.join(base_dir, name)
+        if not _is_within_root(backup, root):
+            return "", -1, -1, ""
+        try:
+            os.link(win_long_path(tmp_path), win_long_path(backup))
+            st = os.lstat(win_long_path(backup))
+            return backup, st.st_ino, st.st_dev, os.path.relpath(backup, root)
+        except FileExistsError:
+            counter += 1
+            if counter > 100:
+                return "", -1, -1, ""
+        except OSError:
+            return "", -1, -1, ""
+
+
+def _spill_from_fd(read_fd: int, dst_path: str, root: str,
+                   size: int, mode: int, atime_ns: int, mtime_ns: int) -> tuple[str, str]:
+    """把 fd 里的完整原件另存为同目录下的 .abkeep（流式，不读进内存）。
+
+    返回 (相对 root 的路径, 错误说明)。失败时不返回路径。
+    """
+    base_dir = os.path.dirname(dst_path) or root
     nofollow = getattr(os, "O_NOFOLLOW", 0)
     binary = getattr(os, "O_BINARY", 0)
-    if not _is_within_root(path, root):
-        return False, "写回路径越出整理空间"
-    try:
-        out_fd = os.open(
-            win_long_path(path),
-            os.O_CREAT | os.O_EXCL | os.O_WRONLY | nofollow | binary,
-            0o600,
-        )
-    except FileExistsError:
-        return False, "文件已存在"
-    except OSError as e:
-        if e.errno == errno.EEXIST:
-            return False, "文件已存在"
-        return False, f"无法创建写回文件：{e}"
+    name = ".abkeep"
+    counter = 0
+    while True:
+        spill_path = os.path.join(base_dir, name if counter == 0 else f".abkeep{counter}")
+        try:
+            out_fd = os.open(win_long_path(spill_path),
+                             os.O_CREAT | os.O_EXCL | os.O_WRONLY | nofollow | binary,
+                             0o600)
+            break
+        except FileExistsError:
+            counter += 1
+            if counter > 100:
+                return "", "无法创建 .abkeep（同名文件过多）"
+        except OSError as e:
+            return "", f"无法创建 .abkeep：{e}"
+
     try:
         out_st = os.fstat(out_fd)
-    except OSError as e:
-        try:
-            os.close(out_fd)
-        except OSError:
-            pass
-        return False, f"无法读取写回文件属性：{e}"
-
-    def _drop() -> None:
-        try:
-            os.close(out_fd)
-        except OSError:
-            pass
-        _unlink_if_ours(path, out_st.st_ino, out_st.st_dev)
-
-    if not _is_within_root(path, root):
-        _drop()
-        return False, "写回路径在创建后越出整理空间"
-    ok_chunk, chunk_err = _write_all(out_fd, data)
-    if not ok_chunk:
-        _drop()
-        return False, f"写回失败：{chunk_err}"
-    try:
+        if not _is_within_root(spill_path, root):
+            _unlink_if_ours(spill_path, out_st.st_ino, out_st.st_dev)
+            return "", ".abkeep 路径越出整理空间"
+        os.lseek(read_fd, 0, os.SEEK_SET)
+        total = 0
+        while True:
+            chunk = os.read(read_fd, 1024 * 1024)
+            if not chunk:
+                break
+            ok_chunk, chunk_err = _write_all(out_fd, chunk)
+            if not ok_chunk:
+                _unlink_if_ours(spill_path, out_st.st_ino, out_st.st_dev)
+                return "", f"写 .abkeep 失败：{chunk_err}"
+            total += len(chunk)
+        if total != size:
+            _unlink_if_ours(spill_path, out_st.st_ino, out_st.st_dev)
+            return "", f".abkeep 大小不一致（{total}/{size} 字节）"
         fchmod = getattr(os, "fchmod", None)
         if fchmod is not None:
             fchmod(out_fd, mode)
-        else:
-            os.chmod(win_long_path(path), mode)
         try:
             os.utime(out_fd, ns=(atime_ns, mtime_ns))
         except (TypeError, NotImplementedError):
-            os.utime(win_long_path(path), ns=(atime_ns, mtime_ns))
+            os.utime(win_long_path(spill_path), ns=(atime_ns, mtime_ns))
         os.fsync(out_fd)
     except OSError as e:
-        _drop()
-        return False, f"写回失败：{e}"
-    if not _path_is_inode(path, out_st):
+        _unlink_if_ours(spill_path, out_st.st_ino, out_st.st_dev)
+        return "", f"写 .abkeep 失败：{e}"
+    finally:
         try:
             os.close(out_fd)
         except OSError:
             pass
-        return False, "写回路径在完成后被替换"
+    return os.path.relpath(spill_path, root), ""
+
+
+def _move_file(src_path: str, dst_path: str, root: str,
+               on_tmp_ready: Optional[Callable[[str], None]] = None
+               ) -> tuple[bool, str, bool]:
+    """同卷优先重命名（RENAME_EXCL），跨卷/不可用时才复制。"""
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    binary = getattr(os, "O_BINARY", 0)
+    if not _is_within_root(src_path, root):
+        return False, f"源路径越出整理空间：{src_path}", False
+    if not _is_within_root(dst_path, root):
+        return False, f"目标路径越出整理空间：{dst_path}", False
+
     try:
-        os.close(out_fd)
-    except OSError:
-        pass
-    return True, ""
+        src_fd = os.open(win_long_path(src_path), os.O_RDONLY | nofollow | binary)
+    except OSError as e:
+        return False, f"无法打开源文件：{e}", False
+    try:
+        src_st = os.fstat(src_fd)
+        src_size = src_st.st_size
+        src_mode = stat.S_IMODE(src_st.st_mode)
+        src_atime_ns = src_st.st_atime_ns
+        src_mtime_ns = src_st.st_mtime_ns
+    except OSError as e:
+        try:
+            os.close(src_fd)
+        except OSError:
+            pass
+        return False, f"无法读取源文件属性：{e}", False
+
+    def _close_src() -> None:
+        try:
+            os.close(src_fd)
+        except OSError:
+            pass
+
+    # ---- 重命名前：源目录项必须仍是本次打开的 inode ----
+    if not _path_is_inode(src_path, src_st):
+        _close_src()
+        return False, "源路径已不是本次打开的文件（目录项被替换），未移动", False
+
+    status, detail = _rename_no_replace(win_long_path(src_path), win_long_path(dst_path))
+    if status == "ok":
+        # 成功：目录项换名，字节仍在原 inode。核对目标确实是我们这个 inode。
+        if _path_is_inode(dst_path, src_st):
+            _close_src()
+            return True, "", False
+        # 源目录项在系统调用内被换掉：被换文件已落到目标名（原样保留），
+        # 本次原件仍在 fd 里，写回源路径；失败则另存 .abkeep。
+        restored, r_err = _restore_to_path(
+            src_fd, src_path, src_size, src_mode,
+            src_atime_ns, src_mtime_ns, root)
+        if restored:
+            _close_src()
+            return False, (
+                "源目录项在重命名内被替换，被换入文件已原样留在目标路径；"
+                "原内容已写回源路径，本次不计为已移动"
+            ), False
+        saved, s_err = _spill_from_fd(
+            src_fd, dst_path, root, src_size, src_mode,
+            src_atime_ns, src_mtime_ns)
+        _close_src()
+        if saved:
+            if on_tmp_ready is not None:
+                try:
+                    on_tmp_ready(saved)
+                except Exception:
+                    pass
+            return False, (
+                f"源目录项在重命名内被替换，原内容写回失败（{r_err}）。"
+                f"原字节已另存为：{os.path.join(root, saved)}"
+            ), False
+        return False, (
+            f"源目录项在重命名内被替换，原内容写回失败（{r_err}），"
+            f"另存也失败（{s_err}）"
+        ), False
+    if status == "exists":
+        _close_src()
+        return False, "目标路径已存在，为避免覆盖未移动", True
+    if status == "error":
+        _close_src()
+        return False, f"重命名失败：{detail}", False
+
+    # ---- 跨卷/平台不支持：流式复制路径 ----
+    _close_src()
+    return _copy_then_replace(src_path, dst_path, root, on_tmp_ready=on_tmp_ready)
 
 
-def _spill_bytes(root: str, data: bytes, mode: int,
-                 atime_ns: int, mtime_ns: int) -> tuple[str, str]:
-    """写回源路径失败时，把原字节落到整理空间根目录里的新文件。"""
-    last = ""
-    for n in range(100):
-        name = ".abkeep" if n == 0 else f".abkeep{n}"
-        path = os.path.join(root, name)
-        ok, err = _write_bytes_exclusive(
-            path, data, mode, atime_ns, mtime_ns, root)
-        if ok:
-            return path, ""
-        last = err
-        if err != "文件已存在":
-            break
-    return "", last or "无法在整理空间内另存原字节"
-
-
-def _copy_then_replace(src_path: str, dst_path: str, root: str) -> tuple[bool, str, bool]:
+def _copy_then_replace(src_path: str, dst_path: str, root: str,
+                       on_tmp_ready: Optional[Callable[[str], None]] = None
+                       ) -> tuple[bool, str, bool]:
     """不覆盖的移动：源 → 临时副本 → 独占创建目标 → 直接写 fd → 两次身份核对 → 删源。
 
     本轮修复的安全约束（对应审计反例 D1–D4）：
@@ -1221,8 +1335,25 @@ def _copy_then_replace(src_path: str, dst_path: str, root: str) -> tuple[bool, s
         _close_src()
         return False, "临时副本内容无法读取核验，为避免丢文件未移动", False
 
+    # 动源之前：把临时副本的相对路径写入 history.db（重启后凭此列找原件）
+    if on_tmp_ready is not None:
+        try:
+            on_tmp_ready(os.path.relpath(tmp_path, root))
+        except Exception as e:  # 写库失败不能继续动源
+            _unlink_if_ours(tmp_path, tmp_st.st_ino, tmp_st.st_dev)
+            _close_src()
+            return False, f"临时副本路径写入历史失败：{e}", False
+
+    def _clear_tmp_record() -> None:
+        if on_tmp_ready is not None:
+            try:
+                on_tmp_ready("")
+            except Exception:
+                pass
+
     def _rollback_tmp() -> None:
         _unlink_if_ours(tmp_path, tmp_st.st_ino, tmp_st.st_dev)
+        _clear_tmp_record()
 
     # ---- 目标创建前边界 ----
     if not _is_within_root(dst_path, root):
@@ -1377,16 +1508,14 @@ def _copy_then_replace(src_path: str, dst_path: str, root: str) -> tuple[bool, s
         _close_src()
         return False, f"已复制但删除源失败（已回滚目标，源文件保留）：{e}", False
 
-    # ---- 删源返回后立刻再核对目标目录项（D5）----
-    # 这里不再相信删源前的 lstat：目录项可能在 unlink(源) 一开始就被换掉。
-    # 仍打开的 dst_fd 持有原 inode，字节可读。只有目录项仍是本次 inode，
-    # 才删除临时副本并返回成功。
+    # ---- 删源返回后立刻核对目标目录项（D5）----
+    # 仍打开的 dst_fd 持有目标 inode，src_fd 持有源 inode；两边都能流式读回。
     if not _path_is_inode(dst_path, dst_st):
         restore_ok, restore_err = _restore_to_path(
-            dst_fd, src_path, src_size, src_mode,
+            src_fd, src_path, src_size, src_mode,
             src_atime_ns, src_mtime_ns, root)
         if not restore_ok:
-            # 写回失败：保留临时副本，并在错误里写明它的路径
+            # 临时副本尚未删除，原字节仍在磁盘上；错误里写明路径
             _close_dst()
             _close_src()
             return False, (
@@ -1401,41 +1530,62 @@ def _copy_then_replace(src_path: str, dst_path: str, root: str) -> tuple[bool, s
             "未覆盖被换上的文件，本次不计为已移动"
         ), False
 
-    # ---- 清理前先把原字节留在内存（D6）----
-    # 随后的 unlink(.abtmp) 和 close(目标 fd) 都可能把目录项换掉。
-    # 字节先进内存，清理完成后再 lstat；不一致就写回，不返回成功。
-    payload, payload_err = _read_fd_all(dst_fd, src_size)
-    if payload is None:
-        _close_dst()
-        _close_src()
-        return False, (
-            f"删除源后无法读回原内容（{payload_err}）。"
-            f"原字节仍在临时副本：{tmp_path}"
-        ), False
-
-    _rollback_tmp()
+    # ---- D6：清理临时副本/关闭句柄也可能被换目标 ----
+    # 先为临时副本做一次同 inode 的硬链接备份（.abkeep），删除临时名后
+    # 备份仍可在磁盘上按路径读到；不把文件读进内存。
+    backup_path, backup_ino, backup_dev, backup_rel = _link_backup(
+        tmp_path, tmp_st, dst_path, root)
+    if backup_path:
+        if on_tmp_ready is not None:
+            try:
+                on_tmp_ready(backup_rel)
+            except Exception:
+                pass
+        _unlink_if_ours(tmp_path, tmp_st.st_ino, tmp_st.st_dev)
     _close_dst()
-    _close_src()
 
-    if not _path_is_inode(dst_path, dst_st):
-        restore_ok, restore_err = _write_bytes_exclusive(
-            src_path, payload, src_mode, src_atime_ns, src_mtime_ns, root)
+    # 备份失败：不删除临时副本，也不把这次移动当成成功——
+    # 先把源恢复出来，再把临时副本保留在磁盘上并报路径。
+    if not backup_path:
+        restore_ok, restore_err = _restore_to_path(
+            src_fd, src_path, src_size, src_mode,
+            src_atime_ns, src_mtime_ns, root)
+        _close_src()
         if restore_ok:
             return False, (
-                "目标文件在清理临时副本或关闭句柄后被替换，"
-                "已把原内容写回源路径；未覆盖被换上的文件，本次不计为已移动"
-            ), False
-        saved, save_err = _spill_bytes(
-            root, payload, src_mode, src_atime_ns, src_mtime_ns)
-        if saved:
-            return False, (
-                f"目标文件在清理后被替换，写回源路径失败（{restore_err}）。"
-                f"原字节已另存为：{saved}"
+                "无法为临时副本建立 .abkeep 备份，已把原内容写回源路径；"
+                f"临时副本保留在：{tmp_path}"
             ), False
         return False, (
-            f"目标文件在清理后被替换，写回源路径失败（{restore_err}），"
-            f"另存也失败（{save_err}）。"
+            f"无法为临时副本建立 .abkeep 备份，写回源路径也失败（{restore_err}）；"
+            f"原字节保留在临时副本：{tmp_path}"
         ), False
+
+    if _path_is_inode(dst_path, dst_st):
+        _unlink_if_ours(backup_path, backup_ino, backup_dev)
+        _clear_tmp_record()
+        _close_src()
+        return True, "", False
+
+    # 目标目录项已被换：不碰被换上的文件，把原内容写回源路径。
+    restore_ok, restore_err = _restore_to_path(
+        src_fd, src_path, src_size, src_mode,
+        src_atime_ns, src_mtime_ns, root)
+    if restore_ok:
+        _unlink_if_ours(backup_path, backup_ino, backup_dev)
+        _clear_tmp_record()
+        _close_src()
+        return False, (
+            "目标文件在清理临时副本或关闭句柄后被替换，"
+            "已把原内容写回源路径；未覆盖被换上的文件，本次不计为已移动"
+        ), False
+
+    # 写回失败：磁盘上必须还有一份完整原件
+    _close_src()
+    return False, (
+        f"目标文件在清理后被替换，写回源路径失败（{restore_err}）。"
+        f"原字节已另存为：{backup_path}"
+    ), False
 
     return True, "", False
 

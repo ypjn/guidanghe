@@ -481,17 +481,28 @@ def test_255_byte_filename():
 
 
 if __name__ == "__main__":
-    test_symlink_escape()
-    test_execute_no_overwrite_via_function()
-    test_execute_no_overwrite_in_flow()
-    test_undo_no_overwrite()
-    test_undo_no_overwrite_in_flow()
-    test_os_replace_overwrites_placeholder_execute()
-    test_os_replace_overwrites_placeholder_undo()
-    test_source_parent_swapped_to_outside_execute()
-    test_target_parent_swapped_to_outside_undo()
-    test_target_dir_symlink_race_during_write()
-    test_source_modified_after_copy()
-    test_255_byte_filename()
+    # 本文件的历史回归都针对「复制落盘」路径；同卷已改为重命名，
+    # 这里强制重命名不可用，确保复制路径的每条安全约束仍被覆盖。
+    import executor as _executor
+    _real_rename = getattr(_executor, "_rename_no_replace", None)
+    _executor._rename_no_replace = lambda src, dst: ("unsupported", "test")
+    try:
+        test_symlink_escape()
+        test_execute_no_overwrite_via_function()
+        test_execute_no_overwrite_in_flow()
+        test_undo_no_overwrite()
+        test_undo_no_overwrite_in_flow()
+        test_os_replace_overwrites_placeholder_execute()
+        test_os_replace_overwrites_placeholder_undo()
+        test_source_parent_swapped_to_outside_execute()
+        test_target_parent_swapped_to_outside_undo()
+        test_target_dir_symlink_race_during_write()
+        test_source_modified_after_copy()
+        test_255_byte_filename()
+    finally:
+        if _real_rename is None:
+            delattr(_executor, "_rename_no_replace")
+        else:
+            _executor._rename_no_replace = _real_rename
     print(f"\n合计：通过 {PASS} / 未通过 {FAIL}")
     sys.exit(0 if FAIL == 0 else 1)

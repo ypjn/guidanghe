@@ -11,8 +11,10 @@ from __future__ import annotations
 import os
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
+from contextlib import contextmanager
 
 SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, SRC)
@@ -85,6 +87,21 @@ def tmp_leftovers(directory):
             if ".abtmp" in n or ".archivetmp" in n)
     except OSError:
         return []
+
+
+@contextmanager
+def force_copy_path():
+    """把同卷重命名强制标成不可用，专门回归跨卷复制路径的安全约束。"""
+    marker = object()
+    original = getattr(executor, "_rename_no_replace", marker)
+    executor._rename_no_replace = lambda src, dst: ("unsupported", "test")
+    try:
+        yield
+    finally:
+        if original is marker:
+            delattr(executor, "_rename_no_replace")
+        else:
+            executor._rename_no_replace = original
 
 
 # ======================= 1. 短写与指纹失败 =======================
@@ -682,20 +699,216 @@ def test_target_swapped_at_close_undo():
               f"status={status} restored={undo.restored}")
 
 
+# ========== 6. 同卷重命名方案验收（D7） ==========
+
+def test_same_volume_rename_no_second_inode():
+    """同卷移动必须是重命名：目标就是源 inode，不存在可被原地改坏的副本。"""
+    with tempfile.TemporaryDirectory() as d:
+        root = os.path.join(d, "root")
+        os.makedirs(root)
+        src = os.path.join(root, "a.txt")
+        dst = os.path.join(root, "_已整理", "a.txt")
+        plan = make_plan(root, "a.txt", "_已整理/a.txt", APPROVED)
+        src_ino = os.stat(src).st_ino
+        store = Storage(root)
+
+        real_sha = executor.sha256_file
+        state = {"fired": False}
+        replacement = b"X" * len(APPROVED)
+
+        def sha_then_edit(path):
+            digest = real_sha(path)
+            if (os.path.abspath(str(path)) == os.path.abspath(src)
+                    and os.path.isfile(dst) and not state["fired"]):
+                # 等长、原地改，inode 不变（模拟 b983a03 上的目标副本被改坏）
+                state["fired"] = True
+                with open(dst, "r+b") as f:
+                    f.write(replacement)
+            return digest
+
+        try:
+            executor.sha256_file = sha_then_edit
+            res = executor.execute_plan(plan, store)
+        finally:
+            executor.sha256_file = real_sha
+        status = action_status(store, res.batch_id) if res.batch_id else ""
+        store.close()
+
+        check("R10-同卷移动不写第二个 inode",
+              os.path.isfile(dst) and os.stat(dst).st_ino == src_ino,
+              f"src_ino={src_ino} dst_ino="
+              f"{os.stat(dst).st_ino if os.path.exists(dst) else None}")
+        check("R10-目标字节完整", read_bytes(dst) == APPROVED,
+              f"dst={read_bytes(dst)!r}")
+        check("R10-历史 moved", res.moved == 1 and status == "moved",
+              f"moved={res.moved} status={status} injected={state['fired']}")
+
+
+def test_source_replaced_at_rename():
+    """改名一开始替换源目录项：被换文件必须原样留下，不得记成功。"""
+    with tempfile.TemporaryDirectory() as d:
+        root = os.path.join(d, "root")
+        os.makedirs(root)
+        src = os.path.join(root, "a.txt")
+        dst = os.path.join(root, "_已整理", "a.txt")
+        plan = make_plan(root, "a.txt", "_已整理/a.txt", APPROVED)
+        store = Storage(root)
+
+        real_rename = getattr(executor, "_rename_no_replace", None)
+        real_unlink = os.unlink
+        state = {"fired": False}
+
+        def swap_source_once():
+            if state["fired"]:
+                return
+            state["fired"] = True
+            real_unlink(src)
+            with open(src, "wb") as f:
+                f.write(OTHER)
+
+        def hooked_rename(s, dd):
+            if os.path.abspath(str(s)) == os.path.abspath(src):
+                swap_source_once()
+            return real_rename(s, dd)
+
+        def hooked_unlink(path):
+            # 兼容复制路径（b983a03）：unlink(源) 一开始就替换源路径
+            if os.path.abspath(str(path)) == os.path.abspath(src):
+                swap_source_once()
+            return real_unlink(path)
+
+        try:
+            if real_rename is not None:
+                executor._rename_no_replace = hooked_rename
+            executor.os.unlink = hooked_unlink
+            res = executor.execute_plan(plan, store)
+        finally:
+            if real_rename is not None:
+                executor._rename_no_replace = real_rename
+            executor.os.unlink = real_unlink
+        status = action_status(store, res.batch_id) if res.batch_id else ""
+        store.close()
+
+        check("R11-注入生效", state["fired"])
+        check("R11-被换入的文件字节仍在", read_bytes(dst) == OTHER,
+              f"dst={read_bytes(dst)!r}")
+        check("R11-原字节仍有一份完整副本", read_bytes(src) == APPROVED,
+              f"src={read_bytes(src)!r}")
+        check("R11-历史不是 moved", res.moved == 0 and status != "moved",
+              f"moved={res.moved} status={status}")
+
+
+def test_cleanup_enospc_keeps_original():
+    """清理时目标被换、原路径被占用、.abkeep 创建 ENOSPC：仍要留下完整原件。"""
+    with tempfile.TemporaryDirectory() as d:
+        root = os.path.join(d, "root")
+        os.makedirs(root)
+        src = os.path.join(root, "a.txt")
+        dst = os.path.join(root, "_已整理", "a.txt")
+        plan = make_plan(root, "a.txt", "_已整理/a.txt", APPROVED)
+        store = Storage(root)
+
+        real_unlink = os.unlink
+        real_link = os.link
+        state = {"fired": False}
+
+        def hooked_link(a, b, *args, **kwargs):
+            # 清理阶段建立 .abkeep 备份时：目标被换、原路径被占用，并注入 ENOSPC
+            if (os.path.basename(str(b)).startswith(".abkeep")
+                    and not state["fired"]):
+                state["fired"] = True
+                if os.path.lexists(dst):
+                    real_unlink(dst)
+                with open(dst, "wb") as f:
+                    f.write(OTHER)
+                with open(src, "wb") as f:
+                    f.write(b"new source occupant")
+                raise OSError(28, "injected disk full")
+            return real_link(a, b, *args, **kwargs)
+
+        try:
+            with force_copy_path():
+                executor.os.link = hooked_link
+                try:
+                    res = executor.execute_plan(plan, store)
+                finally:
+                    executor.os.link = real_link
+        finally:
+            executor.os.link = real_link
+        action = store.get_actions(res.batch_id)[0]
+        tmp = os.path.join(root, "_已整理", ".abtmp")
+        tmp_bytes = read_bytes(tmp)
+        store.close()
+
+        check("R12-注入生效", state["fired"])
+        check("R12-历史为失败", action.status == "failed",
+              f"status={action.status}")
+        check("R12-错误里写明临时副本路径", ".abtmp" in action.error,
+              f"error={action.error}")
+        check("R12-按错误里的路径能读到完整原件", tmp_bytes == APPROVED,
+              f"tmp={tmp_bytes!r}")
+
+
+def _memory_probe() -> tuple[bool, str]:
+    code = r"""
+import os, resource, sys, tempfile
+sys.path.insert(0, %r)
+import executor
+from planner import generate_plan, MODE_BY_TYPE
+from scanner import scan_directory
+from storage import Storage
+d = tempfile.mkdtemp()
+root = os.path.join(d, "root")
+os.makedirs(root)
+p = os.path.join(root, "large.bin")
+with open(p, "wb") as f:
+    f.truncate(128 * 1024 * 1024)
+plan = generate_plan(scan_directory(root, detect_project_roots=False), MODE_BY_TYPE, [])
+db = Storage(root)
+before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+res = executor.execute_plan(plan, db)
+after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+print(res.moved, round((after - before) / 1024 / 1024, 1))
+""" % SRC
+    env = dict(os.environ)
+    env["QT_QPA_PLATFORM"] = "offscreen"
+    proc = subprocess.run([sys.executable, "-c", code],
+                          capture_output=True, text=True, env=env, timeout=600)
+    if proc.returncode != 0:
+        return False, f"rc={proc.returncode} {proc.stderr[-300:]}"
+    parts = proc.stdout.strip().split()
+    if len(parts) != 2:
+        return False, f"stdout={proc.stdout!r}"
+    moved, delta = int(parts[0]), float(parts[1])
+    return moved == 1 and delta <= 80, f"moved={moved} increase={delta} MiB"
+
+
+def test_memory_increment():
+    ok_flag, detail = _memory_probe()
+    check("R13-128MiB 正常移动峰值内存增量 <= 80MiB", ok_flag, detail)
+
+
 if __name__ == "__main__":
-    test_short_write()
-    test_tmp_checksum_unreadable()
-    test_source_changed_after_copy()
-    test_dangling_tmp_symlink()
-    test_dir_swapped_before_tmp_create()
-    test_target_swapped_after_sha_execute()
-    test_target_swapped_after_sha_undo()
-    test_mode_and_mtime()
-    test_target_swapped_at_unlink_execute()
-    test_target_swapped_at_unlink_undo()
-    test_target_swapped_at_tmp_unlink_execute()
-    test_target_swapped_at_tmp_unlink_undo()
-    test_target_swapped_at_close_execute()
-    test_target_swapped_at_close_undo()
+    # 前 11 组回归针对跨卷复制路径：强制 rename 不可用，保证逻辑仍被覆盖
+    with force_copy_path():
+        test_short_write()
+        test_tmp_checksum_unreadable()
+        test_source_changed_after_copy()
+        test_dangling_tmp_symlink()
+        test_dir_swapped_before_tmp_create()
+        test_target_swapped_after_sha_execute()
+        test_target_swapped_after_sha_undo()
+        test_mode_and_mtime()
+        test_target_swapped_at_unlink_execute()
+        test_target_swapped_at_unlink_undo()
+        test_target_swapped_at_tmp_unlink_execute()
+        test_target_swapped_at_tmp_unlink_undo()
+        test_target_swapped_at_close_execute()
+        test_target_swapped_at_close_undo()
+    # 同卷重命名方案验收
+    test_same_volume_rename_no_second_inode()
+    test_source_replaced_at_rename()
+    test_cleanup_enospc_keeps_original()
+    test_memory_increment()
     print(f"\n合计：通过 {PASS} / 未通过 {FAIL}")
     sys.exit(0 if FAIL == 0 else 1)

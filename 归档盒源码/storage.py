@@ -78,6 +78,8 @@ class ActionRecord:
     # 旧批次为空串；历史只读这里，不按当前配置重新计算
     rule_key: str = ""
     rule_applied: str = ""
+    # V1.8：跨卷复制时临时副本的相对路径（重启后凭此列找到完整原件）
+    temp_rel: str = ""
 
     @property
     def classification_source(self) -> str:
@@ -281,6 +283,7 @@ class Storage:
                 error TEXT DEFAULT '',
                 executed_at TEXT DEFAULT '',
                 undone_at TEXT DEFAULT '',
+                temp_rel TEXT DEFAULT '',
                 UNIQUE(batch_id, action_index),
                 FOREIGN KEY(batch_id) REFERENCES batches(id)
             );
@@ -301,7 +304,9 @@ class Storage:
         act_cols = {row[1] for row in self.conn.execute("PRAGMA table_info(actions)")}
         for col in ("auto_target_rel", "auto_rule_applied", "override_note",
                     # V1.5：命中规则标识与依据
-                    "rule_key", "rule_applied"):
+                    "rule_key", "rule_applied",
+                    # V1.8：跨卷复制临时副本的相对路径（重启后定位原件）
+                    "temp_rel"):
             if col not in act_cols:
                 self.conn.execute(
                     f"ALTER TABLE actions ADD COLUMN {col} TEXT DEFAULT ''")
@@ -517,6 +522,16 @@ class Storage:
         if commit:
             self.conn.commit()
 
+    def set_action_temp(self, batch_id: int, action_index: int,
+                        temp_rel: str, commit: bool = True) -> None:
+        """V1.8：记录跨卷复制的临时副本相对路径（动源之前必须先写库）。"""
+        self.conn.execute(
+            "UPDATE actions SET temp_rel = ? WHERE batch_id = ? AND action_index = ?",
+            (temp_rel or "", batch_id, action_index),
+        )
+        if commit:
+            self.conn.commit()
+
     def update_actions_bulk(self, batch_id: int, updates, commit: bool = True) -> None:
         """批量更新动作状态（单次 commit）。
 
@@ -535,7 +550,7 @@ class Storage:
             "SELECT action_index, source_rel, target_rel, source_size, source_sha256, "
             "status, error, executed_at, undone_at, "
             "auto_target_rel, auto_rule_applied, override_note, "
-            "rule_key, rule_applied "
+            "rule_key, rule_applied, temp_rel "
             "FROM actions WHERE batch_id = ? ORDER BY action_index ASC",
             (batch_id,),
         )
@@ -551,6 +566,7 @@ class Storage:
                 override_note=row[11] or "",
                 rule_key=row[12] or "",
                 rule_applied=row[13] or "",
+                temp_rel=row[14] or "",
             ))
         return results
 
