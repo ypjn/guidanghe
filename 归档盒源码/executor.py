@@ -244,6 +244,17 @@ def execute_plan(
                 f"{item.target_rel_path}")
             continue
 
+        # ---- 边界校验：源真实路径必须留在整理空间内 ----
+        # 防止源文件父目录在校验后被换成指向空间外的链接，
+        # 导致读到/删掉空间外的文件。
+        if not _is_within_root(src_path, root):
+            _record(idx, STATUS_FAILED,
+                    error="源路径越出整理空间（符号链接逃逸）")
+            result.failed += 1
+            result.errors.append(
+                f"失败（源越出整理空间）：{item.file.rel_path}")
+            continue
+
         if progress_cb:
             progress_cb(idx + 1, len(selected_items), item.file.rel_path)
 
@@ -298,7 +309,7 @@ def execute_plan(
         # 「exists 检查 → os.rename」之间存在 TOCTOU 窗口。_copy_then_replace
         # 用 O_CREAT|O_EXCL 独占创建目标，目标已存在时返回冲突，绝不覆盖。
         moved_ok, move_err, is_conflict = _copy_then_replace(
-            src_path, target_path)
+            src_path, target_path, root)
         if not moved_ok:
             if is_conflict:
                 _record(idx, STATUS_SKIPPED, error=f"未移动：{move_err}")
@@ -410,6 +421,15 @@ def undo_latest_batch(
         if progress_cb:
             progress_cb(idx + 1, len(recoverables), action.source_rel)
 
+        # ---- 边界校验：已整理文件的真实路径必须留在整理空间内 ----
+        # 防止 _已整理 等目录在撤销前被换成指向空间外的链接，
+        # 导致读到/删掉空间外的文件。
+        if not _is_within_root(target_abs, root):
+            _mark_conflict(
+                action, "目标路径越出整理空间（符号链接逃逸），无法恢复")
+            _flush_undo()
+            continue
+
         if not os.path.isfile(win_long_path(target_abs)):
             _mark_conflict(action, "目标文件已消失，无法恢复（需人工核对）")
             _flush_undo()
@@ -461,7 +481,7 @@ def undo_latest_batch(
         # 不覆盖的落盘：与执行器同一套。原路径已被占用时返回冲突，
         # 绝不覆盖原路径上新出现的文件。
         moved_ok, move_err, is_conflict = _copy_then_replace(
-            target_abs, source_abs)
+            target_abs, source_abs, root)
         if not moved_ok:
             pending_updates.append(
                 (action.action_index, STATUS_CONFLICT,
@@ -827,33 +847,71 @@ def _batch_is_finished(status: str) -> bool:
     )
 
 
-def _copy_then_replace(src_path: str, dst_path: str) -> tuple[bool, str, bool]:
-    """S1-04：os.rename 失败后的"不覆盖"移动兜底，替代 shutil.move。
+def _unlink_if_ours(path_long: str, our_ino: int, our_dev: int) -> None:
+    """仅当 path 当前指向我们创建的 inode 时才删除它，避免误删被替换的文件。"""
+    try:
+        st = os.stat(path_long)
+        if st.st_ino == our_ino and st.st_dev == our_dev:
+            os.unlink(path_long)
+    except OSError:
+        pass
 
-    shutil.move 在目标已存在时会静默覆盖用户文件。这里改为：
-      1) 复制源文件到目标同目录下的临时名（copy2 保留元数据）；
-      2) 再次确认目标不存在——存在则记冲突：不覆盖、不删源、清掉临时副本；
-      3) os.replace 原子替换（临时名与目标同目录，同文件系统，原子有效）；
-      4) 删除源文件；删除失败则回滚目标，保留源，报错（宁可没移动，
-         也不留两份或丢文件）。
+
+def _copy_then_replace(src_path: str, dst_path: str, root: str) -> tuple[bool, str, bool]:
+    """不覆盖的移动：复制 → 独占创建目标 → 直接写入 fd → inode 核对 → 删源。
+
+    关键安全约束（对应审计反例 C1/C2/C3/C4）：
+      - C1：不用 os.replace 覆盖式落盘。独占创建得到的 fd 直接写入内容，
+        写完核对「路径当前 inode == 我们 fd 的 inode」，不一致说明占位被换，
+        此时绝不动当前路径上的文件，只清理临时副本并报失败。
+      - C2：读源、写目标、删源之前都重新 realpath 校验边界；目标目录若在
+        校验后被换成空间外链接，O_EXCL 成功后立即重核边界，发现越界则只
+        删除我们自己建的那个 inode，不碰外部原有文件。
+      - C3：复制完成后、删除源之前，重新计算源的 SHA 与临时副本比对；
+        不一致说明源在复制后被改，回滚目标（仅当还是我们的 inode）、保留源。
+      - C4：临时名用目标目录下的短名 `.abtmp`（+ 计数器），保证 255 字节
+        文件名也能放下临时副本。
 
     返回 (是否成功, 错误说明, 是否为"目标已存在"冲突)。
     """
-    tmp_path = dst_path + ".archivetmp"
+    # ---- C2：源边界重校验（读源之前）----
+    if not _is_within_root(src_path, root):
+        return False, f"源路径越出整理空间：{src_path}", False
+
+    # ---- C4：短临时名（目标目录内）----
+    dst_dir = os.path.dirname(dst_path)
     counter = 0
-    while os.path.exists(win_long_path(tmp_path)):
+    while True:
+        tmp_name = ".abtmp" if counter == 0 else f".abtmp{counter}"
+        tmp_path = os.path.join(dst_dir, tmp_name)
+        if not os.path.exists(win_long_path(tmp_path)):
+            break
         counter += 1
-        tmp_path = f"{dst_path}.archivetmp{counter}"
+
+    # ---- 复制源到临时副本 ----
     try:
         shutil.copy2(win_long_path(src_path), win_long_path(tmp_path))
     except OSError as e:
         return False, f"复制到临时文件失败：{e}", False
 
-    dst_long = win_long_path(dst_path)
-    # 先独占创建目标名，挡住「检查时不存在、替换前被别人建出来」的覆盖窗口。
-    # 创建出来的空文件马上被同目录的临时副本原子替换。
+    # 记录临时副本指纹，用于 C3 源内容核对
     try:
-        exclusive = os.open(dst_long, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        tmp_sha = sha256_file(tmp_path)
+    except OSError:
+        tmp_sha = None
+
+    # ---- C2：目标边界重校验（写目标之前）----
+    if not _is_within_root(dst_path, root):
+        try:
+            os.unlink(win_long_path(tmp_path))
+        except OSError:
+            pass
+        return False, f"目标路径越出整理空间：{dst_path}", False
+
+    dst_long = win_long_path(dst_path)
+    # 独占创建目标名；拿到的 fd 直接写入内容，不再用 os.replace（C1）。
+    try:
+        dst_fd = os.open(dst_long, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError:
         try:
             os.unlink(win_long_path(tmp_path))
@@ -866,35 +924,119 @@ def _copy_then_replace(src_path: str, dst_path: str) -> tuple[bool, str, bool]:
         except OSError:
             pass
         return False, f"无法独占创建目标：{e}", False
-    else:
-        os.close(exclusive)
 
-    try:
-        os.replace(win_long_path(tmp_path), dst_long)
-    except OSError as e:
+    # ---- C2：O_EXCL 成功后重核边界。目标目录可能在校验后被换成空间外链接，
+    # 导致我们刚在空间外建了 inode。只删我们自己建的（inode 与 fd 一致）。----
+    if not _is_within_root(dst_path, root):
         try:
-            os.unlink(dst_long)
+            fd_st = os.fstat(dst_fd)
+            _unlink_if_ours(dst_long, fd_st.st_ino, fd_st.st_dev)
         except OSError:
             pass
+        os.close(dst_fd)
         try:
             os.unlink(win_long_path(tmp_path))
         except OSError:
             pass
-        return False, f"原子替换目标失败：{e}", False
+        return False, "目标路径在创建后越出整理空间（符号链接逃逸）", False
 
+    # ---- 把临时副本内容写入目标 fd ----
+    our_ino = -1
+    our_dev = -1
+    write_ok = True
+    write_err = ""
+    try:
+        with open(win_long_path(tmp_path), "rb") as tf:
+            while True:
+                chunk = tf.read(1024 * 1024)
+                if not chunk:
+                    break
+                os.write(dst_fd, chunk)
+        fd_st = os.fstat(dst_fd)
+        our_ino = fd_st.st_ino
+        our_dev = fd_st.st_dev
+    except OSError as e:
+        write_ok = False
+        write_err = str(e)
+    finally:
+        try:
+            os.close(dst_fd)
+        except OSError:
+            pass
+
+    if not write_ok:
+        if our_ino != -1:
+            _unlink_if_ours(dst_long, our_ino, our_dev)
+        try:
+            os.unlink(win_long_path(tmp_path))
+        except OSError:
+            pass
+        return False, f"写入目标失败：{write_err}", False
+
+    # ---- C1：核对路径 dst 当前 inode 必须还是我们创建的那个。
+    # 若占位在写入期间被换成别的文件，绝不动它，只清临时副本报失败。----
+    try:
+        path_st = os.stat(dst_long)
+        if path_st.st_ino != our_ino or path_st.st_dev != our_dev:
+            try:
+                os.unlink(win_long_path(tmp_path))
+            except OSError:
+                pass
+            return False, "目标占位文件在落盘期间被替换，为避免覆盖未移动", False
+    except OSError:
+        try:
+            os.unlink(win_long_path(tmp_path))
+        except OSError:
+            pass
+        return False, "目标路径在落盘后消失", False
+
+    # ---- C3：删源之前重新核对源内容未变 ----
+    if tmp_sha is not None:
+        if not _is_within_root(src_path, root):
+            _unlink_if_ours(dst_long, our_ino, our_dev)
+            try:
+                os.unlink(win_long_path(tmp_path))
+            except OSError:
+                pass
+            return False, "源路径在落盘期间越出整理空间", False
+        try:
+            src_sha = sha256_file(src_path)
+        except OSError:
+            src_sha = None
+        if src_sha != tmp_sha:
+            # 源被改：回滚目标（仅当还是我们的 inode），保留源的新内容
+            _unlink_if_ours(dst_long, our_ino, our_dev)
+            try:
+                os.unlink(win_long_path(tmp_path))
+            except OSError:
+                pass
+            return False, "源文件在复制后被修改，已回滚目标并保留源文件", False
+
+    # ---- 删除源 ----
+    if not _is_within_root(src_path, root):
+        _unlink_if_ours(dst_long, our_ino, our_dev)
+        try:
+            os.unlink(win_long_path(tmp_path))
+        except OSError:
+            pass
+        return False, "源路径在删除前越出整理空间", False
     try:
         os.unlink(win_long_path(src_path))
     except OSError as e:
-        # 源删除失败：回滚目标，保留源。回滚也失败时两份都还在，必须照实说明。
+        # 删源失败：回滚目标（仅当还是我们的），保留源
+        _unlink_if_ours(dst_long, our_ino, our_dev)
         try:
-            os.unlink(dst_long)
-        except OSError as rollback_err:
-            return False, (
-                f"删除源失败，回滚目标也失败。源文件仍在：{src_path}；"
-                f"目标副本仍在：{dst_path}。"
-                f"（删除源：{e}；删除副本：{rollback_err}）"
-            ), False
-        return False, f"已复制但删除源失败（已回滚目标副本，源文件保留）：{e}", False
+            os.unlink(win_long_path(tmp_path))
+        except OSError:
+            pass
+        return False, f"已复制但删除源失败（已回滚目标，源文件保留）：{e}", False
+
+    # ---- 清理临时副本 ----
+    try:
+        os.unlink(win_long_path(tmp_path))
+    except OSError:
+        pass
+
     return True, "", False
 
 
