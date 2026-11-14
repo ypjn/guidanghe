@@ -1142,8 +1142,26 @@ def _move_file(src_path: str, dst_path: str, root: str,
 
     # ---- 重命名前：源目录项必须仍是本次打开的 inode ----
     if not _path_is_inode(src_path, src_st):
+        # 不调用重命名、不删被换入的文件；把 fd 里的完整原件流式落盘，
+        # 并把相对路径写入 actions.temp_rel，保证重启后还能找回原字节。
+        saved, s_err = _spill_from_fd(
+            src_fd, dst_path, root, src_size, src_mode,
+            src_atime_ns, src_mtime_ns)
         _close_src()
-        return False, "源路径已不是本次打开的文件（目录项被替换），未移动", False
+        if saved:
+            if on_tmp_ready is not None:
+                try:
+                    on_tmp_ready(saved)
+                except Exception:
+                    pass
+            return False, (
+                "源路径已不是本次打开的文件（目录项被替换），未重命名，换入文件原样保留；"
+                f"原字节已另存为：{os.path.join(root, saved)}"
+            ), False
+        return False, (
+            "源路径已不是本次打开的文件（目录项被替换），未重命名，换入文件原样保留；"
+            f"另存原字节失败：{s_err}"
+        ), False
 
     status, detail = _rename_no_replace(win_long_path(src_path), win_long_path(dst_path))
     if status == "ok":
@@ -1372,9 +1390,11 @@ def _copy_then_replace(src_path: str, dst_path: str, root: str,
         _close_src()
         return False, "目标路径已存在，为避免覆盖未移动", True
     except OSError as e:
-        _rollback_tmp()
+        # temp_rel 已登记：创建目标失败（含 ENOSPC）不得删除临时副本
         _close_src()
-        return False, f"无法独占创建目标：{e}", False
+        return False, (
+            f"无法独占创建目标：{e}；临时副本保留在：{tmp_path}"
+        ), False
 
     try:
         dst_st = os.fstat(dst_fd)
@@ -1433,11 +1453,11 @@ def _copy_then_replace(src_path: str, dst_path: str, root: str,
                 pass
 
     if write_err:
+        # 只回滚本次创建的目标 inode；临时副本（temp_rel 已登记）必须保留
         _close_dst()
         _unlink_if_ours(dst_path, our_ino, our_dev)
-        _rollback_tmp()
         _close_src()
-        return False, write_err, False
+        return False, f"{write_err}；临时副本保留在：{tmp_path}", False
 
     # ---- 第一次身份核对：路径必须仍指向我们创建的 inode（C1）----
     if not _path_is_inode(dst_path, dst_st):
@@ -1502,11 +1522,14 @@ def _copy_then_replace(src_path: str, dst_path: str, root: str,
     try:
         os.unlink(win_long_path(src_path))
     except OSError as e:
+        # 只回滚本次创建的目标 inode；源保持原字节，临时副本保留（temp_rel 不清空）
         _close_dst()
         _unlink_if_ours(dst_path, our_ino, our_dev)
-        _rollback_tmp()
         _close_src()
-        return False, f"已复制但删除源失败（已回滚目标，源文件保留）：{e}", False
+        return False, (
+            f"已复制但删除源失败（已回滚目标，源文件保留）：{e}；"
+            f"临时副本保留在：{tmp_path}"
+        ), False
 
     # ---- 删源返回后立刻核对目标目录项（D5）----
     # 仍打开的 dst_fd 持有目标 inode，src_fd 持有源 inode；两边都能流式读回。

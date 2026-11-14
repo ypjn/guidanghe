@@ -888,6 +888,210 @@ def test_memory_increment():
     check("R13-128MiB 正常移动峰值内存增量 <= 80MiB", ok_flag, detail)
 
 
+# ===== 7. 6.0 口径收尾：换源保留磁盘原件 / temp_rel 不清空 =====
+
+def _reopen_action(root, batch_id):
+    db = Storage(root)
+    try:
+        return db.get_actions(batch_id)[0]
+    finally:
+        db.close()
+
+
+def _swap_read_entry_after_open(read_path, other):
+    """在源/整理件 fd 打开后立刻替换其目录项（rename 入口之前）。"""
+    real_open = os.open
+    state = {"done": False}
+
+    def hooked_open(path, flags, *args, **kwargs):
+        fd = real_open(path, flags, *args, **kwargs)
+        if (not state["done"] and not (flags & os.O_CREAT)
+                and os.path.abspath(str(path)) == os.path.abspath(read_path)):
+            state["done"] = True
+            real_unlink = os.unlink
+            real_unlink(read_path)
+            with open(read_path, "wb") as f:
+                f.write(other)
+        return fd
+
+    return hooked_open, state
+
+
+def test_swap_before_rename_execute():
+    with tempfile.TemporaryDirectory() as d:
+        root = os.path.join(d, "root")
+        os.makedirs(root)
+        src = os.path.join(root, "a.txt")
+        dst = os.path.join(root, "_已整理", "a.txt")
+        plan = make_plan(root, "a.txt", "_已整理/a.txt", APPROVED)
+        store = Storage(root)
+        hooked, state = _swap_read_entry_after_open(src, OTHER)
+        real_open = os.open
+        try:
+            executor.os.open = hooked
+            res = executor.execute_plan(plan, store)
+        finally:
+            executor.os.open = real_open
+        batch_id = res.batch_id
+        store.close()
+        action = _reopen_action(root, batch_id)
+        saved = (os.path.join(root, action.temp_rel)
+                 if action.temp_rel else "")
+
+        check("R14-注入生效（整理）", state["done"])
+        check("R14-未调用重命名、目标不存在", not os.path.exists(dst))
+        check("R14-换入文件原样留在源目录项", read_bytes(src) == OTHER,
+              f"src={read_bytes(src)!r}")
+        check("R14-历史为 failed", action.status == "failed",
+              f"status={action.status}")
+        check("R14-重开后 temp_rel 指向的字节等于原字节",
+              bool(saved) and read_bytes(saved) == APPROVED,
+              f"temp_rel={action.temp_rel!r} bytes={read_bytes(saved)!r}")
+        check("R14-错误里写明另存路径",
+              bool(saved) and saved in action.error, f"error={action.error}")
+
+
+def test_swap_before_rename_undo():
+    with tempfile.TemporaryDirectory() as d:
+        root = os.path.join(d, "root")
+        os.makedirs(root)
+        src = os.path.join(root, "a.txt")
+        dst = os.path.join(root, "_已整理", "a.txt")
+        plan = make_plan(root, "a.txt", "_已整理/a.txt", APPROVED)
+        store = Storage(root)
+        moved = executor.execute_plan(plan, store)
+        check("R15-前置整理成功", moved.moved == 1, f"moved={moved.moved}")
+
+        hooked, state = _swap_read_entry_after_open(dst, OTHER)
+        real_open = os.open
+        try:
+            executor.os.open = hooked
+            executor.undo_latest_batch(store)
+        finally:
+            executor.os.open = real_open
+        store.close()
+        action = _reopen_action(root, moved.batch_id)
+        saved = (os.path.join(root, action.temp_rel)
+                 if action.temp_rel else "")
+
+        check("R15-注入生效（撤销）", state["done"])
+        check("R15-换入文件原样留在整理目录", read_bytes(dst) == OTHER,
+              f"dst={read_bytes(dst)!r}")
+        check("R15-原路径未被重建", not os.path.exists(src))
+        check("R15-历史为 conflict", action.status == "conflict",
+              f"status={action.status}")
+        check("R15-重开后 temp_rel 指向的字节等于原字节",
+              bool(saved) and read_bytes(saved) == APPROVED,
+              f"temp_rel={action.temp_rel!r} bytes={read_bytes(saved)!r}")
+
+
+def _copy_failure_case(mode):
+    with tempfile.TemporaryDirectory() as d:
+        root = os.path.join(d, "root")
+        os.makedirs(root)
+        src = os.path.join(root, "a.txt")
+        dst = os.path.join(root, "_已整理", "a.txt")
+        plan = make_plan(root, "a.txt", "_已整理/a.txt", APPROVED)
+        store = Storage(root)
+
+        import errno as _errno
+        real_open = os.open
+        real_write = os.write
+        real_unlink = os.unlink
+        state = {"done": False, "target_fd": None}
+
+        def hooked_open(path, flags, *args, **kwargs):
+            if mode == "target-enospc" and (flags & os.O_EXCL) and \
+                    os.path.abspath(str(path)) == os.path.abspath(dst):
+                state["done"] = True
+                raise OSError(_errno.ENOSPC, "injected create ENOSPC")
+            fd = real_open(path, flags, *args, **kwargs)
+            if mode == "target-write-enospc" and (flags & os.O_EXCL) and \
+                    os.path.abspath(str(path)) == os.path.abspath(dst):
+                state["target_fd"] = fd
+            return fd
+
+        def hooked_write(fd, data):
+            if mode == "target-write-enospc" and fd == state["target_fd"]:
+                state["done"] = True
+                raise OSError(_errno.ENOSPC, "injected write ENOSPC")
+            return real_write(fd, data)
+
+        def hooked_unlink(path):
+            if mode == "source-unlink-denied" and \
+                    os.path.abspath(str(path)) == os.path.abspath(src):
+                state["done"] = True
+                raise OSError(_errno.EACCES, "injected unlink EACCES")
+            return real_unlink(path)
+
+        try:
+            with force_copy_path():
+                executor.os.open = hooked_open
+                executor.os.write = hooked_write
+                executor.os.unlink = hooked_unlink
+                try:
+                    res = executor.execute_plan(plan, store)
+                finally:
+                    executor.os.open = real_open
+                    executor.os.write = real_write
+                    executor.os.unlink = real_unlink
+        finally:
+            executor.os.open = real_open
+            executor.os.write = real_write
+            executor.os.unlink = real_unlink
+        batch_id = res.batch_id
+        store.close()
+        action = _reopen_action(root, batch_id)
+        saved = (os.path.join(root, action.temp_rel)
+                 if action.temp_rel else "")
+        # 必须在临时目录销毁前读字节
+        return (state, action, saved,
+                read_bytes(src), read_bytes(saved),
+                os.path.exists(dst))
+
+
+def test_copy_target_enospc_keeps_temp():
+    state, action, saved, src_bytes, saved_bytes, dst_exists = \
+        _copy_failure_case("target-enospc")
+    check("R16-注入生效（建目标 ENOSPC）", state["done"])
+    check("R16-历史为 failed", action.status == "failed", f"status={action.status}")
+    check("R16-temp_rel 未清空且字节完整",
+          bool(saved) and saved_bytes == APPROVED,
+          f"temp_rel={action.temp_rel!r} bytes={saved_bytes!r}")
+    check("R16-源文件保持原字节", src_bytes == APPROVED, f"src={src_bytes!r}")
+    check("R16-目标未创建", not dst_exists)
+    check("R16-错误里写明临时副本路径", bool(saved) and saved in action.error,
+          f"error={action.error}")
+
+
+def test_copy_target_write_enospc_keeps_temp():
+    state, action, saved, src_bytes, saved_bytes, dst_exists = \
+        _copy_failure_case("target-write-enospc")
+    check("R17-注入生效（写目标 ENOSPC）", state["done"])
+    check("R17-历史为 failed", action.status == "failed", f"status={action.status}")
+    check("R17-temp_rel 未清空且字节完整",
+          bool(saved) and saved_bytes == APPROVED,
+          f"temp_rel={action.temp_rel!r} bytes={saved_bytes!r}")
+    check("R17-源文件保持原字节", src_bytes == APPROVED, f"src={src_bytes!r}")
+    check("R17-只回滚本次创建的目标", not dst_exists)
+    check("R17-错误里写明临时副本路径", bool(saved) and saved in action.error,
+          f"error={action.error}")
+
+
+def test_copy_unlink_denied_keeps_temp():
+    state, action, saved, src_bytes, saved_bytes, dst_exists = \
+        _copy_failure_case("source-unlink-denied")
+    check("R18-注入生效（删源 EACCES）", state["done"])
+    check("R18-历史为 failed", action.status == "failed", f"status={action.status}")
+    check("R18-temp_rel 未清空且字节完整",
+          bool(saved) and saved_bytes == APPROVED,
+          f"temp_rel={action.temp_rel!r} bytes={saved_bytes!r}")
+    check("R18-源文件保持原字节", src_bytes == APPROVED, f"src={src_bytes!r}")
+    check("R18-只回滚本次创建的目标", not dst_exists)
+    check("R18-错误里写明临时副本路径", bool(saved) and saved in action.error,
+          f"error={action.error}")
+
+
 if __name__ == "__main__":
     # 前 11 组回归针对跨卷复制路径：强制 rename 不可用，保证逻辑仍被覆盖
     with force_copy_path():
@@ -910,5 +1114,11 @@ if __name__ == "__main__":
     test_source_replaced_at_rename()
     test_cleanup_enospc_keeps_original()
     test_memory_increment()
+    # 6.0 口径收尾
+    test_swap_before_rename_execute()
+    test_swap_before_rename_undo()
+    test_copy_target_enospc_keeps_temp()
+    test_copy_target_write_enospc_keeps_temp()
+    test_copy_unlink_denied_keeps_temp()
     print(f"\n合计：通过 {PASS} / 未通过 {FAIL}")
     sys.exit(0 if FAIL == 0 else 1)
