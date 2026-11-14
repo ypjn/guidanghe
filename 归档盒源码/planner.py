@@ -128,8 +128,9 @@ class PlanItem:
     # 阶段 1：正文与目录上下文（仅内存字段，不写 SQLite）
     content_text: str = ""          # .txt/.md 正文片段（最多 4096 字节）
     content_error: str = ""         # 未支持 / 读取失败 / 解码说明
-    content_source: str = ""        # 正文 / 图片文字 / 路径 / 空
+    content_source: str = ""        # 正文 / 图片文字 / 路径 / AI / 空
     path_evidence: str = ""         # 用户可见的目录上下文说明
+    decision_evidence: str = ""     # 当前决定实际依据（路径/长期规则/正文）
     ambiguity: Optional[dict] = None  # 会改变落点的歧义（候选与原因）
     user_resolved: bool = False     # 用户已在预览里改选
     skipped: bool = False           # 用户已在预览里跳过，保持原位
@@ -592,58 +593,52 @@ def _candidate(item: PlanItem, direction: str, semester: str,
 def _detect_ambiguities(items: List[PlanItem], compiled: CompiledConfig) -> None:
     """只标记会改变落点的歧义；唯一规则命中不提问。
 
-    两类来源：
-    - 目录上下文指向一个方向，正文指向另一个方向；
-    - 正文同时命中多个不同类别的关键词，分不出先后。
+    只把「正文实际命中、并且落点和当前决定不同」的候选拿来提问。
+    长期规则按精确路径、来源目录或文件名命中时，沿用它已经算出的目标
+    和勾选状态，不把规则本身当成正文依据。
     """
     for item in items:
         body = (item.content_text or "").strip()
         if not body:
             continue
-        candidates: List[dict] = []
-        seen: set[tuple] = set()
 
-        def add(cand: dict) -> None:
-            key = (cand["direction"], cand["semester"], cand["category"])
-            if key in seen:
-                return
-            seen.add(key)
-            candidates.append(cand)
-
-        dir_match = classify_context(item.file.rel_path, compiled)
-        if ((dir_match.direction or "") != PENDING_DIRECTION
-                and dir_match.rule_key != "fallback"):
-            add(_candidate(item, dir_match.direction, dir_match.semester or "",
-                           dir_match.category or "", "目录上下文"))
-
+        current_key = (
+            item.direction or "", item.semester or "", item.category or "")
+        body_candidates: List[dict] = []
+        seen: set[tuple] = {current_key}
         text = body.lower()
         for rule in (list(compiled.keyword_unmatched)
                      + list(compiled.keyword_subdir)):
+            key = (rule.direction or "", item.semester or "",
+                   rule.target or "")
+            if key in seen:
+                continue
             for kw in rule.keywords:
                 if keyword_matches(text, kw):
-                    add(_candidate(item, rule.direction, item.semester or "",
+                    seen.add(key)
+                    body_candidates.append(
+                        _candidate(item, rule.direction, item.semester or "",
                                    rule.target, f"正文关键词「{kw}」"))
                     break
 
-        lt = match_long_term_rule(
-            item.file.rel_path, compiled, body, extra_source="body")
-        if lt is not None:
-            add(_candidate(item, lt.rule.direction, lt.rule.semester or "",
-                           lt.rule.category or "",
-                           f"正文命中长期规则「{lt.rule.name}」"))
-
-        targets = {os.path.normcase(c["target_dir_rel"]) for c in candidates}
-        if len(candidates) < 2 or len(targets) < 2:
+        if not body_candidates:
+            # 正文没有指向别处：长期规则/目录已经决定去向，不提问、不取消勾选。
             continue
 
-        reasons = []
-        if any(c["evidence"] == "目录上下文" for c in candidates):
-            reasons.append("目录上下文")
-        if any("正文" in c["evidence"] for c in candidates):
-            reasons.append("正文")
+        current_is_body = item.content_source == "正文"
+        current = {
+            "direction": item.direction or "",
+            "semester": item.semester or "",
+            "category": item.category or "",
+            "evidence": item.decision_evidence or "目录上下文",
+            "target_dir_rel": item.target_dir_rel,
+            "label": (f"{item.direction}/{item.category}"
+                      if item.category else (item.direction or "待定")),
+        }
         item.ambiguity = {
-            "reason": "与".join(reasons) + "指向不同去向",
-            "candidates": candidates,
+            "reason": ("正文命中多个不同去向" if current_is_body
+                       else "目录上下文与正文指向不同去向"),
+            "candidates": [current] + body_candidates,
         }
         item.selected = False
         item.rule_applied = (
@@ -683,6 +678,10 @@ def resolve_ambiguity(plan: OrganizePlan, source_rel: str,
     item.rule_applied = (
         f"用户改选：{evidence} → "
         f"{direction}/{category or '（无类别）'}；依据：{evidence}")
+    item.decision_evidence = evidence
+    item.content_source = (
+        "正文" if "正文" in evidence
+        else ("图片文字" if "图片文字" in evidence else "路径"))
     item.is_manual_overridden = False
     item.user_resolved = True
     item.skipped = False
@@ -876,6 +875,8 @@ def classify_entries(
                     f"长期规则「{lt_rule.name}」：{lt_match.evidence} → "
                     f"{direction}/{category or '（无类别）'}")
                 rule_key = f"long_term:{lt_rule.rule_id}"
+                decision_evidence = (
+                    f"长期规则「{lt_rule.name}」：{lt_match.evidence}")
         else:
             course = ""
             rule_idx = None
@@ -902,9 +903,28 @@ def classify_entries(
         used_extra = (
             (extra_source == "body"
              and ("（正文）" in rule_desc
+                  or "正文关键词" in rule_desc
                   or rule_key.startswith("content_keyword:")))
-            or (extra_source == "image" and "（图片文字）" in rule_desc)
+            or (extra_source == "image"
+                and ("（图片文字）" in rule_desc
+                     or "图片文字关键词" in rule_desc))
         )
+        if rule_key.startswith("long_term:"):
+            pass  # decision_evidence 已在长期规则命中时写入
+        elif used_extra:
+            decision_evidence = (
+                "正文" if extra_source == "body" else "图片文字")
+        elif rule_key != "fallback":
+            decision_evidence = "目录上下文"
+        else:
+            decision_evidence = ""
+        if used_extra:
+            content_source = (
+                "正文" if extra_source == "body" else "图片文字")
+        elif rule_key != "fallback":
+            content_source = "路径"
+        else:
+            content_source = ""
         path_evidence = _path_evidence(
             fentry.rel_path, compiled, anchor_index)
         rule_desc = _append_evidence(
@@ -933,10 +953,9 @@ def classify_entries(
             auto_rule_applied=rule_desc,
             content_text=body,
             content_error=content_error,
-            content_source=("正文" if body else
-                            ("图片文字" if extra_source == "image" and extra
-                             else "路径")),
+            content_source=content_source,
             path_evidence=path_evidence,
+            decision_evidence=decision_evidence,
         )
         if ocr_texts is not None and fentry.rel_path in ocr_texts:
             item.ocr_text = ocr_texts[fentry.rel_path] or ""

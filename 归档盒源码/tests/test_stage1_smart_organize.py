@@ -25,7 +25,9 @@ from PySide6.QtWidgets import QApplication, QDialog  # noqa: E402
 
 import ai_fallback  # noqa: E402
 from ai_fallback import AiSettings, apply_ai_fallback  # noqa: E402
-from classification_config import default_config  # noqa: E402
+from classification_config import (  # noqa: E402
+    MATCH_DIR_SCOPE, LongTermRule, default_config,
+)
 from content_extract import extract_contents  # noqa: E402
 from planner import (  # noqa: E402
     MODE_BY_DIRECTION_SEMESTER, generate_plan,
@@ -183,6 +185,8 @@ def check_body_distinguishes_same_names():
     assert "正文" in first.rule_applied, first.rule_applied
     assert "正文" in second.rule_applied, second.rule_applied
     assert first.selected and second.selected
+    assert first.content_source == "正文", first.content_source
+    assert second.content_source == "正文", second.content_source
     assert not plan.ai_note and not plan.ai_rejections
     # 联网关闭：没有任何 AI 结果，分类完全来自本地规则 + 正文。
 
@@ -494,10 +498,117 @@ def check_ai_defaults_off():
         window.close()
 
 
+def check_long_term_dir_is_not_body_evidence():
+    root = root_dir()
+    write(root, "大二上/数据结构/说明.md", "今天的会议只记录了出席名单。")
+    cfg = default_config()
+    cfg.long_term_rules.append(LongTermRule(
+        rule_id="lt-review-dir", name="数据结构归项目",
+        match_type=MATCH_DIR_SCOPE, source_path="大二上/数据结构",
+        include_subdirs=True, direction="项目", category="数据大创",
+    ))
+    _scan, _extraction, plan = build(root, config=cfg)
+    item = item_by(plan, "大二上/数据结构/说明.md")
+    assert item.target_dir_rel.startswith("_已整理/项目/数据大创"), item.target_dir_rel
+    assert item.selected is True, "长期目录规则已决定去向，不应取消勾选"
+    assert item.ambiguity is None, item.ambiguity
+    assert item.content_source == "路径", item.content_source
+    assert "来源目录" in item.rule_applied, item.rule_applied
+    assert "正文命中" not in item.rule_applied, item.rule_applied
+
+    # 正文真的指向另一个落点时仍然要提问，两边依据各写各的来源。
+    root2 = root_dir()
+    write(root2, "大二上/数据结构/说明.md", "高等数学 极限 导数")
+    _scan2, _extraction2, plan2 = build(root2, config=cfg)
+    item2 = item_by(plan2, "大二上/数据结构/说明.md")
+    assert item2.ambiguity is not None, item2.rule_applied
+    assert item2.selected is False
+    texts = [c["evidence"] for c in item2.ambiguity["candidates"]]
+    assert any("来源目录" in t for t in texts), texts
+    assert any("正文关键词「高等数学」" in t for t in texts), texts
+    assert not any("正文命中长期规则" in t for t in texts), texts
+
+
+def check_content_source_matches_actual_evidence():
+    root = root_dir()
+    write(root, "大二上/高等数学/说明.md", "同样的中性说明文字，不含课程关键词。")
+    _scan, _extraction, plan = build(root)
+    item = item_by(plan, "大二上/高等数学/说明.md")
+    assert item.content_source == "路径", item.content_source
+    assert "课程目录" in item.rule_applied, item.rule_applied
+    app()
+    window = make_window(plan, root)
+    try:
+        window.table.selectRow(0)
+        window._update_inspector()
+        assert "路径" in window.inspector_evidence.text(), (
+            window.inspector_evidence.text())
+    finally:
+        window._storage.close()
+        window.close()
+
+
+def check_invalid_ai_keeps_local_selection():
+    root = root_dir()
+    write(root, "大二上/高等数学/板书.png", b"\x89PNG\r\n\x1a\n", binary=True)
+    _scan, _extraction, plan = build(root)
+    item = item_by(plan, "大二上/高等数学/板书.png")
+    assert item.direction == "课程" and item.category == "高等数学"
+    assert item.selected is True
+    item.ocr_error = "识别失败"
+    original_target = item.target_dir_rel
+    original_reason = item.rule_applied
+    settings = AiSettings(api_key="test-key", enabled=True)
+
+    ai_fallback._result_cache.clear()
+    ai_fallback._result_cache_order.clear()
+    apply_ai_fallback(
+        plan, settings, transport=lambda _s, _m: "不是 JSON",
+        require_evidence=True)
+    assert item.target_dir_rel == original_target
+    assert item.selected is True, "无效 AI 响应不能推翻已勾选的本地分类"
+    assert item.rule_applied == original_reason
+    assert any(r["reason"] == "模型没有返回 JSON"
+               for r in plan.ai_rejections), plan.ai_rejections
+
+    ai_fallback._result_cache.clear()
+    ai_fallback._result_cache_order.clear()
+    plan.ai_rejections.clear()
+    skip_text = (
+        '{"file":"大二上/高等数学/板书.png","direction":"课程",'
+        '"category":"高等数学","action":"skip","evidence":"识别失败"}')
+    apply_ai_fallback(
+        plan, settings,
+        transport=lambda _s, _m: skip_text, require_evidence=True)
+    assert item.selected is True, "AI 建议跳过不能覆盖本地分类"
+    assert item.skipped is False
+    assert item.rule_applied == original_reason
+    assert any("AI 建议跳过" in r["reason"]
+               for r in plan.ai_rejections), plan.ai_rejections
+
+    # 待定文件的既有行为保持不变：非法响应仍不勾选、目标不变。
+    root2 = root_dir()
+    write(root2, "下载/未知.md", "这是一份没有关键词的说明")
+    _scan2, _extraction2, plan2 = build(root2)
+    pending = item_by(plan2, "下载/未知.md")
+    target = pending.target_dir_rel
+    ai_fallback._result_cache.clear()
+    ai_fallback._result_cache_order.clear()
+    apply_ai_fallback(
+        plan2, settings, transport=lambda _s, _m: "不是 JSON",
+        require_evidence=True)
+    assert pending.selected is False
+    assert pending.target_dir_rel == target
+    assert plan2.ai_rejections
+
+
 CHECKS = [
     ("正文提取与未支持格式", check_content_extraction),
     ("同名文件靠正文区分（关网）", check_body_distinguishes_same_names),
     ("课程目录与项目目录路径依据", check_path_evidence),
+    ("长期目录规则不是正文依据", check_long_term_dir_is_not_body_evidence),
+    ("依据来源与实际证据一致", check_content_source_matches_actual_evidence),
+    ("无效 AI 响应不推翻本地分类", check_invalid_ai_keeps_local_selection),
     ("歧义改选后必须重新确认", check_ambiguity_resolution_requires_reconfirm),
     ("跳过后源路径与 SHA 不变", check_skip_keeps_source),
     ("非法目标与无效模型响应", check_invalid_ai_responses),

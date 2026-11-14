@@ -2267,7 +2267,7 @@ class MainWindow(QMainWindow):
         folder = os.path.dirname(item.file.rel_path) or "所在文件夹的根目录"
         self.inspector_meta.setText(f"{folder} · {item.file.size_display}")
         self.inspector_reason.setText(item.rule_applied or "—")
-        source_label = item.content_source or "路径"
+        source_label = item.content_source or "未确定"
         extra_source = ""
         if getattr(item, "ambiguity", None):
             extra_source = "｜歧义，待确认"

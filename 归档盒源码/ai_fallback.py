@@ -301,10 +301,18 @@ def _evidence(item) -> str:
     return "规则没有命中"
 
 
+def _locally_decided(item) -> bool:
+    """本地规则已经决定去向且已勾选；AI 失败/跳过不能推翻它。"""
+    return (bool(item.selected)
+            and item.rule_key not in ("", "fallback")
+            and not getattr(item, "ambiguity", None))
+
+
 def _apply_choice(item, mode: str, direction: str, category: str,
                   model_evidence: str = "") -> None:
     evidence = _evidence(item)
     item.rule_key = "ai"
+    item.content_source = "AI"
     if not getattr(item, "ambiguity", None):
         # 通过校验、又不是未确认歧义的建议，默认勾选，等待用户最终确认批次。
         item.selected = True
@@ -577,15 +585,24 @@ def apply_ai_fallback(plan: OrganizePlan, settings: AiSettings,
                     "file": item.file.rel_path,
                     "reason": reason,
                 })
-                item.rule_applied = (
-                    item.rule_applied
-                    + f"；AI 建议未采用：{reason}（保持原位）")
-                item.selected = False
+                if not _locally_decided(item):
+                    item.rule_applied = (
+                        item.rule_applied
+                        + f"；AI 建议未采用：{reason}（保持原位）")
+                    item.selected = False
                 continue
             if suggestion is None:
                 skipped += 1
                 continue
             if suggestion.action == "skip":
+                if _locally_decided(item):
+                    # 本地规则/目录已经决定去向，AI 的跳过不能覆盖。
+                    plan.ai_rejections.append({
+                        "file": item.file.rel_path,
+                        "reason": "AI 建议跳过，未覆盖已确定的本地分类",
+                    })
+                    rejected += 1
+                    continue
                 item.selected = False
                 item.skipped = True
                 item.rule_applied = (
