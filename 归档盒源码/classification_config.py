@@ -1239,7 +1239,8 @@ def _norm_rel(value: str) -> str:
 
 def match_long_term_rule(rel_path: str,
                          compiled: CompiledConfig,
-                         extra_text: str = "") -> Optional[LongTermMatch]:
+                         extra_text: str = "",
+                         extra_source: str = "image") -> Optional[LongTermMatch]:
     """按配置顺序返回第一条命中的长期规则；未命中返回 None。
 
     顺序即优先级：调用方（classify_entries）取第一条命中后即覆盖原有分类。
@@ -1283,23 +1284,28 @@ def match_long_term_rule(rel_path: str,
                         rule, f"文件名关键词「{kw}」{where}")
             extra_lower = (extra_text or "").lower()
             if extra_lower:
+                label = "图片文字" if extra_source == "image" else "正文"
                 for kw in rule.keywords:
                     if _match_english_word(extra_lower, kw):
                         return LongTermMatch(
-                            rule, f"图片文字关键词「{kw}」{where}")
+                            rule, f"{label}关键词「{kw}」{where}")
     return None
 
 
-def _ocr_mark(source: str) -> str:
-    """关键词来自图片文字时，在分类依据末尾标明。"""
-    return "（图片文字）" if source == "image" else ""
+def _extra_mark(source: str) -> str:
+    """关键词来自正文或图片文字时，在分类依据末尾标明。"""
+    if source == "image":
+        return "（图片文字）"
+    if source == "body":
+        return "（正文）"
+    return ""
 
 
 def _keyword_matches(rule: KeywordRule, rel_path: str,
                      filename: str, extra_text: str = "") -> Tuple[Optional[str], str]:
-    """返回 (命中的关键词, 来源)。来源是 name 或 image；未命中时关键词为 None。
+    """返回 (命中的关键词, 来源)。来源是 name 或 extra；未命中时关键词为 None。
 
-    文件名或路径先匹配。只有那边没有命中时，才看调用方传来的图片文字。
+    文件名或路径先匹配。只有那边没有命中时，才看调用方传来的正文/图片文字。
     """
     text = (filename if rule.scope == SCOPE_FILENAME else rel_path).lower()
     for kw in rule.keywords:
@@ -1309,25 +1315,25 @@ def _keyword_matches(rule: KeywordRule, rel_path: str,
     if extra:
         for kw in rule.keywords:
             if _match_english_word(extra, kw):
-                return kw, "image"
+                return kw, "extra"
     return None, ""
 
 
 def _pick_keyword(rules, rel_path: str, filename: str, extra_text: str = ""):
-    """按列表顺序选关键词。文件名或路径命中优先于图片文字。
+    """按列表顺序选关键词。文件名或路径命中优先于正文/图片文字。
 
     返回 (从 1 计的序号, 规则, 关键词, 来源)；都未命中时返回 None。
     """
-    image_hit = None
+    extra_hit = None
     for i, rule in enumerate(rules, 1):
         kw, source = _keyword_matches(rule, rel_path, filename, extra_text)
         if not kw:
             continue
-        if source != "image":
+        if source != "extra":
             return i, rule, kw, source
-        if image_hit is None:
-            image_hit = (i, rule, kw, source)
-    return image_hit
+        if extra_hit is None:
+            extra_hit = (i, rule, kw, "extra")
+    return extra_hit
 
 
 _OUTPUT_TYPES = (
@@ -1497,7 +1503,8 @@ def _unmatched_fallback(compiled: CompiledConfig, rel_path: str,
                         filename: str, base_reason: str,
                         semester: str = "", anchor: int = -1,
                         category: str = "",
-                        extra_text: str = "") -> ContextMatch:
+                        extra_text: str = "",
+                        extra_source: str = "image") -> ContextMatch:
     """待定兜底：检查 trigger=unmatched 的关键词规则。
 
     未命中关键词时保持调用方给出的原始锚点与类别（与 V1.1 一致）。
@@ -1527,7 +1534,7 @@ def _unmatched_fallback(compiled: CompiledConfig, rel_path: str,
             anchor_index=anchor,
             rule_desc=(
                 f"关键词兜底「{kw}」→ {rule.direction}/{rule.target}"
-                f"{_ocr_mark(source)}"
+                f"{_extra_mark(extra_source if source == 'extra' else source)}"
             ),
             rule_key=f"keyword_unmatched:{i}:{kw}",
         )
@@ -1536,7 +1543,8 @@ def _unmatched_fallback(compiled: CompiledConfig, rel_path: str,
 
 
 def _classify_context_impl(rel_path: str, compiled: CompiledConfig,
-                           extra_text: str = "") -> ContextMatch:
+                           extra_text: str = "",
+                           extra_source: str = "image") -> ContextMatch:
     """按配置对单个相对路径分类。
 
     匹配顺序（固定、可解释）：
@@ -1595,10 +1603,10 @@ def _classify_context_impl(rel_path: str, compiled: CompiledConfig,
         if len(parts) == 1:
             return _unmatched_fallback(
                 compiled, rel_path, filename, "顶层散落文件",
-                extra_text=extra_text)
+                extra_text=extra_text, extra_source=extra_source)
         return _unmatched_fallback(
             compiled, rel_path, filename, f"未登记顶层目录「{top}」",
-            category=top, extra_text=extra_text)
+            category=top, extra_text=extra_text, extra_source=extra_source)
 
     # 3) 学期内一级目录
     if sem_index >= 0:
@@ -1650,7 +1658,7 @@ def _classify_context_impl(rel_path: str, compiled: CompiledConfig,
                     kw_rule.direction, sem_label, kw_rule.target, child_idx,
                     f"学期「{sem_label}」/「{child_dir}」+关键词「{kw}」"
                     f"→ {kw_rule.direction}/{kw_rule.target}"
-                    f"{_ocr_mark(source)}",
+                    f"{_extra_mark(extra_source if source == 'extra' else source)}",
                     f"keyword_subdir:{sem_label}/{child_dir}:{i}",
                 )
             return ContextMatch(
@@ -1673,7 +1681,7 @@ def _classify_context_impl(rel_path: str, compiled: CompiledConfig,
                 compiled, rel_path, filename,
                 f"学期「{sem_label}」/「{child_dir}」",
                 semester=sem_label, anchor=child_idx, category=child_dir,
-                extra_text=extra_text,
+                extra_text=extra_text, extra_source=extra_source,
             )
             if hit.rule_key != "fallback":
                 return hit
@@ -1688,10 +1696,12 @@ def _classify_context_impl(rel_path: str, compiled: CompiledConfig,
             compiled, rel_path, filename,
             f"学期「{sem_label}」根目录下",
             semester=sem_label, anchor=sem_index,
-            category=parts[sem_index], extra_text=extra_text)
+            category=parts[sem_index], extra_text=extra_text,
+            extra_source=extra_source)
 
     return _unmatched_fallback(
-        compiled, rel_path, filename, "无上下文", extra_text=extra_text)
+        compiled, rel_path, filename, "无上下文", extra_text=extra_text,
+        extra_source=extra_source)
 
 
 def _circ_to_jizu(rel_path: str, match: ContextMatch) -> ContextMatch:
@@ -1732,10 +1742,12 @@ def _circ_to_jizu(rel_path: str, match: ContextMatch) -> ContextMatch:
 
 
 def classify_context(rel_path: str, compiled: CompiledConfig,
-                     extra_text: str = "") -> ContextMatch:
+                     extra_text: str = "",
+                     extra_source: str = "image") -> ContextMatch:
     """按配置分类；.circ 在目录规则没有认出计组时，直接归计算机组成原理。
 
-    extra_text 是图片里识别出的文字。它只参与关键词，不参与目录组件匹配。
+    extra_text 是正文或图片里识别出的文字。它只参与关键词，不参与目录组件匹配。
     """
     return _circ_to_jizu(
-        rel_path, _classify_context_impl(rel_path, compiled, extra_text))
+        rel_path,
+        _classify_context_impl(rel_path, compiled, extra_text, extra_source))

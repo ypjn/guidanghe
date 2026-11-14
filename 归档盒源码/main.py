@@ -49,8 +49,10 @@ from planner import (
     MODE_LABELS, ALL_MODES,
     DEFAULT_COURSE_RULES, parse_rules_text, rules_to_text,
     ocr_maps_from_plan,
+    resolve_ambiguity, skip_plan_item,
 )
 from ocr_engine import OcrError, collect_image_text, engine_label, ocr_supported
+from content_extract import extract_contents
 from ai_fallback import AiSettings, apply_ai_fallback, load_settings, save_settings
 from classification_config import (
     ClassificationConfig, ClassificationConfigError, config_summary,
@@ -341,6 +343,17 @@ class PlanWorker(QThread):
                     self.cancelled.emit(self.seq)
                     return
 
+            # 阶段 1：读取纯文本正文（.txt/.md）；图片仍由上面的 OCR 负责。
+            extraction = extract_contents(
+                self.scan_result.files,
+                cancel_event=self.cancel_event,
+                progress_cb=_progress,
+            )
+            if self.cancel_event.is_set() or extraction.cancelled:
+                # 取消后不发布半成品计划；界面按 seq 丢弃迟到的结果。
+                self.cancelled.emit(self.seq)
+                return
+
             plan = generate_plan(
                 self.scan_result, self.mode, self.rules,
                 cancel_event=self.cancel_event,
@@ -348,6 +361,8 @@ class PlanWorker(QThread):
                 config=self.config,
                 ocr_texts=ocr_texts,
                 ocr_errors=ocr_errors,
+                content_texts=extraction.texts,
+                content_errors=extraction.errors,
             )
 
             if self.cancel_event.is_set():
@@ -361,6 +376,7 @@ class PlanWorker(QThread):
                     cancel_event=self.cancel_event,
                     progress_cb=_progress,
                     config=self.config,
+                    require_evidence=True,
                 )
                 if self.cancel_event.is_set():
                     self.cancelled.emit(self.seq)
@@ -1497,6 +1513,11 @@ class MainWindow(QMainWindow):
         # V1.6：预览搜索/筛选/批量勾选与目标树
         self._visible_flags: list[bool] = []
         self._plan_identity: tuple | None = None
+        # 阶段 1：歧义改选后旧确认作废，必须重新确认最终批次。
+        self._plan_revision = 0
+        self._confirmed_revision: int | None = None
+        self._ai_consent_given = False
+        self._ambiguity_item = None
         self._tree_dialog = None
         self._tree_refresh_timer = QTimer(self)
         self._tree_refresh_timer.setSingleShot(True)
@@ -1942,6 +1963,34 @@ class MainWindow(QMainWindow):
         self.plan_hint.hide()
         center.addWidget(self.plan_hint)
 
+        # 阶段 1：只对会改变落点的歧义提问。使用预览内的轻量选择，
+        # 不与执行确认框（ExecuteConfirmDialog）混用。
+        self.ambiguity_panel = QFrame()
+        self.ambiguity_panel.setStyleSheet(
+            "QFrame{background:#FFFBEB;border:1px solid #FDE68A;"
+            "border-radius:6px;}")
+        amb_lay = QVBoxLayout(self.ambiguity_panel)
+        amb_lay.setContentsMargins(10, 8, 10, 8)
+        amb_lay.setSpacing(6)
+        self.ambiguity_label = QLabel("")
+        self.ambiguity_label.setWordWrap(True)
+        self.ambiguity_label.setStyleSheet("color:#92400E;font-size:12px;")
+        amb_lay.addWidget(self.ambiguity_label)
+        amb_row = QHBoxLayout()
+        amb_row.setSpacing(6)
+        self.ambiguity_combo = QComboBox()
+        self.ambiguity_combo.setAccessibleName("歧义候选")
+        amb_row.addWidget(self.ambiguity_combo, 1)
+        self.btn_ambiguity_apply = QPushButton("按所选归入")
+        self.btn_ambiguity_apply.clicked.connect(self.on_apply_ambiguity_choice)
+        amb_row.addWidget(self.btn_ambiguity_apply)
+        self.btn_ambiguity_skip = QPushButton("跳过，保持原位")
+        self.btn_ambiguity_skip.clicked.connect(self.on_skip_ambiguity)
+        amb_row.addWidget(self.btn_ambiguity_skip)
+        amb_lay.addLayout(amb_row)
+        self.ambiguity_panel.hide()
+        center.addWidget(self.ambiguity_panel)
+
         self.protect_label = QLabel("")
         self.protect_label.setWordWrap(True)
         self.protect_label.setStyleSheet("color:#475569;font-size:12px;")
@@ -2006,6 +2055,10 @@ class MainWindow(QMainWindow):
         self.plan_counts_label = QLabel("")
         self.plan_counts_label.setStyleSheet("color:#475569;")
         footer.addWidget(self.plan_counts_label, 1)
+        # 阶段 1：影响范围（会移动哪些、跳过哪些）
+        self.impact_label = QLabel("")
+        self.impact_label.setStyleSheet("color:#475569;")
+        footer.addWidget(self.impact_label)
         self.btn_cancel = QPushButton("停止本次整理")
         self.btn_cancel.setProperty("role", "danger")
         self.btn_cancel.setToolTip("停止正在进行的整理。已经移走的文件会记在历史里")
@@ -2051,6 +2104,18 @@ class MainWindow(QMainWindow):
             return val
 
         self.inspector_reason = insp_field("分类依据")
+        self.inspector_evidence = insp_field("依据来源")
+        self.inspector_content_cap = QLabel("正文摘录")
+        self.inspector_content_cap.setStyleSheet("color:#64748B;font-size:12px;")
+        self.inspector_content = QLabel("—")
+        self.inspector_content.setWordWrap(True)
+        self.inspector_content.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.inspector_content.setStyleSheet("color:#0F172A;font-weight:400;")
+        self.inspector_content_cap.hide()
+        self.inspector_content.hide()
+        insp.addWidget(self.inspector_content_cap)
+        insp.addWidget(self.inspector_content)
         self.inspector_ocr_cap = QLabel("图片文字")
         self.inspector_ocr_cap.setStyleSheet("color:#64748B;font-size:12px;")
         self.inspector_ocr = QLabel("—")
@@ -2187,6 +2252,9 @@ class MainWindow(QMainWindow):
                 self.inspector_title.setText("还没有选中文件")
                 self.inspector_meta.setText("在中间的表格里选中一行。")
             self.inspector_reason.setText("—")
+            self.inspector_evidence.setText("—")
+            self.inspector_content_cap.hide()
+            self.inspector_content.hide()
             self.inspector_dir.setText("—")
             self.inspector_name.setText("—")
             self.inspector_ocr_cap.hide()
@@ -2199,6 +2267,17 @@ class MainWindow(QMainWindow):
         folder = os.path.dirname(item.file.rel_path) or "所在文件夹的根目录"
         self.inspector_meta.setText(f"{folder} · {item.file.size_display}")
         self.inspector_reason.setText(item.rule_applied or "—")
+        source_label = item.content_source or "路径"
+        extra_source = ""
+        if getattr(item, "ambiguity", None):
+            extra_source = "｜歧义，待确认"
+        elif getattr(item, "user_resolved", False):
+            extra_source = "｜用户已改选"
+        elif getattr(item, "skipped", False):
+            extra_source = "｜用户已跳过"
+        self.inspector_evidence.setText(
+            f"{source_label}{extra_source}｜{item.path_evidence or '相对路径'}")
+        self._show_inspector_content(item)
         self._show_inspector_ocr(item)
         shown_dir = (item.target_dir_rel or "—").replace(os.sep, " / ")
         self.inspector_dir.setText(shown_dir)
@@ -2229,6 +2308,24 @@ class MainWindow(QMainWindow):
             sizes[1] += sizes[2]
             sizes[2] = 0
             splitter.setSizes(sizes)
+
+    def _show_inspector_content(self, item):
+        """显示正文摘录或读取失败原因；图片走「图片文字」那一栏。"""
+        text = (getattr(item, "content_text", "") or "").strip()
+        error = (getattr(item, "content_error", "") or "").strip()
+        if not text and not error:
+            self.inspector_content_cap.hide()
+            self.inspector_content.hide()
+            return
+        self.inspector_content_cap.show()
+        self.inspector_content.show()
+        if text:
+            shown = text if len(text) <= 500 else text[:500] + "…"
+            if error:
+                shown += f"\n（{error}）"
+            self.inspector_content.setText(shown)
+        else:
+            self.inspector_content.setText(error)
 
     def _show_inspector_ocr(self, item):
         if item.file.file_type != "图片":
@@ -3562,26 +3659,35 @@ class MainWindow(QMainWindow):
         self.ai_check.setChecked(checked)
         self.ai_check.blockSignals(False)
 
+    def _ai_consent_text(self) -> str:
+        return (
+            "打开后，预览里仍是「待定」或图片识别失败的文件，会把下面这些内容"
+            "发给 api.deepseek.com：\n\n"
+            "• 文件名\n"
+            "• 相对路径\n"
+            "• 文件类型\n"
+            "• 不超过约 1200 字的正文片段\n"
+            "• 不超过约 1200 字的图片识别文字\n\n"
+            "不会上传整个文件。可以随时取消勾选关闭。\n"
+            "需要使用你自己的密钥，程序里没有内置密钥。\n"
+            "文件正文只作为待分析数据，不会被当作指令执行。\n\n"
+            "确定打开吗？")
+
+    def _ask_ai_consent(self) -> bool:
+        reply = QMessageBox.question(
+            self, "打开 DeepSeek 分类", self._ai_consent_text(),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        return reply == QMessageBox.Yes
+
     def _on_ai_toggled(self, *_):
         checked = self.ai_check.isChecked()
         if checked and not self._ai_settings.enabled:
-            reply = QMessageBox.question(
-                self, "打开 DeepSeek 分类",
-                "打开后，预览里仍是「待定」或图片识别失败的文件，会把下面这些内容"
-                "发给 api.deepseek.com：\n\n"
-                "• 文件名\n"
-                "• 相对路径\n"
-                "• 文件类型\n"
-                "• 最多约 1200 字的图片识别文字\n\n"
-                "不会上传整个文件。可以随时取消勾选关闭。\n"
-                "需要使用你自己的密钥，程序里没有内置密钥。\n\n"
-                "确定打开吗？",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No,
-            )
-            if reply != QMessageBox.Yes:
+            if not self._ask_ai_consent():
                 self._set_ai_checked(False)
                 return
+            self._ai_consent_given = True
             if not self._ai_settings.api_key.strip():
                 key, ok = QInputDialog.getText(
                     self, "DeepSeek 密钥",
@@ -3651,7 +3757,15 @@ class MainWindow(QMainWindow):
 
         use_ocr = bool(self._ocr_supported and self.ocr_check.isChecked())
         use_ai = bool(self.ai_check.isChecked() and mode != MODE_BY_TYPE)
-        parts = []
+        # 启用联网前必须再次说明会发送哪些字段；拒绝则只走本地规则。
+        if use_ai and not self._ai_consent_given:
+            if not self._ask_ai_consent():
+                use_ai = False
+                self._set_ai_checked(False)
+                self._ai_settings.enabled = False
+            else:
+                self._ai_consent_given = True
+        parts = ["读取正文"]
         if use_ocr:
             parts.append("识别图片文字")
         if use_ai:
@@ -3748,6 +3862,9 @@ class MainWindow(QMainWindow):
                 return
 
         self._populate_table(plan, reset_filters=True)
+        self._invalidate_confirmation()
+        self._update_plan_counts()
+        self._refresh_ambiguity_panel()
         self._update_button_states()
         ocr_done = sum(1 for i in plan.items if i.ocr_text is not None)
         ocr_fail = sum(1 for i in plan.items if i.ocr_error)
@@ -3762,6 +3879,12 @@ class MainWindow(QMainWindow):
                 ocr_msg = "（没有可识别的图片）"
         if plan.ai_note:
             ocr_msg += plan.ai_note
+        amb_count = sum(1 for i in plan.items if getattr(i, "ambiguity", None))
+        if amb_count:
+            ocr_msg += f"；{amb_count} 个歧义待确认（默认不勾选）"
+        rejected = len(getattr(plan, "ai_rejections", []) or [])
+        if rejected:
+            ocr_msg += f"；{rejected} 个 AI 建议未通过校验，保持原位"
         if plan.total == 0:
             self.statusBar().showMessage(self._empty_plan_text())
         else:
@@ -3789,6 +3912,9 @@ class MainWindow(QMainWindow):
         """取消/失败后清空计划与预览，保证没有任何可执行计划残留。"""
         self.current_plan = None
         self._plan_valid = False
+        self._ambiguity_item = None
+        if hasattr(self, "ambiguity_panel"):
+            self.ambiguity_panel.hide()
         self.table.setRowCount(0)
         self._reset_plan_filters()
         self._invalidate_duplicate_cache(close=True)
@@ -4106,6 +4232,111 @@ class MainWindow(QMainWindow):
         self._update_button_states()
         self._schedule_tree_refresh()
 
+    def _ambiguity_items(self):
+        plan = self.current_plan
+        if plan is None or not self._plan_valid:
+            return []
+        return [i for i in plan.items if getattr(i, "ambiguity", None)]
+
+    def _refresh_ambiguity_panel(self):
+        items = self._ambiguity_items()
+        if not items:
+            self._ambiguity_item = None
+            if hasattr(self, "ambiguity_panel"):
+                self.ambiguity_panel.hide()
+            return
+        item = items[0]
+        amb = item.ambiguity or {}
+        self._ambiguity_item = item
+        more = f"（还有 {len(items) - 1} 个待确认）" if len(items) > 1 else ""
+        self.ambiguity_label.setText(
+            f"{item.file.rel_path}：{amb.get('reason', '存在歧义')}。"
+            f"请选择去向，或跳过并保持原位{more}")
+        self.ambiguity_combo.clear()
+        for index, cand in enumerate(amb.get("candidates") or []):
+            self.ambiguity_combo.addItem(
+                f"{cand.get('label', '')}（{cand.get('evidence', '')}）", index)
+        self.ambiguity_combo.setCurrentIndex(0)
+        idle = not (self._working or self._plan_working
+                    or self._close_pending or self._closing)
+        self.ambiguity_combo.setEnabled(idle)
+        self.btn_ambiguity_apply.setEnabled(idle)
+        self.btn_ambiguity_skip.setEnabled(idle)
+        self.ambiguity_panel.show()
+
+    def _invalidate_confirmation(self):
+        """改选/跳过后，之前的确认不再代表最终批次。"""
+        self._plan_revision += 1
+        self._confirmed_revision = None
+
+    def _after_plan_mutation(self, message: str):
+        self._invalidate_confirmation()
+        plan = self.current_plan
+        if plan is not None:
+            self._populate_table(plan)
+        self._update_plan_counts()
+        self._refresh_ambiguity_panel()
+        self._update_button_states()
+        self.statusBar().showMessage(
+            message + "；请重新确认最终批次后再开始整理。")
+
+    def apply_ambiguity_choice(self, source_rel: str | None = None,
+                               index: int | None = None) -> bool:
+        """预览里的轻量改选：刷新目标与依据，并作废旧确认。"""
+        if (self._close_pending or self._closing
+                or self._working or self._plan_working):
+            return False
+        plan = self.current_plan
+        if plan is None or not self._plan_valid:
+            return False
+        item = self._ambiguity_item
+        if source_rel:
+            item = next((i for i in plan.items
+                         if i.file.rel_path == source_rel), None)
+        if item is None or not item.ambiguity:
+            return False
+        choice = index
+        if choice is None:
+            choice = self.ambiguity_combo.currentData()
+        try:
+            choice = int(choice)
+        except (TypeError, ValueError):
+            choice = 0
+        updated = resolve_ambiguity(plan, item.file.rel_path, choice)
+        if updated is None:
+            return False
+        self._after_plan_mutation(
+            f"已改选 {updated.file.rel_path} → "
+            f"{updated.direction}/{updated.category or ''}")
+        return True
+
+    def skip_ambiguity(self, source_rel: str | None = None) -> bool:
+        """跳过歧义：保持源路径不变，不进入执行批次。"""
+        if (self._close_pending or self._closing
+                or self._working or self._plan_working):
+            return False
+        plan = self.current_plan
+        if plan is None or not self._plan_valid:
+            return False
+        item = self._ambiguity_item
+        if source_rel:
+            item = next((i for i in plan.items
+                         if i.file.rel_path == source_rel), None)
+        if item is None or not item.ambiguity:
+            return False
+        updated = skip_plan_item(plan, item.file.rel_path)
+        if updated is None:
+            return False
+        self._after_plan_mutation(
+            f"已跳过 {updated.file.rel_path}，源文件保持原位")
+        return True
+
+    def on_apply_ambiguity_choice(self):
+        self.apply_ambiguity_choice()
+
+    def on_skip_ambiguity(self):
+        self.skip_ambiguity()
+
     def _update_plan_counts(self):
         if not hasattr(self, "plan_counts_label"):
             return
@@ -4123,6 +4354,14 @@ class MainWindow(QMainWindow):
         self.plan_counts_label.setText(
             f"计划 {plan.total}｜可见 {visible}｜已勾选 {plan.selected_count}"
             f"｜隐藏但仍勾选 {hidden_selected}")
+        pending_amb = sum(1 for i in plan.items if getattr(i, "ambiguity", None))
+        skipped = sum(1 for i in plan.items if getattr(i, "skipped", False))
+        move_count = plan.selected_count
+        if hasattr(self, "impact_label"):
+            self.impact_label.setText(
+                f"将移动 {move_count}｜跳过 {plan.total - move_count}"
+                + (f"｜待确认歧义 {pending_amb}" if pending_amb else "")
+                + (f"｜已跳过 {skipped}" if skipped else ""))
 
     def _set_visible_checked(self, value, invert: bool = False):
         if (self._close_pending or self._closing
@@ -4566,6 +4805,12 @@ class MainWindow(QMainWindow):
     def _plan_row_status(self, item) -> str:
         if item.conflict_with_existing:
             return "将改名"
+        if getattr(item, "skipped", False):
+            return "已跳过"
+        if getattr(item, "ambiguity", None):
+            return "待确认"
+        if getattr(item, "user_resolved", False):
+            return "已改选"
         if item.is_manual_overridden:
             return "手动修正"
         if (item.direction or "") == "待定":
@@ -4736,6 +4981,13 @@ class MainWindow(QMainWindow):
         if not selected_items:
             QMessageBox.warning(self, "归档盒", "没有勾选任何文件。")
             return
+        unresolved = [i for i in selected_items if getattr(i, "ambiguity", None)]
+        if unresolved:
+            QMessageBox.information(
+                self, "归档盒",
+                f"还有 {len(unresolved)} 个文件存在未确认的歧义。\n"
+                "请先在预览上方选择去向或跳过，再开始整理。")
+            return
 
         if self._storage is None:
             QMessageBox.warning(
@@ -4767,6 +5019,8 @@ class MainWindow(QMainWindow):
                                    scope_note=self._plan_scope_note)
         if dlg.exec() != QDialog.Accepted:
             return
+        # 用户确认的就是当前这一版最终批次；改选/跳过后 revision 已变化。
+        self._confirmed_revision = self._plan_revision
 
         if self._storage is None:
             self._storage = Storage(plan.root)

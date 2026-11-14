@@ -125,6 +125,14 @@ class PlanItem:
     # 图片文字：None 表示这次没有识别；空字符串表示识别过但没有文字
     ocr_text: Optional[str] = None
     ocr_error: str = ""
+    # 阶段 1：正文与目录上下文（仅内存字段，不写 SQLite）
+    content_text: str = ""          # .txt/.md 正文片段（最多 4096 字节）
+    content_error: str = ""         # 未支持 / 读取失败 / 解码说明
+    content_source: str = ""        # 正文 / 图片文字 / 路径 / 空
+    path_evidence: str = ""         # 用户可见的目录上下文说明
+    ambiguity: Optional[dict] = None  # 会改变落点的歧义（候选与原因）
+    user_resolved: bool = False     # 用户已在预览里改选
+    skipped: bool = False           # 用户已在预览里跳过，保持原位
 
     @property
     def has_duplicates(self) -> bool:
@@ -153,6 +161,8 @@ class OrganizePlan:
     duplicates_computed: bool = True
     # 规则和 OCR 之后的 AI 补充分类说明；空字符串表示这次没有问 AI
     ai_note: str = ""
+    # 阶段 1：AI 返回但不能进入可执行批次的原因（仅内存字段）
+    ai_rejections: List[dict] = field(default_factory=list)
 
     # ---- 汇总 ----
     @property
@@ -188,9 +198,10 @@ class OrganizePlan:
 # ======================== 计划生成核心 ========================
 
 def _match_course(filename: str, rules: List[CourseRule],
-                  extra_text: str = "") -> Tuple[str, Optional[int], str]:
+                  extra_text: str = "",
+                  extra_source: str = "image") -> Tuple[str, Optional[int], str]:
     """
-    根据文件名匹配第一条命中的课程规则。文件名都未命中时，再看图片文字。
+    根据文件名匹配第一条命中的课程规则。文件名都未命中时，再看正文/图片文字。
 
     返回：(课程名, 规则序号, 规则描述)
     - 未命中时：("未分类课程", None, "未匹配任何规则")
@@ -199,15 +210,16 @@ def _match_course(filename: str, rules: List[CourseRule],
     extra_lower = (extra_text or "").lower()
     # 按 order 排序，保证显示顺序即优先级顺序
     sorted_rules = sorted(rules, key=lambda r: r.order)
-    image_hit = None
+    extra_hit = None
     for rule in sorted_rules:
         if rule.matches(fn_lower):
             return rule.course_name, rule.order, rule.describe()
-        if image_hit is None and extra_lower and rule.matches(extra_lower):
-            image_hit = rule
-    if image_hit is not None:
-        return (image_hit.course_name, image_hit.order,
-                image_hit.describe() + "（图片文字）")
+        if extra_hit is None and extra_lower and rule.matches(extra_lower):
+            extra_hit = rule
+    if extra_hit is not None:
+        label = "图片文字" if extra_source == "image" else "正文"
+        return (extra_hit.course_name, extra_hit.order,
+                extra_hit.describe() + f"（{label}）")
     return DEFAULT_UNCLASSIFIED, None, "未匹配任何规则"
 
 
@@ -564,6 +576,191 @@ def _group_unregistered_with_neighbors(items: List[PlanItem], root: str) -> None
             break
 
 
+def _candidate(item: PlanItem, direction: str, semester: str,
+               category: str, evidence: str) -> dict:
+    target = _build_target_dir_v2(direction, semester, category, item.file_type)
+    return {
+        "direction": direction or "",
+        "semester": semester or "",
+        "category": category or "",
+        "evidence": evidence,
+        "target_dir_rel": target,
+        "label": (f"{direction}/{category}" if category else direction),
+    }
+
+
+def _detect_ambiguities(items: List[PlanItem], compiled: CompiledConfig) -> None:
+    """只标记会改变落点的歧义；唯一规则命中不提问。
+
+    两类来源：
+    - 目录上下文指向一个方向，正文指向另一个方向；
+    - 正文同时命中多个不同类别的关键词，分不出先后。
+    """
+    for item in items:
+        body = (item.content_text or "").strip()
+        if not body:
+            continue
+        candidates: List[dict] = []
+        seen: set[tuple] = set()
+
+        def add(cand: dict) -> None:
+            key = (cand["direction"], cand["semester"], cand["category"])
+            if key in seen:
+                return
+            seen.add(key)
+            candidates.append(cand)
+
+        dir_match = classify_context(item.file.rel_path, compiled)
+        if ((dir_match.direction or "") != PENDING_DIRECTION
+                and dir_match.rule_key != "fallback"):
+            add(_candidate(item, dir_match.direction, dir_match.semester or "",
+                           dir_match.category or "", "目录上下文"))
+
+        text = body.lower()
+        for rule in (list(compiled.keyword_unmatched)
+                     + list(compiled.keyword_subdir)):
+            for kw in rule.keywords:
+                if keyword_matches(text, kw):
+                    add(_candidate(item, rule.direction, item.semester or "",
+                                   rule.target, f"正文关键词「{kw}」"))
+                    break
+
+        lt = match_long_term_rule(
+            item.file.rel_path, compiled, body, extra_source="body")
+        if lt is not None:
+            add(_candidate(item, lt.rule.direction, lt.rule.semester or "",
+                           lt.rule.category or "",
+                           f"正文命中长期规则「{lt.rule.name}」"))
+
+        targets = {os.path.normcase(c["target_dir_rel"]) for c in candidates}
+        if len(candidates) < 2 or len(targets) < 2:
+            continue
+
+        reasons = []
+        if any(c["evidence"] == "目录上下文" for c in candidates):
+            reasons.append("目录上下文")
+        if any("正文" in c["evidence"] for c in candidates):
+            reasons.append("正文")
+        item.ambiguity = {
+            "reason": "与".join(reasons) + "指向不同去向",
+            "candidates": candidates,
+        }
+        item.selected = False
+        item.rule_applied = (
+            item.rule_applied
+            + "；存在歧义，默认不勾选，请在预览里改选或跳过")
+
+
+def resolve_ambiguity(plan: OrganizePlan, source_rel: str,
+                      choice_index: int) -> Optional[PlanItem]:
+    """用户在预览里改选一个歧义候选；返回被更新的条目。"""
+    item = None
+    for candidate_item in plan.items:
+        if candidate_item.file.rel_path == source_rel:
+            item = candidate_item
+            break
+    if item is None or not item.ambiguity:
+        return None
+    options = item.ambiguity.get("candidates") or []
+    if choice_index < 0 or choice_index >= len(options):
+        return None
+    chosen = options[choice_index]
+    direction = chosen.get("direction") or ""
+    semester = chosen.get("semester") or ""
+    category = chosen.get("category") or ""
+    evidence = chosen.get("evidence") or "用户在预览里改选"
+    item.direction = direction or None
+    item.semester = semester or None
+    item.category = category or None
+    item.course = category or direction
+    item.inner_path = None
+    item.target_dir_rel = _build_target_dir_v2(
+        direction, semester, category, item.file_type)
+    item.target_filename = item.file.filename
+    item.target_rel_path = os.path.join(
+        item.target_dir_rel, item.file.filename)
+    item.rule_key = f"ambiguity_choice:{direction}/{category}"
+    item.rule_applied = (
+        f"用户改选：{evidence} → "
+        f"{direction}/{category or '（无类别）'}；依据：{evidence}")
+    item.is_manual_overridden = False
+    item.user_resolved = True
+    item.skipped = False
+    item.selected = True
+    item.ambiguity = None
+    assign_unique_targets(plan.items, plan.root)
+    return item
+
+
+def skip_plan_item(plan: OrganizePlan, source_rel: str) -> Optional[PlanItem]:
+    """用户跳过歧义：保持原位，不进入执行批次。"""
+    for item in plan.items:
+        if item.file.rel_path == source_rel:
+            item.selected = False
+            item.skipped = True
+            item.ambiguity = None
+            item.rule_applied = (
+                item.rule_applied + "；用户跳过：保持原位，不进入本次批次")
+            return item
+    return None
+
+
+def _body_keyword_match(compiled: CompiledConfig, body: str):
+    """正文命中现有关键词规则时返回 (序号, 规则, 关键词)。
+
+    只在目录/文件名都没有定下分类（fallback）时作为补充，顺序与
+    allowed_pairs 一致：先「未匹配任何映射」，再「类别留空的目录」。
+    """
+    text = (body or "").lower()
+    if not text:
+        return None
+    rules = list(compiled.keyword_unmatched) + list(compiled.keyword_subdir)
+    for i, rule in enumerate(rules, 1):
+        for kw in rule.keywords:
+            if keyword_matches(text, kw):
+                return i, rule, kw
+    return None
+
+
+def _path_evidence(rel_path: str, compiled: Optional[CompiledConfig],
+                   anchor_index: int) -> str:
+    """把用户能看懂的目录上下文写进依据。
+
+    目录类型按现有路径配置判断，不按最终分类方向猜：
+    顶层「项目/竞赛/校园事务」目录、学期目录分别标明。
+    """
+    parts = rel_path.split(os.sep)
+    parents = parts[:-1]
+    if not parents:
+        return "相对路径：根目录散落文件"
+    kind = ""
+    if compiled is not None:
+        top = compiled.top_by_source.get(parents[0].casefold())
+        if top is not None:
+            kind = f"{top.direction}目录"
+        elif any(p.casefold() in compiled.semester_by_source for p in parents):
+            kind = "课程目录"
+    if anchor_index >= 0 and anchor_index + 1 <= len(parents):
+        anchor = os.sep.join(parents[:anchor_index + 1])
+        return f"相对路径：{kind or '父目录'}「{anchor}」"
+    return f"相对路径：{kind or '父目录'}「{os.sep.join(parents)}」"
+
+
+def _append_evidence(rule_desc: str, extra_source: str, used_extra: bool,
+                     content_error: str, path_evidence: str) -> str:
+    bits = []
+    if used_extra:
+        label = "正文" if extra_source == "body" else "图片文字"
+        bits.append(f"依据：{label}片段")
+    if path_evidence:
+        bits.append(path_evidence)
+    if content_error:
+        bits.append(f"正文不可用：{content_error}")
+    if not bits:
+        return rule_desc
+    return rule_desc + "；" + "；".join(bits)
+
+
 def classify_entries(
     scan_result: ScanResult,
     mode: str,
@@ -573,6 +770,8 @@ def classify_entries(
     progress_cb=None,
     ocr_texts: Optional[Dict[str, str]] = None,
     ocr_errors: Optional[Dict[str, str]] = None,
+    content_texts: Optional[Dict[str, str]] = None,
+    content_errors: Optional[Dict[str, str]] = None,
 ) -> Tuple[List[PlanItem], Optional[CompiledConfig]]:
     """按模式与显式配置分类，并构造目标目录（不做 SHA / 重复检测）。
 
@@ -599,22 +798,42 @@ def classify_entries(
             break
 
         extra = ""
-        if ocr_texts and fentry.rel_path in ocr_texts:
+        extra_source = "image"
+        body = ""
+        if content_texts:
+            body = (content_texts.get(fentry.rel_path) or "").strip()
+        if body:
+            extra = body[:4096]
+            extra_source = "body"
+        elif ocr_texts and fentry.rel_path in ocr_texts:
             extra = (ocr_texts[fentry.rel_path] or "").strip()[:8000]
 
         if mode == MODE_BY_COURSE_THEN_TYPE:
             course, rule_idx, rule_desc = _match_course(
-                fentry.filename, sorted_rules, extra)
+                fentry.filename, sorted_rules, extra, extra_source)
             rule_key = f"course_rule:{rule_idx}" if rule_idx is not None \
                 else "course_rule:unmatched"
             direction = semester = category = inner_path = ""
             anchor_index = -1
         elif mode == MODE_BY_DIRECTION_SEMESTER:
-            match = classify_context(fentry.rel_path, compiled, extra)
+            match = classify_context(fentry.rel_path, compiled, extra,
+                                     extra_source=extra_source)
             direction, semester, category = (
                 match.direction, match.semester, match.category)
             anchor_index, rule_desc, rule_key = (
                 match.anchor_index, match.rule_desc, match.rule_key)
+            # 阶段 1：目录和文件名都没定下来时，正文命中现有关键词规则就采用。
+            if extra_source == "body" and rule_key == "fallback":
+                hit = _body_keyword_match(compiled, body)
+                if hit is not None:
+                    _i, kw_rule, kw = hit
+                    direction = kw_rule.direction
+                    category = kw_rule.target
+                    semester = semester or ""
+                    anchor_index = match.anchor_index
+                    rule_desc = (
+                        f"正文关键词「{kw}」→ {direction}/{category}")
+                    rule_key = f"content_keyword:{_i}:{kw}"
             # PlanItem.course 用 category 填充，保持旧字段兼容
             course = category or direction
             rule_idx = None
@@ -637,7 +856,8 @@ def classify_entries(
             # 优先级：当前计划的临时手动修正（在 plan_patch 里做，晚于本函数）
             #         > 已启用的长期规则（按配置顺序取第一条）
             #         > 上述原有推荐模式分类
-            lt_match = match_long_term_rule(fentry.rel_path, compiled, extra)
+            lt_match = match_long_term_rule(
+                fentry.rel_path, compiled, extra, extra_source=extra_source)
             if lt_match is not None:
                 lt_rule = lt_match.rule
                 direction = lt_rule.direction
@@ -676,6 +896,20 @@ def classify_entries(
         else:
             target_dir = _build_target_dir(mode, course, ftype)
 
+        content_error = ""
+        if content_errors:
+            content_error = (content_errors.get(fentry.rel_path) or "").strip()
+        used_extra = (
+            (extra_source == "body"
+             and ("（正文）" in rule_desc
+                  or rule_key.startswith("content_keyword:")))
+            or (extra_source == "image" and "（图片文字）" in rule_desc)
+        )
+        path_evidence = _path_evidence(
+            fentry.rel_path, compiled, anchor_index)
+        rule_desc = _append_evidence(
+            rule_desc, extra_source, used_extra, content_error, path_evidence)
+
         item = PlanItem(
             file=fentry,
             course=course,
@@ -697,9 +931,15 @@ def classify_entries(
             auto_inner_path=inner_path or None,
             auto_rule_key=rule_key,
             auto_rule_applied=rule_desc,
+            content_text=body,
+            content_error=content_error,
+            content_source=("正文" if body else
+                            ("图片文字" if extra_source == "image" and extra
+                             else "路径")),
+            path_evidence=path_evidence,
         )
         if ocr_texts is not None and fentry.rel_path in ocr_texts:
-            item.ocr_text = extra
+            item.ocr_text = ocr_texts[fentry.rel_path] or ""
         if ocr_errors and fentry.rel_path in ocr_errors:
             item.ocr_error = ocr_errors[fentry.rel_path] or ""
         items.append(item)
@@ -710,6 +950,7 @@ def classify_entries(
     if (mode == MODE_BY_DIRECTION_SEMESTER and compiled is not None
             and not (cancel_event and cancel_event.is_set())):
         _group_unregistered_with_neighbors(items, root)
+        _detect_ambiguities(items, compiled)
 
     # 全部分类/归组完成后再统一分配唯一名（稳定、大小写归一，见函数说明）
     assign_unique_targets(items, root)
@@ -755,6 +996,8 @@ def build_plan(
     progress_cb=None,
     ocr_texts: Optional[Dict[str, str]] = None,
     ocr_errors: Optional[Dict[str, str]] = None,
+    content_texts: Optional[Dict[str, str]] = None,
+    content_errors: Optional[Dict[str, str]] = None,
 ) -> OrganizePlan:
     """构造计划。compute_duplicates=False 时跳过 SHA-256（试运行/影响预览用）。
 
@@ -789,6 +1032,7 @@ def build_plan(
         cancel_event=cancel_event,
         progress_cb=(progress_cb if not compute_duplicates else None),
         ocr_texts=ocr_texts, ocr_errors=ocr_errors,
+        content_texts=content_texts, content_errors=content_errors,
     )
 
     rel_to_group: dict = {}
@@ -820,6 +1064,8 @@ def generate_plan(
     config: Optional[ClassificationConfig] = None,
     ocr_texts: Optional[Dict[str, str]] = None,
     ocr_errors: Optional[Dict[str, str]] = None,
+    content_texts: Optional[Dict[str, str]] = None,
+    content_errors: Optional[Dict[str, str]] = None,
 ) -> OrganizePlan:
     """生成正式计划（含 SHA-256 与内容重复检测）。
 
@@ -831,6 +1077,7 @@ def generate_plan(
         scan_result, mode, rules, config=config, compute_duplicates=True,
         cancel_event=cancel_event, progress_cb=progress_cb,
         ocr_texts=ocr_texts, ocr_errors=ocr_errors,
+        content_texts=content_texts, content_errors=content_errors,
     )
 
 
