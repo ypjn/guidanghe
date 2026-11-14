@@ -226,30 +226,36 @@ def t04_copy_then_replace():
     with open(dst, "w", encoding="utf-8") as f:
         f.write("用户已有内容")
 
-    moved, msg, is_conflict = executor._copy_then_replace(src, dst)
+    # root 必须显式传入（签名要求，不允许默认放过边界检查）
+    moved, msg, is_conflict = executor._copy_then_replace(src, dst, base)
     with open(dst, "r", encoding="utf-8") as f:
         dst_text = f.read()
+    leftovers = sorted(
+        n for n in os.listdir(base) if ".archivetmp" in n or ".abtmp" in n)
     conflict_ok = (moved is False and is_conflict is True
                    and dst_text == "用户已有内容" and os.path.isfile(src)
-                   and not os.path.exists(dst + ".archivetmp"))
+                   and leftovers == [])
 
     # 目标不存在时应正常完成移动
     src2 = os.path.join(base, "源2.txt")
     dst2 = os.path.join(base, "目标2.txt")
     with open(src2, "w", encoding="utf-8") as f:
         f.write("新内容")
-    moved2, msg2, conflict2 = executor._copy_then_replace(src2, dst2)
+    moved2, msg2, conflict2 = executor._copy_then_replace(src2, dst2, base)
     with open(dst2, "r", encoding="utf-8") as f:
         dst2_text = f.read()
+    leftovers2 = sorted(
+        n for n in os.listdir(base) if ".archivetmp" in n or ".abtmp" in n)
     success_ok = (moved2 is True and conflict2 is False
-                  and dst2_text == "新内容" and not os.path.exists(src2))
+                  and dst2_text == "新内容" and not os.path.exists(src2)
+                  and leftovers2 == [])
 
     ok("S1-04", "rename 失败兜底：目标已存在不覆盖、不删源；目标不存在可移动",
        conflict_ok and success_ok,
        f"冲突：moved={moved} conflict={is_conflict} msg={msg} "
-       f"目标内容={dst_text!r} 源仍在={os.path.isfile(src)}\n"
+       f"目标内容={dst_text!r} 源仍在={os.path.isfile(src)} 临时残留={leftovers}\n"
        f"正常：moved={moved2} msg={msg2} 目标内容={dst2_text!r} "
-       f"源已删={not os.path.exists(src2)}")
+       f"源已删={not os.path.exists(src2)} 临时残留={leftovers2}")
 
 
 # ==================== S1-05 / S1-06 旧计划不能在看不见时执行 ====================

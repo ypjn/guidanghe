@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import threading
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional
@@ -847,197 +848,354 @@ def _batch_is_finished(status: str) -> bool:
     )
 
 
-def _unlink_if_ours(path_long: str, our_ino: int, our_dev: int) -> None:
-    """仅当 path 当前指向我们创建的 inode 时才删除它，避免误删被替换的文件。"""
+_TMP_NAME = ".abtmp"
+
+
+def _unlink_if_ours(path: str, our_ino: int, our_dev: int) -> None:
+    """仅当 path 当前（当作普通目录项）指向我们创建的 inode 时才删除它。
+
+    用 lstat 而不是 stat：路径若已被换成符号链接，其 inode 必然不是我们的，
+    绝不能顺着链接去删目标文件。
+    """
     try:
-        st = os.stat(path_long)
+        st = os.lstat(win_long_path(path))
         if st.st_ino == our_ino and st.st_dev == our_dev:
-            os.unlink(path_long)
+            os.unlink(win_long_path(path))
     except OSError:
         pass
 
 
-def _copy_then_replace(src_path: str, dst_path: str, root: str) -> tuple[bool, str, bool]:
-    """不覆盖的移动：复制 → 独占创建目标 → 直接写入 fd → inode 核对 → 删源。
+def _write_all(fd: int, data: bytes) -> tuple[bool, str]:
+    """一次写必须写满；短写或异常都视为失败。
 
-    关键安全约束（对应审计反例 C1/C2/C3/C4）：
-      - C1：不用 os.replace 覆盖式落盘。独占创建得到的 fd 直接写入内容，
-        写完核对「路径当前 inode == 我们 fd 的 inode」，不一致说明占位被换，
-        此时绝不动当前路径上的文件，只清理临时副本并报失败。
-      - C2：读源、写目标、删源之前都重新 realpath 校验边界；目标目录若在
-        校验后被换成空间外链接，O_EXCL 成功后立即重核边界，发现越界则只
-        删除我们自己建的那个 inode，不碰外部原有文件。
-      - C3：复制完成后、删除源之前，重新计算源的 SHA 与临时副本比对；
-        不一致说明源在复制后被改，回滚目标（仅当还是我们的 inode）、保留源。
-      - C4：临时名用目标目录下的短名 `.abtmp`（+ 计数器），保证 255 字节
-        文件名也能放下临时副本。
+    小写入在普通文件上通常一次写完。这里不接受短写：宁可整次移动失败并
+    回滚，也不留下半截目标却把它记成已移动。
+    """
+    try:
+        written = os.write(fd, data)
+    except OSError as e:
+        return False, str(e)
+    if written != len(data):
+        return False, f"写入不完整（{written}/{len(data)} 字节）"
+    return True, ""
+
+
+def _copy_then_replace(src_path: str, dst_path: str, root: str) -> tuple[bool, str, bool]:
+    """不覆盖的移动：源 → 临时副本 → 独占创建目标 → 直接写 fd → 两次身份核对 → 删源。
+
+    本轮修复的安全约束（对应审计反例 D1–D4）：
+      - 短写与指纹失败：os.write 必须写满整块，短写即失败；临时副本 SHA
+        读不出来时不跳过核验、不删源；复制后源被改则回滚目标、保留源。
+      - 临时文件不得越界：不再用 shutil.copy2 写一个可能是符号链接的路径；
+        用 O_CREAT|O_EXCL|O_NOFOLLOW 建普通文件，创建前、写入前都核对
+        realpath 仍在 root 内。失败清理只删本次自己创建的 inode。
+      - 身份核对之后再核对：删源之前再 stat 一次目标，inode/设备号不一致
+        就不删源、不记 moved（撤销同理不记 undone）。
+      - 权限与 mtime：新文件不是 rename 来的，确认 inode 属于本次创建后，
+        用 fchmod/futimens 显式恢复源文件的权限位与 mtime。
 
     返回 (是否成功, 错误说明, 是否为"目标已存在"冲突)。
     """
-    # ---- C2：源边界重校验（读源之前）----
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    binary = getattr(os, "O_BINARY", 0)
+
+    # ---- 源边界与源句柄：一次打开，后续读写都基于这个 fd ----
     if not _is_within_root(src_path, root):
         return False, f"源路径越出整理空间：{src_path}", False
-
-    # ---- C4：短临时名（目标目录内）----
-    dst_dir = os.path.dirname(dst_path)
-    counter = 0
-    while True:
-        tmp_name = ".abtmp" if counter == 0 else f".abtmp{counter}"
-        tmp_path = os.path.join(dst_dir, tmp_name)
-        if not os.path.exists(win_long_path(tmp_path)):
-            break
-        counter += 1
-
-    # ---- 复制源到临时副本 ----
     try:
-        shutil.copy2(win_long_path(src_path), win_long_path(tmp_path))
+        src_fd = os.open(win_long_path(src_path),
+                         os.O_RDONLY | nofollow | binary)
     except OSError as e:
-        return False, f"复制到临时文件失败：{e}", False
-
-    # 记录临时副本指纹，用于 C3 源内容核对
+        return False, f"无法打开源文件：{e}", False
     try:
-        tmp_sha = sha256_file(tmp_path)
-    except OSError:
-        tmp_sha = None
-
-    # ---- C2：目标边界重校验（写目标之前）----
-    if not _is_within_root(dst_path, root):
+        src_st = os.fstat(src_fd)
+        src_size = src_st.st_size
+        src_mode = stat.S_IMODE(src_st.st_mode)
+        src_atime_ns = src_st.st_atime_ns
+        src_mtime_ns = src_st.st_mtime_ns
+    except OSError as e:
         try:
-            os.unlink(win_long_path(tmp_path))
+            os.close(src_fd)
         except OSError:
             pass
+        return False, f"无法读取源文件属性：{e}", False
+
+    def _close_src() -> None:
+        try:
+            os.close(src_fd)
+        except OSError:
+            pass
+
+    # ---- 临时文件：短名 + 独占 + 不跟随符号链接 ----
+    # C4：用固定短名，255 字节目标文件名也能放下临时副本。
+    dst_dir = os.path.dirname(dst_path) or "."
+    tmp_path = os.path.join(dst_dir, _TMP_NAME)
+    if not _is_within_root(tmp_path, root):
+        _close_src()
+        return False, f"临时文件路径越出整理空间：{tmp_path}", False
+
+    try:
+        tmp_fd = os.open(
+            win_long_path(tmp_path),
+            os.O_CREAT | os.O_EXCL | os.O_WRONLY | nofollow | binary,
+            0o600,
+        )
+    except FileExistsError:
+        # O_EXCL 对符号链接（含悬空链接）同样返回 EEXIST；绝不复用未知文件。
+        _close_src()
+        return False, "临时文件 .abtmp 已存在（或为符号链接），为避免误用未移动", False
+    except OSError as e:
+        _close_src()
+        return False, f"无法创建临时文件：{e}", False
+
+    # 创建后再核一次边界：父目录可能在打开前被换成空间外链接。
+    if not _is_within_root(tmp_path, root):
+        try:
+            tmp_st = os.fstat(tmp_fd)
+            _unlink_if_ours(tmp_path, tmp_st.st_ino, tmp_st.st_dev)
+        except OSError:
+            pass
+        try:
+            os.close(tmp_fd)
+        except OSError:
+            pass
+        _close_src()
+        return False, "临时文件在创建后越出整理空间（符号链接逃逸）", False
+
+    # ---- 复制源 → 临时文件（写满 + 同时算指纹 + 核对总字节数）----
+    copy_err = ""
+    copied = 0
+    try:
+        while True:
+            chunk = os.read(src_fd, 1024 * 1024)
+            if not chunk:
+                break
+            ok_chunk, chunk_err = _write_all(tmp_fd, chunk)
+            if not ok_chunk:
+                copy_err = f"写临时文件失败：{chunk_err}"
+                break
+            copied += len(chunk)
+        if not copy_err and copied != src_size:
+            copy_err = f"临时副本大小不一致（{copied}/{src_size} 字节）"
+        if not copy_err:
+            os.fsync(tmp_fd)
+    except OSError as e:
+        copy_err = f"读取源文件失败：{e}"
+
+    try:
+        tmp_st = os.fstat(tmp_fd)
+    except OSError:
+        tmp_st = None
+    try:
+        os.close(tmp_fd)
+    except OSError:
+        pass
+
+    if copy_err:
+        if tmp_st is not None:
+            _unlink_if_ours(tmp_path, tmp_st.st_ino, tmp_st.st_dev)
+        _close_src()
+        return False, copy_err, False
+    if tmp_st is None:
+        _close_src()
+        return False, "无法读取临时文件属性", False
+
+    # 临时文件路径必须仍指向我们刚写的 inode
+    if not _path_is_inode(tmp_path, tmp_st):
+        _unlink_if_ours(tmp_path, tmp_st.st_ino, tmp_st.st_dev)
+        _close_src()
+        return False, "临时文件在写入后被替换，为避免误用未移动", False
+
+    # ---- 临时副本指纹：读不出来就失败，绝不跳过内容核验 ----
+    tmp_sha = sha256_file(tmp_path)
+    if tmp_sha is None:
+        _unlink_if_ours(tmp_path, tmp_st.st_ino, tmp_st.st_dev)
+        _close_src()
+        return False, "临时副本内容无法读取核验，为避免丢文件未移动", False
+
+    def _rollback_tmp() -> None:
+        _unlink_if_ours(tmp_path, tmp_st.st_ino, tmp_st.st_dev)
+
+    # ---- 目标创建前边界 ----
+    if not _is_within_root(dst_path, root):
+        _rollback_tmp()
+        _close_src()
         return False, f"目标路径越出整理空间：{dst_path}", False
 
-    dst_long = win_long_path(dst_path)
-    # 独占创建目标名；拿到的 fd 直接写入内容，不再用 os.replace（C1）。
     try:
-        dst_fd = os.open(dst_long, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        dst_fd = os.open(
+            win_long_path(dst_path),
+            os.O_CREAT | os.O_EXCL | os.O_WRONLY | nofollow | binary,
+            0o600,
+        )
     except FileExistsError:
-        try:
-            os.unlink(win_long_path(tmp_path))
-        except OSError:
-            pass
+        _rollback_tmp()
+        _close_src()
         return False, "目标路径已存在，为避免覆盖未移动", True
     except OSError as e:
-        try:
-            os.unlink(win_long_path(tmp_path))
-        except OSError:
-            pass
+        _rollback_tmp()
+        _close_src()
         return False, f"无法独占创建目标：{e}", False
 
-    # ---- C2：O_EXCL 成功后重核边界。目标目录可能在校验后被换成空间外链接，
-    # 导致我们刚在空间外建了 inode。只删我们自己建的（inode 与 fd 一致）。----
-    if not _is_within_root(dst_path, root):
-        try:
-            fd_st = os.fstat(dst_fd)
-            _unlink_if_ours(dst_long, fd_st.st_ino, fd_st.st_dev)
-        except OSError:
-            pass
-        os.close(dst_fd)
-        try:
-            os.unlink(win_long_path(tmp_path))
-        except OSError:
-            pass
-        return False, "目标路径在创建后越出整理空间（符号链接逃逸）", False
-
-    # ---- 把临时副本内容写入目标 fd ----
-    our_ino = -1
-    our_dev = -1
-    write_ok = True
-    write_err = ""
     try:
-        with open(win_long_path(tmp_path), "rb") as tf:
-            while True:
-                chunk = tf.read(1024 * 1024)
-                if not chunk:
-                    break
-                os.write(dst_fd, chunk)
-        fd_st = os.fstat(dst_fd)
-        our_ino = fd_st.st_ino
-        our_dev = fd_st.st_dev
-    except OSError as e:
-        write_ok = False
-        write_err = str(e)
-    finally:
+        dst_st = os.fstat(dst_fd)
+        our_ino, our_dev = dst_st.st_ino, dst_st.st_dev
+    except OSError:
         try:
             os.close(dst_fd)
         except OSError:
             pass
+        _rollback_tmp()
+        _close_src()
+        return False, "无法读取目标文件属性", False
 
-    if not write_ok:
-        if our_ino != -1:
-            _unlink_if_ours(dst_long, our_ino, our_dev)
+    # 创建后边界：目录可能在检查后被换成空间外链接，只删我们自己建的 inode。
+    if not _is_within_root(dst_path, root):
         try:
-            os.unlink(win_long_path(tmp_path))
+            os.close(dst_fd)
         except OSError:
             pass
-        return False, f"写入目标失败：{write_err}", False
+        _unlink_if_ours(dst_path, our_ino, our_dev)
+        _rollback_tmp()
+        _close_src()
+        return False, "目标路径在创建后越出整理空间（符号链接逃逸）", False
 
-    # ---- C1：核对路径 dst 当前 inode 必须还是我们创建的那个。
-    # 若占位在写入期间被换成别的文件，绝不动它，只清临时副本报失败。----
+    # ---- 临时副本 → 目标 fd（写满，核对总字节数）----
+    write_err = ""
+    written = 0
     try:
-        path_st = os.stat(dst_long)
-        if path_st.st_ino != our_ino or path_st.st_dev != our_dev:
+        tmp_rd = os.open(win_long_path(tmp_path), os.O_RDONLY | nofollow | binary)
+    except OSError as e:
+        tmp_rd = -1
+        write_err = f"无法读取临时副本：{e}"
+    if not write_err:
+        try:
+            if not _fd_is_inode(tmp_rd, tmp_st):
+                write_err = "临时副本在写入目标前被替换"
+            else:
+                while True:
+                    chunk = os.read(tmp_rd, 1024 * 1024)
+                    if not chunk:
+                        break
+                    ok_chunk, chunk_err = _write_all(dst_fd, chunk)
+                    if not ok_chunk:
+                        write_err = f"写入目标失败：{chunk_err}"
+                        break
+                    written += len(chunk)
+                if not write_err and written != src_size:
+                    write_err = f"目标大小不一致（{written}/{src_size} 字节）"
+        finally:
             try:
-                os.unlink(win_long_path(tmp_path))
+                os.close(tmp_rd)
             except OSError:
                 pass
-            return False, "目标占位文件在落盘期间被替换，为避免覆盖未移动", False
-    except OSError:
+
+    if write_err:
         try:
-            os.unlink(win_long_path(tmp_path))
+            os.close(dst_fd)
         except OSError:
             pass
-        return False, "目标路径在落盘后消失", False
+        _unlink_if_ours(dst_path, our_ino, our_dev)
+        _rollback_tmp()
+        _close_src()
+        return False, write_err, False
 
-    # ---- C3：删源之前重新核对源内容未变 ----
-    if tmp_sha is not None:
-        if not _is_within_root(src_path, root):
-            _unlink_if_ours(dst_long, our_ino, our_dev)
-            try:
-                os.unlink(win_long_path(tmp_path))
-            except OSError:
-                pass
-            return False, "源路径在落盘期间越出整理空间", False
+    # ---- 第一次身份核对：路径必须仍指向我们创建的 inode（C1）----
+    if not _path_is_inode(dst_path, dst_st):
         try:
-            src_sha = sha256_file(src_path)
+            os.close(dst_fd)
         except OSError:
-            src_sha = None
-        if src_sha != tmp_sha:
-            # 源被改：回滚目标（仅当还是我们的 inode），保留源的新内容
-            _unlink_if_ours(dst_long, our_ino, our_dev)
-            try:
-                os.unlink(win_long_path(tmp_path))
-            except OSError:
-                pass
-            return False, "源文件在复制后被修改，已回滚目标并保留源文件", False
+            pass
+        _rollback_tmp()
+        _close_src()
+        return False, "目标占位在落盘期间被替换，为避免覆盖未移动", False
+
+    # ---- 权限与 mtime：确认 inode 属于本次创建后显式恢复 ----
+    # 先 fchmod 再关闭；mtime 用 futimens 语义（os.utime 接受 fd）一次设好。
+    try:
+        fchmod = getattr(os, "fchmod", None)
+        if fchmod is not None:
+            fchmod(dst_fd, src_mode)
+        else:
+            os.chmod(win_long_path(dst_path), src_mode)
+        try:
+            os.utime(dst_fd, ns=(src_atime_ns, src_mtime_ns))
+        except (TypeError, NotImplementedError):
+            # 某些平台不接受 fd：此时路径已核对过是我们刚创建的 inode
+            os.utime(win_long_path(dst_path), ns=(src_atime_ns, src_mtime_ns))
+    except OSError as e:
+        try:
+            os.close(dst_fd)
+        except OSError:
+            pass
+        _unlink_if_ours(dst_path, our_ino, our_dev)
+        _rollback_tmp()
+        _close_src()
+        return False, f"恢复目标权限/时间失败：{e}", False
+    try:
+        os.close(dst_fd)
+    except OSError:
+        pass
+
+    # ---- 源内容核对：复制后被改就不删源 ----
+    if not _is_within_root(src_path, root):
+        _unlink_if_ours(dst_path, our_ino, our_dev)
+        _rollback_tmp()
+        _close_src()
+        return False, "源路径在落盘期间越出整理空间", False
+    src_sha = sha256_file(src_path)
+    if src_sha is None or src_sha != tmp_sha:
+        # 源被改/读不出：回滚目标（只删我们的 inode），保留源
+        _unlink_if_ours(dst_path, our_ino, our_dev)
+        _rollback_tmp()
+        _close_src()
+        return False, "源文件在复制后被修改或无法再次核验，已回滚目标并保留源文件", False
+
+    # ---- 第二次身份核对：SHA 返回前后目标可能被换（S3）----
+    if not _path_is_inode(dst_path, dst_st):
+        _rollback_tmp()
+        _close_src()
+        return False, "目标文件在内容核对后被替换，为避免覆盖未移动", False
 
     # ---- 删除源 ----
     if not _is_within_root(src_path, root):
-        _unlink_if_ours(dst_long, our_ino, our_dev)
-        try:
-            os.unlink(win_long_path(tmp_path))
-        except OSError:
-            pass
+        _unlink_if_ours(dst_path, our_ino, our_dev)
+        _rollback_tmp()
+        _close_src()
         return False, "源路径在删除前越出整理空间", False
     try:
         os.unlink(win_long_path(src_path))
     except OSError as e:
-        # 删源失败：回滚目标（仅当还是我们的），保留源
-        _unlink_if_ours(dst_long, our_ino, our_dev)
-        try:
-            os.unlink(win_long_path(tmp_path))
-        except OSError:
-            pass
+        _unlink_if_ours(dst_path, our_ino, our_dev)
+        _rollback_tmp()
+        _close_src()
         return False, f"已复制但删除源失败（已回滚目标，源文件保留）：{e}", False
 
-    # ---- 清理临时副本 ----
-    try:
-        os.unlink(win_long_path(tmp_path))
-    except OSError:
-        pass
-
+    _rollback_tmp()
+    _close_src()
     return True, "", False
+
+
+def _fd_is_inode(fd: int, expected) -> bool:
+    """fd 当前对应的 inode 是否就是 expected（来自 fstat 的 stat_result）。"""
+    if expected is None:
+        return False
+    try:
+        st = os.fstat(fd)
+    except OSError:
+        return False
+    return st.st_ino == expected.st_ino and st.st_dev == expected.st_dev
+
+
+def _path_is_inode(path: str, expected) -> bool:
+    """路径当前（不跟随符号链接）指向的 inode 是否就是 expected。"""
+    if expected is None:
+        return False
+    try:
+        st = os.lstat(win_long_path(path))
+    except OSError:
+        return False
+    return st.st_ino == expected.st_ino and st.st_dev == expected.st_dev
 
 
 def _finalize_batch(storage: Storage, batch_id: int, result: ExecuteResult,

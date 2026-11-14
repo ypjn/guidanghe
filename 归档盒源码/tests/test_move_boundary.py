@@ -420,7 +420,7 @@ def test_target_dir_symlink_race_during_write():
 # ============ C3：复制完成后源文件被改，新内容不能丢 ============
 
 def test_source_modified_after_copy():
-    """copy 之后、删源之前，源被写成新内容。源必须保留新内容，动作记失败。"""
+    """复制完成之后、删源之前，源被写成新内容。源必须保留新内容，动作记失败。"""
     with tempfile.TemporaryDirectory() as base:
         root = os.path.join(base, "space")
         os.makedirs(root)
@@ -429,28 +429,32 @@ def test_source_modified_after_copy():
         src_abs = os.path.join(root, "a.txt")
 
         import executor
-        real_copy2 = executor.shutil.copy2
+        real_write = os.write
+        state = {"written": 0, "edited": False}
 
-        def hooked_copy2(src, dst, *args, **kwargs):
-            r = real_copy2(src, dst, *args, **kwargs)
-            # 复制完成后，立刻把源文件改成新内容
-            with open(src, "w", encoding="utf-8") as f:
-                f.write("NEW-CONTENT-AFTER-COPY")
-            return r
+        def hooked_write(fd, data):
+            n = real_write(fd, data)
+            state["written"] += n
+            # 源字节已全部写入临时副本后，立刻把源文件改成新内容
+            if state["written"] >= len("OLD") and not state["edited"]:
+                state["edited"] = True
+                with open(src_abs, "w", encoding="utf-8") as f:
+                    f.write("NEW-CONTENT-AFTER-COPY")
+            return n
 
-        executor.shutil.copy2 = hooked_copy2
+        executor.os.write = hooked_write
         try:
             res = execute_plan(plan, st)
         finally:
-            executor.shutil.copy2 = real_copy2
+            executor.os.write = real_write
 
-        # 源文件必须仍是新内容
         with open(src_abs, encoding="utf-8") as f:
             check("C3-源文件保留新内容", f.read() == "NEW-CONTENT-AFTER-COPY")
         check("C3-动作非 moved", res.moved == 0, f"moved={res.moved}")
-        check("C3-目标未留下旧内容并报成功",
-              not os.path.isfile(os.path.join(root, "_已整理", "a.txt")) or
-              res.moved == 0)
+        check("C3-目标未留下旧内容",
+              not os.path.isfile(os.path.join(root, "_已整理", "a.txt")))
+        check("C3-无临时文件残留",
+              not os.path.exists(os.path.join(root, "_已整理", ".abtmp")))
 
 
 # ============ C4：255 字节合法文件名 ============
