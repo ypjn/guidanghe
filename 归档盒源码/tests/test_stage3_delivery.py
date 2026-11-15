@@ -665,28 +665,96 @@ def test_reset_keeps_unrelated_files():
     proc_default = subprocess.run(
         [sys.executable, default_script],
         capture_output=True, text=True)
+    user_parent = tempfile.mkdtemp(prefix="stage3_reset_user_")
+    user_space = os.path.join(user_parent, "普通资料")
+    user_note = os.path.join(user_space, "下载", "笔记.txt")
+    os.makedirs(os.path.dirname(user_note))
+    with open(user_note, "w", encoding="utf-8") as f:
+        f.write("用户原来的笔记\n")
+    user_sha = sha256(user_note)
+    proc_user = subprocess.run(
+        [sys.executable, script, "--root", user_space],
+        capture_output=True, text=True)
+    link_space = os.path.join(user_parent, "链接样本")
+    outside_file = os.path.join(user_parent, "范围外普通文件.txt")
+    with open(outside_file, "w", encoding="utf-8") as f:
+        f.write("目录外的正文\n")
+    outside_file_sha = sha256(outside_file)
+    os.makedirs(os.path.join(link_space, "下载"))
+    os.symlink(outside_file, os.path.join(link_space, "下载", "笔记.txt"))
+    proc_link = subprocess.run(
+        [sys.executable, script, "--root", link_space],
+        capture_output=True, text=True)
     ok = (
         proc.returncode == 0
         and proc_default.returncode == 0
+        and proc_user.returncode == 0
+        and proc_link.returncode == 0
         and sha256(kept) == kept_sha
         and sha256(outside) == outside_sha
         and os.path.isfile(os.path.join(space, "下载", "归档盒", "开发说明.md"))
         and open(note, encoding="utf-8").read() == "高等数学 极限 导数\n"
         and sha256(extra) == extra_sha
+        and sha256(user_note) == user_sha
+        and sha256(outside_file) == outside_file_sha
+        and os.path.islink(os.path.join(link_space, "下载", "笔记.txt"))
         and "未覆盖" in proc.stdout
+        and "已有文件未覆盖：下载/笔记.txt" in proc_user.stdout
+        and "符号链接未跟随：下载/笔记.txt" in proc_link.stdout
         and "保留的非演示文件" in proc.stdout
         and "保留的非演示文件" in proc_default.stdout)
-    rec("S12", "重置只写回 3 个演示文件，保留其他资料和已有范围外对照",
+    rec("S12", "重置不覆盖已有文件和目录外符号链接，只写回脚本自己创建的文件",
         ok,
         f"root退出码={proc.returncode}\n{proc.stdout}"
         f"默认路径退出码={proc_default.returncode}\n{proc_default.stdout}"
+        f"已有文件退出码={proc_user.returncode}\n{proc_user.stdout}"
+        f"符号链接退出码={proc_link.returncode}\n{proc_link.stdout}"
         f"保留sha不变={sha256(kept) == kept_sha} "
         f"范围外sha不变={sha256(outside) == outside_sha} "
+        f"用户笔记sha不变={sha256(user_note) == user_sha} "
+        f"链接目标sha不变={sha256(outside_file) == outside_file_sha} "
         f"演示样本内其他文件sha不变={sha256(extra) == extra_sha}")
+
+
+def test_reset_returns_to_first_preview():
+    module = load_reset_module()
+    root = root_dir("repeat-demo")
+    subject = "下载/归档盒/开发说明.md"
+    module.reset(__import__("pathlib").Path(root))
+    win = open_window(root)
+    scan_and_preview(win)
+    first = item_of(win.current_plan, subject)
+    install_space_pref_save()
+    try:
+        select_row(win, subject)
+        win.on_override_selected()
+        process(0.1)
+    finally:
+        restore_dialogs()
+    saved = len(P.list_space_preferences(root)) == 1
+    close_window(win)
+    module.reset(__import__("pathlib").Path(root))
+    win2 = open_window(root)
+    scan_and_preview(win2)
+    second = item_of(win2.current_plan, subject)
+    again = (
+        saved
+        and len(P.list_space_preferences(root)) == 0
+        and "待定" in second.target_rel_path
+        and not str(second.rule_key).startswith("long_term:")
+        and second.selected is False
+        and second.target_rel_path == first.target_rel_path)
+    rec("S13", "同一目录再次重置后，开发说明回到待定且未勾选",
+        again,
+        f"第一次={first.target_rel_path} {first.rule_key} selected={first.selected}\n"
+        f"重置后={second.target_rel_path} {second.rule_key} selected={second.selected}\n"
+        f"偏好行={len(P.list_space_preferences(root))}")
+    close_window(win2)
 
 
 def main():
     test_reset_keeps_unrelated_files()
+    test_reset_returns_to_first_preview()
     test_two_rounds_and_execute()
     test_stale_and_conflict()
     test_cancel_interrupt_undo_conflict()
