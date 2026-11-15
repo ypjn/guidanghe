@@ -24,6 +24,7 @@ import os
 import sqlite3
 import sys
 import tempfile
+import threading
 import time
 import traceback
 
@@ -1792,6 +1793,249 @@ def test_single_preference_keeps_body_candidates():
     close_window(win)
 
 
+def test_rollback_does_not_erase_newer_save():
+    """问题 1：A 失败回滚不得抹掉 B 在等待期间已保存的结果。"""
+    with isolated_app_dir():
+        _rollback_newer_case()
+
+
+def _db_path_of(conn) -> str:
+    rows = conn.execute("PRAGMA database_list").fetchall()
+    return next((row[2] for row in rows if row[1] == "main"), "")
+
+
+def _rollback_newer_case():
+    root = root_dir("rollback_newer")
+    write(root, "下载/归档盒/样本.md")
+    save_pref(root, "lt-space", "空间偏好", category="原空间目标")
+    P.save_preference(root, _pref(
+        root, "lt-global", "全局偏好", "全局旧目标",
+        source="下载/其他", scope=P.SCOPE_GLOBAL))
+    win = open_window(root)
+
+    state = {}
+    real_apply = P._apply_rows
+
+    def apply_and_interleave(conn, prefs, delete_ids):
+        # 全局库事务写入前：用第二个连接持有读事务，让 A 的全局提交失败；
+        # 同时让 B 在 A 等待全局库时保存同一条空间偏好。
+        if (os.path.realpath(_db_path_of(conn))
+                == os.path.realpath(P.global_db_path())
+                and "holder" not in state):
+            holder = sqlite3.connect(P.global_db_path(), timeout=10)
+            holder.execute("PRAGMA busy_timeout=5000")
+            holder.execute("BEGIN")
+            holder.execute("SELECT * FROM preferences").fetchall()
+            state["holder"] = holder
+
+            def b_save():
+                time.sleep(1.0)
+                try:
+                    P.save_preference(root, _pref(
+                        root, "lt-space", "空间偏好", "B 已保存的空间目标"))
+                    state["b_ok"] = True
+                except Exception as e:                # 记录，供断言输出
+                    state["b_error"] = e
+
+            thread = threading.Thread(target=b_save)
+            thread.start()
+            state["thread"] = thread
+        return real_apply(conn, prefs, delete_ids)
+
+    def mutate(dlg):
+        dlg.table_longterm.item(
+            config_row(dlg, "lt-space"), 8).setText("A 改的空间目标")
+        dlg.table_longterm.item(
+            config_row(dlg, "lt-global"), 8).setText("A 改的全局目标")
+
+    P._apply_rows = apply_and_interleave
+    try:
+        cap = save_via_config_page(win, mutate)
+    finally:
+        P._apply_rows = real_apply
+        thread = state.get("thread")
+        if thread is not None:
+            thread.join(20)
+        holder = state.get("holder")
+        if holder is not None:
+            try:
+                holder.rollback()
+            except Exception:
+                pass
+            holder.close()
+
+    space_cat = next((p.category for p in P.list_space_preferences(root)
+                      if p.preference_id == "lt-space"), None)
+    global_cat = next((p.category for p in P.list_global_preferences()
+                       if p.preference_id == "lt-global"), None)
+    json_cat = next((r.category for r in load_config(root)[0].long_term_rules
+                     if r.rule_id == "lt-space"), None)
+    msg = " ".join(cap["errors"])
+    close_window(win)
+    win2 = preview(root)
+    item = item_of(win2.current_plan, "下载/归档盒/样本.md")
+    close_window(win2)
+    ok = (bool(cap["errors"]) and not cap["accepted"]
+          and space_cat == "B 已保存的空间目标"
+          and json_cat == "B 已保存的空间目标"
+          and global_cat == "全局旧目标"
+          and "已整体回滚" not in msg
+          and "保留了其他窗口的较新内容" in msg
+          and item.target_dir_rel == os.path.join(
+              "_已整理", "项目", "B 已保存的空间目标")
+          and item.rule_key == "long_term:lt-space"
+          and item.selected is True)
+    rec("T49", "失败回滚保留另一窗口已保存的空间目标与 JSON", ok,
+        f"space={space_cat} json={json_cat} global={global_cat} "
+        f"target={item.target_rel_path} rule_key={item.rule_key} "
+        f"selected={item.selected} b_ok={state.get('b_ok')} "
+        f"b_error={state.get('b_error')} msg={msg[:100]}")
+
+
+def test_write_recheck_rejects_newer_save():
+    """问题 2：并发检查通过后、写入前被别处保存，必须整次取消。"""
+    with isolated_app_dir():
+        _write_recheck_case()
+
+
+def _write_recheck_case():
+    root = root_dir("recheck_newer")
+    write(root, "下载/归档盒/样本.md")
+    P.save_preference(root, _pref(
+        root, "lt-g", "全局共享", "旧目标", scope=P.SCOPE_GLOBAL))
+    win = open_window(root)
+    state = {}
+    real_begin = getattr(P, "_begin_write", None)
+    real_apply = P._apply_rows
+
+    def is_global(conn) -> bool:
+        return (os.path.realpath(_db_path_of(conn))
+                == os.path.realpath(P.global_db_path()))
+
+    def b_save():
+        if "done" in state:
+            return
+        state["done"] = True
+        P.save_preference(root, _pref(
+            root, "lt-g", "全局共享", "B 已确认的新目标",
+            scope=P.SCOPE_GLOBAL))
+        state["b_ok"] = True
+
+    def mutate(dlg):
+        dlg.table_longterm.item(
+            config_row(dlg, "lt-g"), 8).setText("A 从旧快照提交的全局目标")
+
+    if real_begin is not None:
+        # 修复后的实现：A 已读完并完成检查，还没开始写事务时让 B 保存
+        def begin(conn):
+            if is_global(conn):
+                b_save()
+            return real_begin(conn)
+
+        P._begin_write = begin
+    else:
+        # 696f727 上没有 _begin_write：在全局行写入前插入 B 的保存
+        def apply(conn, prefs, delete_ids):
+            if is_global(conn):
+                b_save()
+            return real_apply(conn, prefs, delete_ids)
+
+        P._apply_rows = apply
+    try:
+        cap = save_via_config_page(win, mutate)
+    finally:
+        if real_begin is not None:
+            P._begin_write = real_begin
+        P._apply_rows = real_apply
+
+    stored = next((p.category for p in P.list_global_preferences()
+                   if p.preference_id == "lt-g"), None)
+    msg = " ".join(cap["errors"])
+    close_window(win)
+    win2 = preview(root)
+    item = item_of(win2.current_plan, "下载/归档盒/样本.md")
+    close_window(win2)
+    ok = (bool(cap["errors"]) and not cap["accepted"]
+          and "已在其他窗口被修改" in msg
+          and stored == "B 已确认的新目标"
+          and item.target_dir_rel == os.path.join(
+              "_已整理", "项目", "B 已确认的新目标")
+          and item.selected is True)
+    rec("T50", "写入前重读发现较新保存时整次取消并保留 B 的目标", ok,
+        f"global={stored} b_ok={state.get('b_ok')} "
+        f"target={item.target_rel_path} selected={item.selected} "
+        f"msg={msg[:100]}")
+
+
+def test_scope_change_fails_when_target_db_unavailable():
+    """问题 3：目标库不可用时改成全局不得假装保存成功。"""
+    with isolated_app_dir():
+        _scope_unavailable_case()
+
+
+def _scope_unavailable_case():
+    root = root_dir("scope_target_unavailable")
+    write(root, "下载/归档盒/样本.md")
+    save_pref(root, "lt-u", "范围规则", category="原目标")
+    corrupt_global_db()
+    try:
+        win = open_window(root)
+
+        def to_global(dlg):
+            dlg.table_longterm.item(
+                config_row(dlg, "lt-u"), 11).setText(
+                    P.SCOPE_LABELS[P.SCOPE_GLOBAL])
+
+        cap = save_via_config_page(win, to_global)
+        close_window(win)
+    finally:
+        restore_global_db()
+    space_cat = next((p.category for p in P.list_space_preferences(root)
+                      if p.preference_id == "lt-u"), None)
+    json_cat = next((r.category for r in load_config(root)[0].long_term_rules
+                     if r.rule_id == "lt-u"), None)
+    msg = " ".join(cap["errors"])
+    failed_ok = (bool(cap["errors"]) and not cap["accepted"]
+                 and "全局偏好库不可用" in msg
+                 and space_cat == "原目标" and json_cat == "原目标")
+    win2 = preview(root)
+    item = item_of(win2.current_plan, "下载/归档盒/样本.md")
+    close_window(win2)
+    preview_ok = (
+        item.target_dir_rel == os.path.join("_已整理", "项目", "原目标")
+        and item.rule_key == "long_term:lt-u"
+        and item.selected is True)
+
+    # 反向：空间库不可用时把全局改回空间，也必须整次失败
+    root2 = root_dir("scope_source_unavailable")
+    write(root2, "下载/归档盒/样本2.md")
+    P.save_preference(root2, _pref(
+        root2, "lt-u2", "范围规则2", "全局目标", scope=P.SCOPE_GLOBAL))
+    db2 = P.space_db_path(root2)
+    P._open(db2).close()
+    _replace_with_garbage(db2)
+    win3 = open_window(root2)
+
+    def to_space(dlg):
+        dlg.table_longterm.item(
+            config_row(dlg, "lt-u2"), 11).setText(
+                P.SCOPE_LABELS[P.SCOPE_SPACE])
+
+    cap2 = save_via_config_page(win3, to_space)
+    close_window(win3)
+    os.replace(db2 + ".bak", db2)
+    global_cat2 = next((p.category for p in P.list_global_preferences()
+                        if p.preference_id == "lt-u2"), None)
+    space_ids2 = [p.preference_id for p in P.list_space_preferences(root2)]
+    reverse_ok = (bool(cap2["errors"]) and not cap2["accepted"]
+                  and global_cat2 == "全局目标"
+                  and "lt-u2" not in space_ids2)
+    rec("T51", "目标库不可用时改范围整次失败，范围与预览保持保存前",
+        failed_ok and preview_ok and reverse_ok,
+        f"space={space_cat} json={json_cat} target={item.target_rel_path} "
+        f"selected={item.selected} msg={msg[:80]} reverse={reverse_ok}")
+
+
 def run():
     control_target = test_control_without_preference()
     space_root, pref_id = test_save_space_preference_from_ui()
@@ -1825,6 +2069,9 @@ def run():
     test_corrupt_json_can_be_repaired_and_rolled_back_from_config_page()
     test_restore_retry_keeps_previous_target_backup()
     test_single_preference_keeps_body_candidates()
+    test_rollback_does_not_erase_newer_save()
+    test_write_recheck_rejects_newer_save()
+    test_scope_change_fails_when_target_db_unavailable()
 
 
 def main():

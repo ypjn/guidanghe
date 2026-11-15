@@ -601,13 +601,38 @@ def _restore_config_state(root: str, cfg: Optional[ClassificationConfig],
         return False
 
 
+_ABSENT = object()
+
+
+def _begin_write(conn: sqlite3.Connection) -> None:
+    """开始写事务：先拿写锁，再重读本次要改的行，避免检查后被别处覆盖。"""
+    conn.execute("BEGIN IMMEDIATE")
+
+
 def _restore_db_rows(conn: sqlite3.Connection,
                      snapshot: Dict[str, Preference],
-                     touched_ids: set) -> bool:
-    """把已提交的偏好库改回保存前（只动本次碰过的 id）。"""
+                     written: Dict[str, Optional[Preference]]) -> str:
+    """补偿已提交的偏好库，返回 restored / kept / failed。
+
+    `written` 是本次实际写下去的内容（删除记 None）。只有当前值仍等于本次
+    写下去的值时才恢复；某个 id 已被其他窗口改成别的值，就保留那个较新的
+    值，不把别人的保存抹掉。
+    """
+    kept = False
     try:
-        conn.execute("BEGIN")
-        for pid in touched_ids:
+        conn.execute("BEGIN IMMEDIATE")
+        for pid, written_pref in written.items():
+            rows = conn.execute(
+                "SELECT * FROM preferences WHERE preference_id = ?",
+                (pid,)).fetchall()
+            current = _row_to_pref(rows[0]) if rows else None
+            current_fp = (preference_fingerprint(current)
+                          if current is not None else None)
+            written_fp = (preference_fingerprint(written_pref)
+                          if written_pref is not None else None)
+            if current_fp != written_fp:
+                kept = True
+                continue
             old = snapshot.get(pid)
             if old is not None:
                 _upsert(conn, old)
@@ -615,13 +640,35 @@ def _restore_db_rows(conn: sqlite3.Connection,
                 conn.execute(
                     "DELETE FROM preferences WHERE preference_id = ?", (pid,))
         conn.commit()
-        return True
+        return "kept" if kept else "restored"
     except Exception:
         try:
             conn.rollback()
         except Exception:
             pass
-        return False
+        return "failed"
+
+
+def _json_state(root: str):
+    """当前 JSON 文件状态：字节内容，或 _ABSENT（文件不存在）。"""
+    path = config_path(root)
+    if not os.path.isfile(path):
+        return _ABSENT
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def _restore_after_failure(root: str, old_cfg, old_raw, old_existed,
+                           written_state) -> str:
+    """失败补偿 JSON：只有当前内容仍是本次写下去的内容时才恢复。"""
+    if _json_state(root) != written_state:
+        return "kept"
+    if _restore_config_state(root, old_cfg, old_raw, old_existed):
+        return "restored"
+    return "failed"
 
 
 def save_preference(root: str, pref: Preference) -> None:
@@ -796,6 +843,7 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
     old_existed = False
     new_cfg = None
     json_written = False
+    written_json = None
     committed_space = False
     committed_global = False
     pre_space: Dict[str, Preference] = {}
@@ -825,7 +873,25 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
         def _writable(scope: str) -> bool:
             return write_space if scope == SCOPE_SPACE else write_global
 
+        def _unwritable_error(pref: Preference,
+                              scope: Optional[str] = None) -> PreferenceError:
+            scope = scope or pref.scope
+            label = ("全局偏好库不可用" if scope == SCOPE_GLOBAL
+                     else "本空间偏好库不可用")
+            return PreferenceError(
+                f"{label}，无法把偏好「{pref.name}」({pref.preference_id}) "
+                f"保存为「{SCOPE_LABELS.get(scope, scope)}」；"
+                "本次保存已取消，范围和目标保持保存前。")
+
         if snapshot_prefs is not None:
+            # 目标库这次写不了时不能假装保存成功：新增或改过的行要明确失败。
+            for pref in prefs:
+                if _writable(pref.scope):
+                    continue
+                orig = snapshot_prefs.get(pref.preference_id)
+                if orig is None or preference_fingerprint(pref) != \
+                        preference_fingerprint(orig):
+                    raise _unwritable_error(pref)
             submitted_ids = {p.preference_id for p in prefs}
             migrated_space: set = set()
             migrated_global: set = set()
@@ -837,8 +903,10 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
                 if preference_fingerprint(pref) == old_fp:
                     continue                       # 本窗口没改：保留库里的内容
                 old_scope, new_scope = orig.scope, pref.scope
-                if not _writable(old_scope) or not _writable(new_scope):
-                    continue
+                if not _writable(new_scope):
+                    raise _unwritable_error(pref, new_scope)
+                if not _writable(old_scope):
+                    raise _unwritable_error(pref, old_scope)
                 if old_scope == new_scope:
                     current = _current_for(new_scope).get(pref.preference_id)
                     if current is None or preference_fingerprint(current) != old_fp:
@@ -893,12 +961,35 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
                               else default_config()))
             new_cfg = clone_config(base_cfg)
 
-        # 3) 两个库各自开启事务并写入，但先不提交
+        # 3) 两个库各自开启写事务并写入，但先不提交
         if space_conn is not None:
-            space_conn.execute("BEGIN")
+            _begin_write(space_conn)
+        if global_conn is not None:
+            _begin_write(global_conn)
+
+        # 3.1) 拿到写锁后再读一次本次要改的行：如果检查之后、写入之前
+        #      别处已经保存了较新的值，这次保存整次取消，不覆盖别人的结果。
+        fresh_space = _rows_from_conn(space_conn) if space_conn else {}
+        fresh_global = _rows_from_conn(global_conn) if global_conn else {}
+        for before, fresh, writes, deletes in (
+                (current_space, fresh_space, space_write, space_delete),
+                (current_global, fresh_global, global_write, global_delete)):
+            touched = {p.preference_id for p in writes} | set(deletes)
+            for pid in touched:
+                old_row = before.get(pid)
+                new_row = fresh.get(pid)
+                old_fp = (preference_fingerprint(old_row)
+                          if old_row is not None else None)
+                new_fp = (preference_fingerprint(new_row)
+                          if new_row is not None else None)
+                if old_fp != new_fp:
+                    target = next((p for p in writes
+                                   if p.preference_id == pid), None)
+                    raise _conflict_error(target or new_row or old_row)
+
+        if space_conn is not None:
             _apply_rows(space_conn, space_write, space_delete)
         if global_conn is not None:
-            global_conn.execute("BEGIN")
             _apply_rows(global_conn, global_write, global_delete)
 
         # 4) 用写后的最终行生成 JSON 镜像，写成功后才提交 SQLite
@@ -909,6 +1000,7 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
             ensure_valid(new_cfg)
             save_config(root, new_cfg)
             json_written = True
+            written_json = _json_state(root)
 
         if space_conn is not None:
             space_conn.commit()
@@ -931,35 +1023,60 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
                     conn.rollback()
                 except Exception:
                     pass
-        # 已经提交的库无法用 rollback 撤销：按保存前快照补偿回去。
-        space_ok = True
+        # 已经提交的库无法用 rollback 撤销：只补偿本次写下去、且现在仍
+        # 保持本次写入值的内容；已被别的窗口改过的 id 保留那个较新的值。
+        space_written: Dict[str, Optional[Preference]] = {
+            p.preference_id: p for p in space_write}
+        for pid in space_delete:
+            space_written.setdefault(pid, None)
+        global_written: Dict[str, Optional[Preference]] = {
+            p.preference_id: p for p in global_write}
+        for pid in global_delete:
+            global_written.setdefault(pid, None)
+
+        space_state = "restored"
         if committed_space:
-            space_ok = _restore_db_rows(
-                space_conn, pre_space,
-                {p.preference_id for p in space_write} | space_delete)
-        global_ok = True
+            space_state = _restore_db_rows(
+                space_conn, pre_space, space_written)
+        global_state = "restored"
         if committed_global:
-            global_ok = _restore_db_rows(
-                global_conn, pre_global,
-                {p.preference_id for p in global_write} | global_delete)
-        json_ok = True
+            global_state = _restore_db_rows(
+                global_conn, pre_global, global_written)
+        json_state = "restored"
         if json_written:
-            json_ok = _restore_config_state(
-                root, old_cfg, old_raw, old_existed)
+            json_state = _restore_after_failure(
+                root, old_cfg, old_raw, old_existed, written_json)
+
         restored: List[str] = []
-        missing: List[str] = []
+        kept: List[str] = []
+        failed: List[str] = []
+
+        def _record(label: str, state: str) -> None:
+            if state == "restored":
+                restored.append(label)
+            elif state == "kept":
+                kept.append(label)
+            else:
+                failed.append(label)
+
         if json_written:
-            (restored if json_ok else missing).append("JSON 镜像")
+            _record("JSON 镜像", json_state)
         if space_conn is not None:
-            (restored if space_ok else missing).append("空间偏好库")
+            _record("空间偏好库", space_state)
         if global_conn is not None:
-            (restored if global_ok else missing).append("全局偏好库")
-        if missing:
+            _record("全局偏好库", global_state)
+        if failed:
             raise PreferenceError(
                 "偏好库写入失败，以下位置未能确认回到保存前："
-                + "、".join(missing)
+                + "、".join(failed)
                 + (f"；已恢复：{'、'.join(restored)}" if restored else "")
                 + f"。请检查后再操作：{e}")
+        if kept:
+            raise PreferenceError(
+                "偏好库写入失败；以下位置保留了其他窗口的较新内容，"
+                "未按本次开始前回滚：" + "、".join(kept)
+                + (f"；已恢复：{'、'.join(restored)}" if restored else "")
+                + f"：{e}")
         if json_written:
             raise PreferenceError(f"偏好库写入失败，已整体回滚：{e}")
         raise PreferenceError(f"偏好库写入失败，未写入任何一边：{e}")
