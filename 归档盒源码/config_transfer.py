@@ -673,7 +673,8 @@ def list_backups(root: str) -> List[BackupInfo]:
     return out
 
 
-def restore_latest_backup(root: str) -> Tuple[str, str]:
+def restore_latest_backup(root: str,
+                          report: Optional[dict] = None) -> Tuple[str, str]:
     """恢复最近一次**可用**备份（S1-09：不再一次性消费）。
 
     返回 (state, message)。state 为 default / custom。
@@ -681,6 +682,8 @@ def restore_latest_backup(root: str) -> Tuple[str, str]:
             不能因为一份坏备份就永久堵死「恢复」；所有备份文件都保留。
     S1-09：恢复前先把当前配置备份一份（备份失败则拒绝恢复）；
             恢复后不删除所用备份。
+    `report`（可选）会被填上本次新建的备份与所用的备份路径，供调用方在
+    后续同步失败时只删掉本次新产生的那一份，保住更早的目标备份。
     """
     infos = list_backups(root)
     if not infos:
@@ -696,6 +699,10 @@ def restore_latest_backup(root: str) -> Tuple[str, str]:
     # S1-09：恢复前先备份当前配置；备份失败则中止，不做任何改动。
     # 正在使用的那份备份不参与裁剪，避免最新几份都损坏时把它删掉。
     new_backup_path = create_backup(root, protect_paths=[info.path])
+    if report is not None:
+        report["new_backup"] = new_backup_path
+        report["used_backup"] = info.path
+        report["state"] = info.state
     path = config_path(root)
     if info.state == "default":
         if os.path.exists(path):

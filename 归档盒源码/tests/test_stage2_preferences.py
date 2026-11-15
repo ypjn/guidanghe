@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sqlite3
 import sys
 import tempfile
 import time
@@ -50,10 +51,10 @@ import preferences as P  # noqa: E402
 from ai_fallback import AiSettings, apply_ai_fallback  # noqa: E402
 from classification_config import (  # noqa: E402
     INNER_CLEAR, INNER_KEEP, INNER_REPLACE, MATCH_DIR_SCOPE,
-    LongTermRule, default_config, load_config, save_config,
+    LongTermRule, config_path, default_config, load_config, save_config,
 )
 from config_dialog import ClassificationConfigDialog  # noqa: E402
-from config_transfer import create_backup  # noqa: E402
+from config_transfer import create_backup, list_backups  # noqa: E402
 from executor import execute_plan, undo_latest_batch  # noqa: E402
 from main import MainWindow  # noqa: E402
 from planner import (  # noqa: E402
@@ -324,6 +325,49 @@ def edit_preference_via_config(root: str, preference_id: str, *,
             Qt.Checked if enabled else Qt.Unchecked)
     dlg._on_save()
     return "ok"
+
+
+def config_row(dlg, preference_id: str) -> int:
+    """在配置页长期规则表里按 preference_id 找到行号。"""
+    table = dlg.table_longterm
+    for r in range(table.rowCount()):
+        item = table.item(r, 10)
+        if item is not None and item.text() == preference_id:
+            return r
+    raise AssertionError(f"配置页找不到偏好 {preference_id}")
+
+
+def save_via_config_page(win: MainWindow, mutate=None) -> dict:
+    """打开主窗口的配置页（on_edit_config），执行 mutate 后点「保存并应用」。
+
+    回归必须走配置页的真实收集与保存（_collect_preferences → _on_save →
+    save_all_callback），不能把现成的 Preference 直接交给 persist_preferences。
+    """
+    captured = {"errors": [], "accepted": False, "result": None}
+    real_exec = ClassificationConfigDialog.exec
+    real_critical = QMessageBox.critical
+
+    def fake_critical(parent, title, text, *args, **kwargs):
+        captured["errors"].append(str(text))
+        return QMessageBox.Ok
+
+    def fake_exec(self):
+        if mutate is not None:
+            mutate(self)
+        self._on_save()
+        captured["accepted"] = self.result() == 1
+        captured["result"] = self.result_config
+        return self.result()
+
+    ClassificationConfigDialog.exec = fake_exec
+    QMessageBox.critical = staticmethod(fake_critical)
+    try:
+        win.on_edit_config()
+    finally:
+        ClassificationConfigDialog.exec = real_exec
+        QMessageBox.critical = staticmethod(real_critical)
+        process()
+    return captured
 
 
 # ============================ 用例 ============================
@@ -792,12 +836,14 @@ def test_history_compatibility_and_execution():
 
 
 def save_pref(root: str, pid: str, name: str, *, category="归档盒",
-              inner_mode=INNER_CLEAR, inner_path="", source="下载/归档盒"):
+              inner_mode=INNER_CLEAR, inner_path="", source="下载/归档盒",
+              reason=""):
     P.save_preference(root, P.Preference(
         preference_id=pid, name=name, match_type=MATCH_DIR_SCOPE,
         source_path=source, include_subdirs=True, direction="项目",
         category=category, inner_mode=inner_mode, inner_path=inner_path,
         enabled=True, scope=P.SCOPE_SPACE, space_root=root,
+        reason=reason,
         confirmed_at="2026-11-15T00:00:00",
         confirmed_source_rel=f"{source}/样本.md"))
 
@@ -1351,6 +1397,401 @@ def test_restore_backup_rolls_back_json_on_sync_failure():
         f"target={item.target_rel_path}")
 
 
+class isolated_app_dir:
+    """临时换一个应用数据目录，避免前面的用例遗留的全局偏好干扰本轮预览。"""
+
+    def __enter__(self):
+        self._old = os.environ.get("ARCHIVEBOX_APP_DIR")
+        self.path = tempfile.mkdtemp(prefix="stage2_iso_app_")
+        os.environ["ARCHIVEBOX_APP_DIR"] = self.path
+        return self.path
+
+    def __exit__(self, *exc):
+        if self._old is None:
+            os.environ.pop("ARCHIVEBOX_APP_DIR", None)
+        else:
+            os.environ["ARCHIVEBOX_APP_DIR"] = self._old
+
+
+def test_global_commit_failure_rolls_back_space_db():
+    """问题 1：全局库提交失败时，空间库不得留下新目标。"""
+    with isolated_app_dir():
+        _global_commit_failure_case()
+
+
+def _global_commit_failure_case():
+    root = root_dir("global_commit_fail")
+    write(root, "下载/归档盒/样本.md")
+    save_pref(root, "lt-space", "空间偏好", category="归档盒")
+    P.save_preference(root, _pref(
+        root, "lt-global", "全局偏好", "全局旧目标",
+        source="下载/其他", scope=P.SCOPE_GLOBAL))
+    win = open_window(root)
+
+    lock = {}
+    real_apply = P._apply_rows
+
+    def apply_and_lock(conn, prefs, delete_ids):
+        # 在全局库事务写入前，用第二个连接 BEGIN 并一直持有读事务；
+        # 这样全局库 commit 会因 database is locked 失败。
+        rows = conn.execute("PRAGMA database_list").fetchall()
+        db_path = next((row[2] for row in rows if row[1] == "main"), "")
+        if (os.path.realpath(db_path) == os.path.realpath(P.global_db_path())
+                and "conn" not in lock):
+            holder = sqlite3.connect(P.global_db_path(), timeout=10)
+            holder.execute("PRAGMA busy_timeout=5000")
+            holder.execute("BEGIN")
+            holder.execute("SELECT * FROM preferences").fetchall()
+            lock["conn"] = holder
+        return real_apply(conn, prefs, delete_ids)
+
+    def mutate(dlg):
+        r1 = config_row(dlg, "lt-space")
+        dlg.table_longterm.item(r1, 8).setText("空间新目标")
+        r2 = config_row(dlg, "lt-global")
+        dlg.table_longterm.item(r2, 8).setText("全局新目标")
+
+    P._apply_rows = apply_and_lock
+    try:
+        cap = save_via_config_page(win, mutate)
+    finally:
+        P._apply_rows = real_apply
+        holder = lock.get("conn")
+        if holder is not None:
+            try:
+                holder.rollback()
+            except Exception:
+                pass
+            holder.close()
+
+    space_cat = next((p.category for p in P.list_space_preferences(root)
+                      if p.preference_id == "lt-space"), None)
+    global_cat = next((p.category for p in P.list_global_preferences()
+                       if p.preference_id == "lt-global"), None)
+    json_cats = {r.rule_id: r.category
+                 for r in load_config(root)[0].long_term_rules}
+    msg = " ".join(cap["errors"])
+    db_ok = (space_cat == "归档盒" and global_cat == "全局旧目标"
+             and json_cats.get("lt-space") == "归档盒")
+    rollback_named = "已整体回滚" in msg
+    close_window(win)
+
+    win2 = preview(root)
+    item = item_of(win2.current_plan, "下载/归档盒/样本.md")
+    preview_ok = (
+        item.target_dir_rel == os.path.join("_已整理", "项目", "归档盒")
+        and item.rule_key == "long_term:lt-space"
+        and item.selected is True)
+    close_window(win2)
+    rec("T43", "全局库提交失败后空间库/全局库/JSON 都回到保存前",
+        bool(cap["errors"]) and not cap["accepted"] and db_ok
+        and rollback_named and preview_ok,
+        f"space={space_cat} global={global_cat} json={json_cats.get('lt-space')} "
+        f"target={item.target_rel_path} rule_key={item.rule_key} "
+        f"selected={item.selected} msg={msg[:80]}")
+
+
+def test_config_page_keeps_reason_and_avoids_false_conflict():
+    """问题 2：配置页直接保存不得清空 reason，也不得误报并发冲突。"""
+    root = root_dir("reason_preserved")
+    write(root, "下载/归档盒/说明.md")
+    save_pref(root, "lt-reason", "手动修正规则", reason="由手动修正生成")
+    win = open_window(root)
+    cap1 = save_via_config_page(win)
+    close_window(win)
+    row1 = next((p for p in P.list_space_preferences(root)
+                 if p.preference_id == "lt-reason"), None)
+    json1 = next((r for r in load_config(root)[0].long_term_rules
+                  if r.rule_id == "lt-reason"), None)
+    unchanged_ok = (not cap1["errors"] and cap1["accepted"]
+                    and row1 is not None and row1.reason == "由手动修正生成"
+                    and row1.category == "归档盒"
+                    and json1 is not None and json1.reason == "由手动修正生成")
+
+    win2 = open_window(root)
+    other = P.Preference(**{
+        **next(p for p in P.list_space_preferences(root)
+               if p.preference_id == "lt-reason").__dict__,
+        "category": "另一窗口新目标"})
+
+    def mutate(dlg):
+        # 打开配置页之后，另一窗口改了同一目标
+        P.save_preference(root, other)
+
+    cap2 = save_via_config_page(win2, mutate)
+    close_window(win2)
+    row2 = next((p for p in P.list_space_preferences(root)
+                 if p.preference_id == "lt-reason"), None)
+    json2 = next((r for r in load_config(root)[0].long_term_rules
+                  if r.rule_id == "lt-reason"), None)
+    concurrent_ok = (not cap2["errors"] and cap2["accepted"]
+                     and row2 is not None and row2.category == "另一窗口新目标"
+                     and row2.reason == "由手动修正生成"
+                     and json2 is not None
+                     and json2.category == "另一窗口新目标"
+                     and json2.reason == "由手动修正生成")
+    rec("T44", "配置页一项不改保存时保留 reason 且不误报并发冲突",
+        unchanged_ok and concurrent_ok,
+        f"unchanged={unchanged_ok} reason1={getattr(row1, 'reason', None)} "
+        f"json1={getattr(json1, 'reason', None)} concurrent={concurrent_ok} "
+        f"cat2={getattr(row2, 'category', None)} "
+        f"reason2={getattr(row2, 'reason', None)} errors={cap2['errors']}")
+
+
+def test_scope_change_moves_preference_between_dbs():
+    """问题 3：配置页可把空间偏好改成全局，或把全局改成空间。"""
+    with isolated_app_dir():
+        _scope_change_case()
+
+
+def _scope_change_case():
+    root = root_dir("scope_migrate_out")
+    write(root, "下载/归档盒/迁移.md")
+    save_pref(root, "lt-move", "迁移规则", category="归档盒")
+    win = open_window(root)
+
+    def to_global(dlg):
+        r = config_row(dlg, "lt-move")
+        dlg.table_longterm.item(r, 11).setText(
+            P.SCOPE_LABELS[P.SCOPE_GLOBAL])
+
+    cap1 = save_via_config_page(win, to_global)
+    close_window(win)
+    space1 = P.list_space_preferences(root)
+    global1 = P.list_global_preferences()
+    json_ids1 = [r.rule_id for r in load_config(root)[0].long_term_rules]
+    moved_global = (
+        not cap1["errors"]
+        and not any(p.preference_id == "lt-move" for p in space1)
+        and any(p.preference_id == "lt-move" and p.category == "归档盒"
+                for p in global1)
+        and "lt-move" not in json_ids1)
+    win2 = preview(root)
+    item1 = item_of(win2.current_plan, "下载/归档盒/迁移.md")
+    preview_ok = (
+        item1.target_dir_rel == os.path.join("_已整理", "项目", "归档盒")
+        and item1.rule_key == "long_term:lt-move"
+        and item1.selected is True)
+    close_window(win2)
+
+    root2 = root_dir("scope_migrate_in")
+    write(root2, "下载/归档盒/迁移2.md")
+    P.save_preference(root2, _pref(
+        root2, "lt-move2", "迁移规则2", "归档盒", scope=P.SCOPE_GLOBAL))
+    win3 = open_window(root2)
+
+    def to_space(dlg):
+        r = config_row(dlg, "lt-move2")
+        dlg.table_longterm.item(r, 11).setText(
+            P.SCOPE_LABELS[P.SCOPE_SPACE])
+
+    cap2 = save_via_config_page(win3, to_space)
+    close_window(win3)
+    space2 = P.list_space_preferences(root2)
+    global2 = P.list_global_preferences()
+    json2 = {r.rule_id: r.category
+             for r in load_config(root2)[0].long_term_rules}
+    moved_space = (
+        not cap2["errors"]
+        and not any(p.preference_id == "lt-move2" for p in global2)
+        and any(p.preference_id == "lt-move2" and p.category == "归档盒"
+                for p in space2)
+        and json2.get("lt-move2") == "归档盒")
+
+    root3 = root_dir("scope_migrate_conflict")
+    write(root3, "下载/归档盒/迁移3.md")
+    save_pref(root3, "lt-move3", "迁移规则3", category="归档盒")
+    win4 = open_window(root3)
+
+    def conflict(dlg):
+        current = next(p for p in P.list_space_preferences(root3)
+                       if p.preference_id == "lt-move3")
+        # 打开配置页之后，另一窗口改了原行
+        P.save_preference(root3, P.Preference(
+            **{**current.__dict__, "category": "别处改过"}))
+        r = config_row(dlg, "lt-move3")
+        dlg.table_longterm.item(r, 11).setText(
+            P.SCOPE_LABELS[P.SCOPE_GLOBAL])
+
+    cap3 = save_via_config_page(win4, conflict)
+    close_window(win4)
+    space3 = P.list_space_preferences(root3)
+    global3 = P.list_global_preferences()
+    conflict_ok = (
+        bool(cap3["errors"]) and not cap3["accepted"]
+        and any(p.preference_id == "lt-move3" and p.category == "别处改过"
+                for p in space3)
+        and not any(p.preference_id == "lt-move3" for p in global3))
+    rec("T45", "改作用范围会搬迁原行；原行被别处改过时整次取消",
+        moved_global and preview_ok and moved_space and conflict_ok,
+        f"global={moved_global} preview={item1.target_rel_path} "
+        f"space={moved_space} conflict={conflict_ok} "
+        f"errors={cap3['errors']}")
+
+
+def test_corrupt_json_can_be_repaired_and_rolled_back_from_config_page():
+    """问题 4：配置 JSON 损坏时「保存并应用」仍能修好；失败时放回原字节。"""
+    root = root_dir("corrupt_json_repair")
+    write(root, "下载/归档盒/修复.md")
+    path = config_path(root)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    bad = b'{ this is not valid json'
+    with open(path, "wb") as f:
+        f.write(bad)
+    win = open_window(root)
+    had_error = bool(win._config_error)
+    with yes_answer():
+        cap = save_via_config_page(win)
+    close_window(win)
+    cfg_ok = True
+    try:
+        load_config(root)
+    except Exception:
+        cfg_ok = False
+    repaired = (had_error and not cap["errors"] and cap["accepted"]
+                and cfg_ok and not win._config_error)
+    rec("T46", "配置 JSON 损坏时仍可从配置页保存修好", repaired,
+        f"had_error={had_error} accepted={cap['accepted']} "
+        f"cfg_ok={cfg_ok} errors={cap['errors']}")
+
+    root2 = root_dir("corrupt_json_rollback")
+    write(root2, "下载/归档盒/修复2.md")
+    P._open(P.global_db_path()).close()
+    path2 = config_path(root2)
+    os.makedirs(os.path.dirname(path2), exist_ok=True)
+    bad2 = b'{ this is not valid json either'
+    with open(path2, "wb") as f:
+        f.write(bad2)
+    win2 = open_window(root2)
+
+    real_open = P._open
+
+    class _FailCommit:
+        def __init__(self, conn):
+            self._conn = conn
+
+        def __getattr__(self, name):
+            return getattr(self._conn, name)
+
+        def commit(self):
+            raise sqlite3.OperationalError("database is locked")
+
+    def fake_open(db_path):
+        conn = real_open(db_path)
+        if os.path.realpath(db_path) == os.path.realpath(P.global_db_path()):
+            return _FailCommit(conn)
+        return conn
+
+    P._open = fake_open
+    try:
+        with yes_answer():
+            cap2 = save_via_config_page(win2)
+    finally:
+        P._open = real_open
+    close_window(win2)
+    with open(path2, "rb") as f:
+        raw_after = f.read()
+    still_corrupt = False
+    try:
+        load_config(root2)
+    except Exception:
+        still_corrupt = True
+    msg2 = " ".join(cap2["errors"])
+    rollback_ok = (bool(cap2["errors"]) and not cap2["accepted"]
+                   and raw_after == bad2 and still_corrupt
+                   and "已整体回滚" in msg2)
+    rec("T46.2", "偏好库失败时把损坏的原文件字节放回，不留半份新配置",
+        rollback_ok,
+        f"raw_same={raw_after == bad2} still_corrupt={still_corrupt} "
+        f"msg={msg2[:80]}")
+
+
+def test_restore_retry_keeps_previous_target_backup():
+    """问题 5：恢复失败后重试必须仍恢复原来那一份。"""
+    root = root_dir("restore_retry")
+    write(root, "恢复专用/重试.md")
+    P.save_preference(root, _pref(
+        root, "lt-retry", "重试规则", "归档盒", source="恢复专用"))
+    create_backup(root)          # 更早的备份 = 归档盒（用户要恢复的那一份）
+    P.save_preference(root, _pref(
+        root, "lt-retry", "重试规则", "当前目标", source="恢复专用"))
+    backups_before = len(list_backups(root))
+
+    db = P.space_db_path(root)
+    _replace_with_garbage(db)
+    win = open_window(root)
+    raised = False
+    try:
+        win._restore_last_config()
+    except Exception:
+        raised = True
+    status1 = win.statusBar().currentMessage()
+    json1 = load_config(root)[0].long_term_rules[0].category
+    backups_after = len(list_backups(root))
+    os.replace(db + ".bak", db)
+    db1 = P.list_space_preferences(root)[0].category
+    rollback_ok = (raised and json1 == "当前目标" and db1 == "当前目标"
+                   and backups_after == backups_before
+                   and "已恢复" not in status1)
+
+    message = win._restore_last_config()
+    close_window(win)
+    json2 = load_config(root)[0].long_term_rules[0].category
+    db2 = P.list_space_preferences(root)[0].category
+    win2 = preview(root)
+    item = item_of(win2.current_plan, "恢复专用/重试.md")
+    close_window(win2)
+    retry_ok = (json2 == "归档盒" and db2 == "归档盒"
+                and item.target_dir_rel == os.path.join(
+                    "_已整理", "项目", "归档盒")
+                and "已恢复" in message)
+    rec("T47", "恢复失败删掉本次新备份，修好库后重试恢复原目标",
+        rollback_ok and retry_ok,
+        f"json1={json1} db1={db1} backups={backups_before}->{backups_after} "
+        f"status1={status1!r} json2={json2} db2={db2} "
+        f"target={item.target_rel_path} message={message.splitlines()[0]!r}")
+
+
+def test_single_preference_keeps_body_candidates():
+    """问题 6：一条偏好命中时也要留下全部正文候选。"""
+    root = root_dir("single_pref_body")
+    write(root, "下载/混合.md", "高等数学 AIGC")
+    save_pref(root, "lt-body-single", "单条项目偏好",
+              category="归档盒", source="下载")
+    win = preview(root)
+    item = item_of(win.current_plan, "下载/混合.md")
+    candidates = (getattr(item, "ambiguity", None) or {}).get(
+        "candidates") or []
+    text_all = " ".join(
+        f"{c.get('category') or ''} {c.get('evidence') or ''}"
+        for c in candidates)
+    body_kept = "高等数学" in text_all and "AIGC" in text_all
+    pref_first = bool(candidates) and \
+        candidates[0].get("preference_id") == "lt-body-single"
+    auto_untouched = (
+        item.auto_rule_key != "long_term:lt-body-single"
+        and item.auto_category != "归档盒"
+        and item.auto_rule_key.startswith("keyword_unmatched"))
+    main_ok = (bool(candidates) and item.selected is False
+               and body_kept and pref_first and auto_untouched)
+    math_idx = next((i for i, c in enumerate(candidates)
+                     if "高等数学" in f"{c.get('category') or ''} "
+                                     f"{c.get('evidence') or ''}"), None)
+    select_ok = False
+    if math_idx is not None:
+        win.apply_ambiguity_choice("下载/混合.md", math_idx)
+        process()
+        chosen = item_of(win.current_plan, "下载/混合.md")
+        select_ok = (chosen.selected is True
+                     and "高等数学" in chosen.target_rel_path)
+    rec("T48", "单条偏好命中时保留高等数学与 AIGC 正文候选且不勾选",
+        main_ok and select_ok,
+        f"selected={item.selected} candidates="
+        f"{[(c.get('category'), c.get('preference_id')) for c in candidates]} "
+        f"auto={item.auto_rule_key} selectable={select_ok}")
+    close_window(win)
+
+
 def run():
     control_target = test_control_without_preference()
     space_root, pref_id = test_save_space_preference_from_ui()
@@ -1378,6 +1819,12 @@ def run():
     test_space_db_corrupt_uses_global_only()
     test_concurrent_edit_is_not_overwritten()
     test_restore_backup_rolls_back_json_on_sync_failure()
+    test_global_commit_failure_rolls_back_space_db()
+    test_config_page_keeps_reason_and_avoids_false_conflict()
+    test_scope_change_moves_preference_between_dbs()
+    test_corrupt_json_can_be_repaired_and_rolled_back_from_config_page()
+    test_restore_retry_keeps_previous_target_backup()
+    test_single_preference_keeps_body_candidates()
 
 
 def main():

@@ -3732,18 +3732,26 @@ class MainWindow(QMainWindow):
             previous_cfg, _previous_source = load_config(root)
         except ClassificationConfigError:
             previous_cfg = None
-        _state, message = restore_latest_backup(root)
+        report: dict = {}
+        _state, message = restore_latest_backup(root, report=report)
         # 恢复出来的 JSON 长期规则同样要覆盖本空间偏好，否则预览继续用旧目标。
         cfg, _source = load_config(root)
         try:
             sync_space_preferences_from_config(root, cfg)
         except Exception:
             # 偏好库同步失败：把 JSON 写回恢复前，空间库保持恢复前；
-            # 不提示“已恢复”，让调用方按失败处理。
+            # 删掉本次新产生的备份，保留更早的目标备份和用户原本要恢复的
+            # 那一份，免得下一次“恢复”点到刚备份的当前配置。
             if previous_cfg is not None:
                 try:
                     save_config(root, previous_cfg)
                 except Exception:
+                    pass
+            new_backup = report.get("new_backup")
+            if new_backup:
+                try:
+                    os.remove(new_backup)
+                except OSError:
                     pass
             raise
         self._load_root_config(root)

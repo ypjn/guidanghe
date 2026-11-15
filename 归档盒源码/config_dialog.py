@@ -244,6 +244,9 @@ class ClassificationConfigDialog(QDialog):
                     "confirmed_source_rel": pref.confirmed_source_rel,
                     "sort_order": pref.sort_order,
                     "space_root": pref.space_root,
+                    # 本页没有 reason 编辑框：收集时保留打开时的来源说明，
+                    # 不能把空字符串写回库，也不能因此误判成“用户改过”。
+                    "reason": pref.reason,
                 }
         self.worker_registry = worker_registry
         self.ocr_texts = ocr_texts
@@ -651,7 +654,7 @@ class ClassificationConfigDialog(QDialog):
                 scope=scope,
                 space_root=(self.root if scope == SCOPE_SPACE
                             else meta.get("space_root", "")),
-                reason="",
+                reason=meta.get("reason", ""),
                 confirmed_at=_row_text(self.table_longterm, r, 12),
                 confirmed_source_rel=meta.get("confirmed_source_rel", ""),
                 source_kind=source_kind,

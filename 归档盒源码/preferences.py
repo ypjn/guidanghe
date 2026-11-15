@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -31,8 +32,8 @@ from classification_config import (
     LONG_TERM_DIRECTIONS, LongTermRule,
     MATCH_DIR_SCOPE, MATCH_EXACT_PATH, MATCH_FILENAME_KEYWORD,
     MATCH_TYPE_LABELS,
-    clone_config, compile_config, ensure_valid, load_config,
-    match_long_term_rule, save_config, validate_config,
+    clone_config, compile_config, config_path, default_config, ensure_valid,
+    load_config, match_long_term_rule, save_config, validate_config,
 )
 from planner import (
     MODE_BY_DIRECTION_SEMESTER, PlanItem, OrganizePlan,
@@ -535,6 +536,94 @@ def _restore_json(root: str, cfg: ClassificationConfig) -> bool:
         return False
 
 
+def _read_config_state(root: str):
+    """读取 classification_config.json 的现状。
+
+    返回 (cfg, raw_bytes, existed)：
+    - 文件不存在：(None, None, False)；
+    - 文件可解析：(cfg, None, True)；
+    - 文件损坏：(None, 原始字节, True)。损坏不阻止本次保存，失败时用原始
+      字节恢复，不让一份“修了一半”的新配置留在磁盘上。
+    文件本身读不出来（IO 错误）时抛 PreferenceError：没有原始字节，
+    无法保证失败回滚。
+    """
+    path = config_path(root)
+    if not os.path.isfile(path):
+        return None, None, False
+    try:
+        with open(path, "rb") as f:
+            raw = f.read()
+    except OSError as e:
+        raise PreferenceError(
+            f"该整理空间的 classification_config.json 无法读取，"
+            f"不能保证保存失败时恢复原文件：{e}")
+    try:
+        cfg, _source = load_config(root)
+        return cfg, None, True
+    except ClassificationConfigError:
+        return None, raw, True
+
+
+def _write_config_bytes(path: str, raw: bytes) -> None:
+    parent = os.path.dirname(path) or "."
+    os.makedirs(parent, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".archive-box.", suffix=".tmp", dir=parent)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(raw)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+
+def _restore_config_state(root: str, cfg: Optional[ClassificationConfig],
+                          raw: Optional[bytes], existed: bool) -> bool:
+    """把 JSON 恢复到保存前：可解析的旧配置、损坏的原始字节，或“原本没有”。"""
+    path = config_path(root)
+    try:
+        if cfg is not None:
+            return _restore_json(root, cfg)
+        if raw is not None:
+            _write_config_bytes(path, raw)
+            return True
+        if not existed:
+            if os.path.exists(path):
+                os.remove(path)
+            return True
+        return False
+    except Exception:
+        return False
+
+
+def _restore_db_rows(conn: sqlite3.Connection,
+                     snapshot: Dict[str, Preference],
+                     touched_ids: set) -> bool:
+    """把已提交的偏好库改回保存前（只动本次碰过的 id）。"""
+    try:
+        conn.execute("BEGIN")
+        for pid in touched_ids:
+            old = snapshot.get(pid)
+            if old is not None:
+                _upsert(conn, old)
+            else:
+                conn.execute(
+                    "DELETE FROM preferences WHERE preference_id = ?", (pid,))
+        conn.commit()
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+
+
 def save_preference(root: str, pref: Preference) -> None:
     """保存一条用户确认偏好。
 
@@ -680,11 +769,16 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
     - `baseline` 是打开编辑窗口时的偏好快照。相对快照没有改过的行不再写回，
       库里若已被其他窗口更新就保留库里的内容；同一 id 在快照之后被别处
       改过、本窗口又提交了不同内容时，整次保存取消（不写任何一边）。
+    - 作用范围变化（空间 ↔ 全局）算本窗口的修改：原行在原库里且与快照一致
+      时，从原库删除并写入新范围的库；原行已被别处改过时整次取消。
     - `original_ids` 仅在未提供 baseline 时用于删除：只删打开时已存在、
       本次又移除的行；编辑期间其他窗口新增的行保留。
     - `write_space=False` / `write_global=False` 时不触碰对应库。
     - 先打开所有需要的库，再写数据库语句；JSON 镜像在提交前写入。
-      任一步失败都会回滚 SQLite，并恢复 JSON，不会出现“报错但新目标已生效”。
+      任一库提交失败都会把已提交的库补偿回保存前，并恢复 JSON，不会出现
+      “报错但新目标已生效”。只有三处都确认恢复才会写“已整体回滚”。
+    - 旧 JSON 无法解析时不阻止保存：偏好库都写成功就用新配置覆盖它；
+      后续失败则把损坏的原文件字节放回去。
     """
     prefs = list(preferences)
     space_prefs = [p for p in prefs if p.scope == SCOPE_SPACE]
@@ -692,14 +786,24 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
     for pref in prefs:
         _raise_if_invalid(pref)
     originals = set(original_ids or [])
-    snapshot = ({p.preference_id: preference_fingerprint(p) for p in baseline}
-                if baseline is not None else None)
+    snapshot_prefs = ({p.preference_id: p for p in baseline}
+                      if baseline is not None else None)
 
     space_conn = None
     global_conn = None
     old_cfg = None
+    old_raw = None
+    old_existed = False
     new_cfg = None
     json_written = False
+    committed_space = False
+    committed_global = False
+    pre_space: Dict[str, Preference] = {}
+    pre_global: Dict[str, Preference] = {}
+    space_write: List[Preference] = []
+    global_write: List[Preference] = []
+    space_delete: set = set()
+    global_delete: set = set()
     try:
         # 1) 先打开所有需要的库；数据库损坏会在任何写入之前失败。
         if write_space:
@@ -709,57 +813,85 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
 
         current_space = _rows_from_conn(space_conn) if space_conn else {}
         current_global = _rows_from_conn(global_conn) if global_conn else {}
+        pre_space = dict(current_space)
+        pre_global = dict(current_global)
 
         space_write = list(space_prefs)
         global_write = list(global_prefs)
-        if snapshot is not None:
+
+        def _current_for(scope: str) -> Dict[str, Preference]:
+            return current_space if scope == SCOPE_SPACE else current_global
+
+        def _writable(scope: str) -> bool:
+            return write_space if scope == SCOPE_SPACE else write_global
+
+        if snapshot_prefs is not None:
             submitted_ids = {p.preference_id for p in prefs}
-            # 本窗口改过/删掉的行，如果库里已不是打开时的内容 -> 整次取消。
+            migrated_space: set = set()
+            migrated_global: set = set()
             for pref in prefs:
-                if pref.scope == SCOPE_SPACE and not write_space:
+                orig = snapshot_prefs.get(pref.preference_id)
+                if orig is None:
+                    continue                       # 本窗口新增
+                old_fp = preference_fingerprint(orig)
+                if preference_fingerprint(pref) == old_fp:
+                    continue                       # 本窗口没改：保留库里的内容
+                old_scope, new_scope = orig.scope, pref.scope
+                if not _writable(old_scope) or not _writable(new_scope):
                     continue
-                if pref.scope == SCOPE_GLOBAL and not write_global:
+                if old_scope == new_scope:
+                    current = _current_for(new_scope).get(pref.preference_id)
+                    if current is None or preference_fingerprint(current) != old_fp:
+                        raise _conflict_error(pref)
                     continue
-                old = snapshot.get(pref.preference_id)
-                if old is None or preference_fingerprint(pref) == old:
-                    continue
-                current = (current_space.get(pref.preference_id)
-                           if pref.scope == SCOPE_SPACE
-                           else current_global.get(pref.preference_id))
-                if current is None or preference_fingerprint(current) != old:
+                # 作用范围变化：原行必须还在原来的库里，且与打开时一致。
+                old_row = _current_for(old_scope).get(pref.preference_id)
+                if old_row is None or preference_fingerprint(old_row) != old_fp:
                     raise _conflict_error(pref)
-            for stale_id in set(snapshot) - submitted_ids:
-                current = current_space.get(stale_id) or \
-                    current_global.get(stale_id)
+                new_row = _current_for(new_scope).get(pref.preference_id)
+                if new_row is not None and preference_fingerprint(new_row) != old_fp:
+                    raise _conflict_error(pref)
+                (migrated_space if old_scope == SCOPE_SPACE
+                 else migrated_global).add(pref.preference_id)
+            for stale_id in set(snapshot_prefs) - submitted_ids:
+                orig = snapshot_prefs[stale_id]
+                current = current_space.get(stale_id) or current_global.get(stale_id)
                 if current is None:
                     continue
-                if current.scope == SCOPE_SPACE and not write_space:
+                if not _writable(current.scope):
                     continue
-                if current.scope == SCOPE_GLOBAL and not write_global:
-                    continue
-                if preference_fingerprint(current) != snapshot[stale_id]:
+                if preference_fingerprint(current) != preference_fingerprint(orig):
                     raise _conflict_error(current)
-            # 没改过的行不写回，避免覆盖其他窗口的更新。
+                if stale_id in current_space and write_space:
+                    space_delete.add(stale_id)
+                if stale_id in current_global and write_global:
+                    global_delete.add(stale_id)
+            space_delete |= migrated_space
+            global_delete |= migrated_global
+            # 没改过的行不写回，避免覆盖其他窗口的更新；改了范围的行
+            # 会进入新范围的写入列表，同时由上面的 delete 集合从原库移除。
             space_write = [
                 p for p in space_prefs
-                if snapshot.get(p.preference_id) is None
-                or preference_fingerprint(p) != snapshot[p.preference_id]]
+                if snapshot_prefs.get(p.preference_id) is None
+                or preference_fingerprint(p)
+                != preference_fingerprint(snapshot_prefs[p.preference_id])]
             global_write = [
                 p for p in global_prefs
-                if snapshot.get(p.preference_id) is None
-                or preference_fingerprint(p) != snapshot[p.preference_id]]
-            space_delete = {i for i in set(snapshot) - submitted_ids
-                            if i in current_space}
-            global_delete = {i for i in set(snapshot) - submitted_ids
-                             if i in current_global and i not in current_space}
+                if snapshot_prefs.get(p.preference_id) is None
+                or preference_fingerprint(p)
+                != preference_fingerprint(snapshot_prefs[p.preference_id])]
         else:
             space_delete = originals - {p.preference_id for p in space_prefs}
             global_delete = originals - {p.preference_id for p in global_prefs}
 
-        # 2) 准备 JSON 镜像（长期规则稍后从写后的库读取）
+        # 2) 准备 JSON 镜像。旧文件损坏时不阻止保存：用调用方给的配置
+        #    （配置页草稿）或内置默认继续，并记住原始字节以便失败时放回。
         if sync_json:
-            old_cfg = _read_json_config(root)
-            new_cfg = clone_config(config if config is not None else old_cfg)
+            old_cfg, old_raw, old_existed = _read_config_state(root)
+            base_cfg = (config if config is not None
+                        else (old_cfg if old_cfg is not None
+                              else default_config()))
+            new_cfg = clone_config(base_cfg)
 
         # 3) 两个库各自开启事务并写入，但先不提交
         if space_conn is not None:
@@ -780,8 +912,10 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
 
         if space_conn is not None:
             space_conn.commit()
+            committed_space = True
         if global_conn is not None:
             global_conn.commit()
+            committed_global = True
     except PreferenceError:
         for conn in (space_conn, global_conn):
             if conn is not None:
@@ -797,15 +931,38 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
                     conn.rollback()
                 except Exception:
                     pass
-        restored = True
-        if json_written and old_cfg is not None:
-            restored = _restore_json(root, old_cfg)
-        if not json_written:
-            raise PreferenceError(f"偏好库写入失败，未写入任何一边：{e}")
-        if restored:
+        # 已经提交的库无法用 rollback 撤销：按保存前快照补偿回去。
+        space_ok = True
+        if committed_space:
+            space_ok = _restore_db_rows(
+                space_conn, pre_space,
+                {p.preference_id for p in space_write} | space_delete)
+        global_ok = True
+        if committed_global:
+            global_ok = _restore_db_rows(
+                global_conn, pre_global,
+                {p.preference_id for p in global_write} | global_delete)
+        json_ok = True
+        if json_written:
+            json_ok = _restore_config_state(
+                root, old_cfg, old_raw, old_existed)
+        restored: List[str] = []
+        missing: List[str] = []
+        if json_written:
+            (restored if json_ok else missing).append("JSON 镜像")
+        if space_conn is not None:
+            (restored if space_ok else missing).append("空间偏好库")
+        if global_conn is not None:
+            (restored if global_ok else missing).append("全局偏好库")
+        if missing:
+            raise PreferenceError(
+                "偏好库写入失败，以下位置未能确认回到保存前："
+                + "、".join(missing)
+                + (f"；已恢复：{'、'.join(restored)}" if restored else "")
+                + f"。请检查后再操作：{e}")
+        if json_written:
             raise PreferenceError(f"偏好库写入失败，已整体回滚：{e}")
-        raise PreferenceError(
-            f"偏好库写入失败，且 JSON 镜像未能确认恢复，请检查配置文件：{e}")
+        raise PreferenceError(f"偏好库写入失败，未写入任何一边：{e}")
     finally:
         for conn in (space_conn, global_conn):
             if conn is not None:
@@ -1065,14 +1222,17 @@ def apply_preferences_to_plan(plan: OrganizePlan,
             f"{_pref_evidence(pref, evidence)} → "
             f"{pref.direction}/{pref.category or '（无类别）'}")
         item.decision_evidence = _pref_evidence(pref, evidence)
-        # 正文歧义仍然保留：把首选候选换成这条偏好，仍默认不勾选
+        # 正文歧义仍然保留：偏好作为首选候选加入，原有正文候选一个不删
+        # （高等数学、AIGC 等仍可在预览里改选），仍默认不勾选。
         ambiguity = getattr(item, "ambiguity", None)
         if ambiguity:
-            candidates = ambiguity.get("candidates") or []
-            if candidates:
-                candidates[0] = _candidate(pref, evidence, target_dir)
-            else:
-                ambiguity["candidates"] = [_candidate(pref, evidence, target_dir)]
+            candidates = [dict(c) for c in (ambiguity.get("candidates") or [])]
+            preferred = _candidate(pref, evidence, target_dir)
+            kept = [
+                c for c in candidates
+                if os.path.normcase(str(c.get("target_dir_rel") or ""))
+                != os.path.normcase(target_dir)]
+            ambiguity["candidates"] = [preferred] + kept
             ambiguity["reason"] = (
                 (ambiguity.get("reason") or "存在歧义")
                 + "；已按最高等级长期偏好确定首选候选")
