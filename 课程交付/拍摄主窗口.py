@@ -46,8 +46,8 @@ def wait_until(app, predicate, timeout=30.0):
 
 
 def main() -> int:
-    root = 重置演示样本.reset(HERE / "演示样本")
-    sample = HERE / "演示样本"
+    sample = Path(tempfile.mkdtemp(prefix="stage3_shot_sample_"))
+    root = 重置演示样本.reset(sample)
     app = QApplication.instance() or QApplication(sys.argv)
     print(f"platform={app.platformName()}")
     window = MainWindow()

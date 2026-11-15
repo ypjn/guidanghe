@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import os
 import subprocess
 import sys
@@ -446,12 +447,6 @@ def test_stale_and_conflict():
             contents.append(open(path, encoding="utf-8").read())
     files = sorted(files)
     contents = sorted(contents)
-    unique_ok = (
-        result2.moved == 2 and any("(1)" in name for name in names)
-        and "same-name-a" in contents[0] or "same-name-a" in "".join(contents)
-        and "same-name-b" in "".join(contents)
-        and len({os.path.dirname(i.target_rel_path) for i in plan2.items}) == 1
-        and sha_a and sha_b)
     joined = "".join(contents)
     unique_ok = (
         result2.moved == 2 and any("(1)" in name for name in names)
@@ -627,7 +622,71 @@ def test_cancel_interrupt_undo_conflict():
         f"占位sha不变={sha256(holder) == holder_sha} 目标仍在={os.path.isfile(target)}")
 
 
+def load_reset_module():
+    path = os.path.join(os.path.dirname(SRC), "课程交付", "重置演示样本.py")
+    spec = importlib.util.spec_from_file_location("stage3_reset_sample", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_reset_keeps_unrelated_files():
+    module = load_reset_module()
+    script = os.path.join(os.path.dirname(SRC), "课程交付", "重置演示样本.py")
+
+    parent = tempfile.mkdtemp(prefix="stage3_reset_root_")
+    space = os.path.join(parent, "普通资料")
+    kept = os.path.join(space, "作业", "保留.md")
+    os.makedirs(os.path.dirname(kept))
+    with open(kept, "w", encoding="utf-8") as f:
+        f.write("不要删\n")
+    outside = os.path.join(parent, "范围外-不要放进样本.md")
+    with open(outside, "w", encoding="utf-8") as f:
+        f.write("用户自己的对照\n")
+    kept_sha = sha256(kept)
+    outside_sha = sha256(outside)
+    proc = subprocess.run(
+        [sys.executable, script, "--root", space],
+        capture_output=True, text=True)
+    note = os.path.join(space, "下载", "笔记.txt")
+    with open(note, "w", encoding="utf-8") as f:
+        f.write("演示中被改过")
+    module.reset(__import__("pathlib").Path(space))
+    default_parent = tempfile.mkdtemp(prefix="stage3_reset_default_")
+    default_script = os.path.join(default_parent, "重置演示样本.py")
+    with open(script, encoding="utf-8") as src, open(default_script, "w", encoding="utf-8") as dst:
+        dst.write(src.read())
+    default_space = os.path.join(default_parent, "演示样本")
+    extra = os.path.join(default_space, "普通资料", "保留.md")
+    os.makedirs(os.path.dirname(extra))
+    with open(extra, "w", encoding="utf-8") as f:
+        f.write("默认命令也要留着\n")
+    extra_sha = sha256(extra)
+    proc_default = subprocess.run(
+        [sys.executable, default_script],
+        capture_output=True, text=True)
+    ok = (
+        proc.returncode == 0
+        and proc_default.returncode == 0
+        and sha256(kept) == kept_sha
+        and sha256(outside) == outside_sha
+        and os.path.isfile(os.path.join(space, "下载", "归档盒", "开发说明.md"))
+        and open(note, encoding="utf-8").read() == "高等数学 极限 导数\n"
+        and sha256(extra) == extra_sha
+        and "未覆盖" in proc.stdout
+        and "保留的非演示文件" in proc.stdout
+        and "保留的非演示文件" in proc_default.stdout)
+    rec("S12", "重置只写回 3 个演示文件，保留其他资料和已有范围外对照",
+        ok,
+        f"root退出码={proc.returncode}\n{proc.stdout}"
+        f"默认路径退出码={proc_default.returncode}\n{proc_default.stdout}"
+        f"保留sha不变={sha256(kept) == kept_sha} "
+        f"范围外sha不变={sha256(outside) == outside_sha} "
+        f"演示样本内其他文件sha不变={sha256(extra) == extra_sha}")
+
+
 def main():
+    test_reset_keeps_unrelated_files()
     test_two_rounds_and_execute()
     test_stale_and_conflict()
     test_cancel_interrupt_undo_conflict()
