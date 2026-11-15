@@ -711,7 +711,8 @@ class ClassificationConfigDialog(QDialog):
             # “报错但新目标已写进 JSON / 空间库”的半成品。
             try:
                 saved = self.save_all_callback(
-                    cfg, prefs, sorted(self.loaded_preference_ids))
+                    cfg, prefs, sorted(self.loaded_preference_ids),
+                    self.preferences)
             except (ClassificationConfigError, PreferenceError, OSError) as e:
                 QMessageBox.critical(
                     self, "保存失败",

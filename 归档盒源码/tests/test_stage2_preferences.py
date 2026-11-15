@@ -53,6 +53,7 @@ from classification_config import (  # noqa: E402
     LongTermRule, default_config, load_config, save_config,
 )
 from config_dialog import ClassificationConfigDialog  # noqa: E402
+from config_transfer import create_backup  # noqa: E402
 from executor import execute_plan, undo_latest_batch  # noqa: E402
 from main import MainWindow  # noqa: E402
 from planner import (  # noqa: E402
@@ -1159,6 +1160,197 @@ def test_preference_conflict_keeps_body_candidate():
     close_window(win)
 
 
+def _pref(root: str, pid: str, name: str, category: str, *,
+          source="下载/归档盒", scope=P.SCOPE_SPACE):
+    return P.Preference(
+        preference_id=pid, name=name, match_type=MATCH_DIR_SCOPE,
+        source_path=source, include_subdirs=True, direction="项目",
+        category=category, inner_mode=INNER_CLEAR, enabled=True,
+        scope=scope,
+        space_root=(root if scope == P.SCOPE_SPACE else ""),
+        confirmed_at="2026-11-15T00:00:00")
+
+
+def _replace_with_garbage(path: str):
+    if os.path.exists(path):
+        os.replace(path, path + ".bak")
+    with open(path, "wb") as f:
+        f.write(b"this is not a sqlite database")
+
+
+def test_single_save_failure_is_atomic():
+    root = root_dir("single_save_atomic")
+    write(root, "下载/归档盒/样本.md")
+    save_pref(root, "lt-old", "旧目标", category="归档盒")
+    db = P.space_db_path(root)
+    _replace_with_garbage(db)
+    raised = False
+    try:
+        P.save_preference(root, _pref(
+            root, "lt-old", "旧目标", "未成功保存的目标"))
+    except Exception:
+        raised = True
+    json_rule = next(r for r in load_config(root)[0].long_term_rules
+                     if r.rule_id == "lt-old")
+    json_ok = json_rule.category == "归档盒"
+    # 把失败前有效的库放回，重开预览必须仍按库里的旧目标
+    os.replace(db + ".bak", db)
+    win = preview(root)
+    item = item_of(win.current_plan, "下载/归档盒/样本.md")
+    old_ok = (item.target_dir_rel == os.path.join("_已整理", "项目", "归档盒")
+              and item.rule_key == "long_term:lt-old"
+              and item.selected is True)
+    rec("T39", "单条保存失败不写 JSON，重开仍按库里的旧目标",
+        raised and json_ok and old_ok,
+        f"raised={raised} json={json_rule.category} "
+        f"target={item.target_rel_path} rule_key={item.rule_key} "
+        f"selected={item.selected}")
+    close_window(win)
+
+    # 没有旧规则、只保存一条新偏好：失败后 JSON 也不得写入
+    root2 = root_dir("single_save_atomic_new")
+    write(root2, "下载/归档盒/新样本.md")
+    os.makedirs(os.path.dirname(P.space_db_path(root2)), exist_ok=True)
+    _replace_with_garbage(P.space_db_path(root2))
+    raised2 = False
+    try:
+        P.save_preference(root2, _pref(
+            root2, "lt-new", "新目标", "未成功保存的目标"))
+    except Exception:
+        raised2 = True
+    json_ids = [r.rule_id for r in load_config(root2)[0].long_term_rules]
+    win2 = preview(root2)
+    item2 = item_of(win2.current_plan, "下载/归档盒/新样本.md")
+    new_ok = (raised2 and "lt-new" not in json_ids
+              and item2.target_dir_rel != os.path.join(
+                  "_已整理", "项目", "未成功保存的目标")
+              and item2.rule_key != "long_term:lt-new")
+    rec("T39.2", "没有旧规则时，失败的保存也不得让预览采用 JSON 新规则",
+        new_ok,
+        f"raised={raised2} json_ids={json_ids} "
+        f"target={item2.target_rel_path} rule_key={item2.rule_key}")
+    close_window(win2)
+
+
+def test_space_db_corrupt_uses_global_only():
+    root = root_dir("space_corrupt_global")
+    write(root, "下载/归档盒/样本.md")
+    save_pref(root, "lt-space", "空间规则", category="空间目标")
+    # 故意让 JSON 镜像停在另一个目标，验证预览不会回退 JSON
+    cfg, _ = load_config(root)
+    next(r for r in cfg.long_term_rules
+         if r.rule_id == "lt-space").category = "JSON目标"
+    save_config(root, cfg)
+    P.save_preference(root, _pref(
+        root, "lt-global", "全局规则", "全局目标", scope=P.SCOPE_GLOBAL))
+    _replace_with_garbage(P.space_db_path(root))
+    win = preview(root)
+    item = item_of(win.current_plan, "下载/归档盒/样本.md")
+    ok = (item.target_dir_rel == os.path.join("_已整理", "项目", "全局目标")
+          and item.rule_key == "long_term:lt-global"
+          and item.selected is True
+          and "本空间偏好库不可用" in (win._preference_note or ""))
+    rec("T40", "空间库打不开时只用全局偏好，不回退 JSON 空间规则",
+        ok, f"target={item.target_rel_path} rule_key={item.rule_key} "
+            f"selected={item.selected} note={win._preference_note}")
+    close_window(win)
+
+
+def test_concurrent_edit_is_not_overwritten():
+    root = root_dir("concurrent_edit")
+    first = _pref(root, "lt-shared", "共享", "旧目标",
+                  scope=P.SCOPE_GLOBAL)
+    P.save_preference(root, first)
+    snapshot = P.list_global_preferences()
+    P.save_preference(root, _pref(
+        root, "lt-shared", "共享", "另一窗口新目标", scope=P.SCOPE_GLOBAL))
+    P.save_preference(root, _pref(
+        root, "lt-shared-new", "新增", "新增目标", scope=P.SCOPE_GLOBAL))
+    # 本窗口没有改过这条：保留库里的新内容
+    unchanged_exc = None
+    try:
+        P.persist_preferences(
+            root, snapshot, sync_json=False,
+            original_ids=["lt-shared"], baseline=snapshot)
+    except Exception as e:
+        unchanged_exc = e
+    stored = {p.preference_id: p.category
+              for p in P.list_global_preferences()}
+    unchanged_ok = (unchanged_exc is None
+                    and stored.get("lt-shared") == "另一窗口新目标"
+                    and stored.get("lt-shared-new") == "新增目标")
+
+    # 本窗口改成第三种内容：整次保存取消，库保持保存前
+    changed = _pref(root, "lt-shared", "共享", "本窗口第三目标",
+                    scope=P.SCOPE_GLOBAL)
+    raised = False
+    try:
+        P.persist_preferences(
+            root, [changed], sync_json=False,
+            original_ids=["lt-shared"], baseline=snapshot)
+    except Exception:
+        raised = True
+    stored2 = {p.preference_id: p.category
+               for p in P.list_global_preferences()}
+    conflict_ok = (raised and stored2.get("lt-shared") == "另一窗口新目标"
+                   and stored2.get("lt-shared-new") == "新增目标")
+
+    rec("T41", "旧窗口不覆盖另一窗口对同一条偏好的修改",
+        unchanged_ok and conflict_ok,
+        f"unchanged={stored} conflict={stored2} raised={raised}")
+
+
+def test_restore_backup_rolls_back_json_on_sync_failure():
+    def setup(tag):
+        root = root_dir(tag)
+        write(root, "恢复专用/恢复.md")
+        save_pref(root, "lt-restore", "恢复规则", category="归档盒",
+                  source="恢复专用")
+        create_backup(root)          # 备份 = 归档盒
+        P.save_preference(root, _pref(
+            root, "lt-restore", "恢复规则", "新方案目标"))
+        return root
+
+    root = setup("restore_rollback")
+    win = open_window(root)
+    real_sync = main_mod.sync_space_preferences_from_config
+    main_mod.sync_space_preferences_from_config = (
+        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("模拟同步失败")))
+    raised = False
+    try:
+        win._restore_last_config()
+    except Exception:
+        raised = True
+    finally:
+        main_mod.sync_space_preferences_from_config = real_sync
+    json_cat = load_config(root)[0].long_term_rules[0].category
+    db_cat = P.list_space_preferences(root)[0].category
+    status = win.statusBar().currentMessage()
+    rollback_ok = (raised and json_cat == "新方案目标"
+                   and db_cat == "新方案目标" and "已恢复" not in status)
+    close_window(win)
+    rec("T42", "恢复备份同步失败时 JSON 回到恢复前，且不提示已恢复",
+        rollback_ok,
+        f"raised={raised} json={json_cat} db={db_cat} status={status!r}")
+
+    root2 = setup("restore_success")
+    win2 = open_window(root2)
+    message = win2._restore_last_config()
+    close_window(win2)
+    json_cat2 = load_config(root2)[0].long_term_rules[0].category
+    db_cat2 = P.list_space_preferences(root2)[0].category
+    win3 = preview(root2)
+    item = item_of(win3.current_plan, "恢复专用/恢复.md")
+    close_window(win3)
+    success_ok = (json_cat2 == "归档盒" and db_cat2 == "归档盒"
+                  and item.target_dir_rel == os.path.join(
+                      "_已整理", "项目", "归档盒"))
+    rec("T42.2", "恢复成功时 JSON 与库一起回到备份目标",
+        success_ok,
+        f"message={message!r} json={json_cat2} db={db_cat2} "
+        f"target={item.target_rel_path}")
+
+
 def run():
     control_target = test_control_without_preference()
     space_root, pref_id = test_save_space_preference_from_ui()
@@ -1182,6 +1374,10 @@ def run():
     test_scheme_apply_syncs_preferences()
     test_preferences_do_not_override_plain_modes()
     test_preference_conflict_keeps_body_candidate()
+    test_single_save_failure_is_atomic()
+    test_space_db_corrupt_uses_global_only()
+    test_concurrent_edit_is_not_overwritten()
+    test_restore_backup_rolls_back_json_on_sync_failure()
 
 
 def main():

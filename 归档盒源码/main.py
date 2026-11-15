@@ -3421,32 +3421,44 @@ class MainWindow(QMainWindow):
         self._update_config_label()
 
     def _refresh_preferences(self, root: str) -> bool:
-        """打开空间 / 准备生成预览时：做一次性 JSON 迁移并检查偏好库可用。
+        """打开空间 / 准备生成预览时：做一次性 JSON 迁移并检查偏好库。
 
-        偏好库不可用（例如目录不可写）时不阻断预览，回退到 JSON 长期规则，
-        并在状态栏与日志中说明原因。
+        偏好库是长期匹配的唯一来源。空间库打不开时只使用仍可读的全局
+        偏好，绝不回退 JSON 里的 long_term_rules；两边都不可用时就不应用
+        任何长期规则，并在状态栏与日志中说明原因。
         """
         self._preferences_available = False
         self._preference_note = ""
         if not root or not os.path.isdir(root):
             return False
+        notes: list = []
+
+        def add_note(text: str):
+            if not text:
+                return
+            key = text.split("：", 1)[0]
+            if any(n.split("：", 1)[0] == key for n in notes):
+                return
+            notes.append(text)
+
         try:
             inserted = ensure_migrated(root, self.classification_config)
-            _effective, global_error = effective_preferences_resilient(root)
-            self._preferences_available = True
-            self._preference_note = global_error
-            if inserted:
-                append_startup_log(
-                    f"已把 classification_config.json 中的 {inserted} 条长期规则"
-                    "一次性迁入本空间偏好库；JSON 原内容保持不变。")
-            if global_error:
-                append_startup_log(global_error + "；本轮只使用本空间偏好。")
-            return True
         except Exception as e:
-            self._preferences_available = False
-            self._preference_note = str(e)
-            append_startup_log(f"偏好库不可用，本轮回退到 JSON 长期规则：{e}")
-            return False
+            inserted = 0
+            add_note(f"本空间偏好库不可用：{e}")
+        _effective, read_note = effective_preferences_resilient(root)
+        for part in (read_note or "").split("；"):
+            add_note(part)
+        self._preferences_available = True
+        self._preference_note = "；".join(notes)
+        if inserted:
+            append_startup_log(
+                f"已把 classification_config.json 中的 {inserted} 条长期规则"
+                "一次性迁入本空间偏好库；JSON 原内容保持不变。")
+        if self._preference_note:
+            append_startup_log(
+                self._preference_note + "；本轮不使用 JSON 长期规则。")
+        return True
 
     def _update_config_label(self):
         if not hasattr(self, "config_label"):
@@ -3526,9 +3538,11 @@ class MainWindow(QMainWindow):
                 (lambda prefs: self._save_preferences_from_config(root, prefs))
                 if preference_rows is not None else None),
             save_all_callback=(
-                (lambda cfg, prefs, original_ids: self._save_config_and_preferences(
-                    root, cfg, prefs, original_ids=original_ids,
-                    write_global=not bool(global_error)))
+                (lambda cfg, prefs, original_ids, baseline: (
+                    self._save_config_and_preferences(
+                        root, cfg, prefs, original_ids=original_ids,
+                        baseline=baseline,
+                        write_global=not bool(global_error))))
                 if preference_rows is not None else None),
             preference_ids=(
                 [p.preference_id for p in preference_rows]
@@ -3603,7 +3617,8 @@ class MainWindow(QMainWindow):
                                      cfg: ClassificationConfig,
                                      preferences: list,
                                      original_ids=None,
-                                     write_global: bool = True):
+                                     write_global: bool = True,
+                                     baseline=None):
         """配置页「保存并应用」：配置 JSON 与偏好库一起原子提交。
 
         任何一步失败都会回滚两边的库并恢复 JSON；不会出现“报错但新目标
@@ -3622,7 +3637,8 @@ class MainWindow(QMainWindow):
         persist_preferences(
             root, preferences, sync_json=True,
             original_ids=original_ids,
-            write_space=True, write_global=write_global, config=cfg)
+            write_space=True, write_global=write_global, config=cfg,
+            baseline=baseline)
         self._load_root_config(root)
         self._preferences_available = True
         self._preference_note = ""
@@ -3712,10 +3728,24 @@ class MainWindow(QMainWindow):
     def _restore_last_config(self) -> str:
         """恢复上一次应用前的配置（只改配置，不移动/撤销文件）。"""
         root = self._require_idle_root()
+        try:
+            previous_cfg, _previous_source = load_config(root)
+        except ClassificationConfigError:
+            previous_cfg = None
         _state, message = restore_latest_backup(root)
         # 恢复出来的 JSON 长期规则同样要覆盖本空间偏好，否则预览继续用旧目标。
         cfg, _source = load_config(root)
-        sync_space_preferences_from_config(root, cfg)
+        try:
+            sync_space_preferences_from_config(root, cfg)
+        except Exception:
+            # 偏好库同步失败：把 JSON 写回恢复前，空间库保持恢复前；
+            # 不提示“已恢复”，让调用方按失败处理。
+            if previous_cfg is not None:
+                try:
+                    save_config(root, previous_cfg)
+                except Exception:
+                    pass
+            raise
         self._load_root_config(root)
         self._invalidate_for_config_change()
         self.statusBar().showMessage(
