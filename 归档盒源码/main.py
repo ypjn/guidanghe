@@ -3165,10 +3165,21 @@ class MainWindow(QMainWindow):
             self._warn_intake([message])
             return
         matched = self._check_only_dropped_files(files, require_all=True)
-        if matched:
-            self._announce_selected_files(matched)
+        if matched is None:
+            self._open_dropped_files(files)
             return
-        self._open_dropped_files(files)
+        all_matched, selected = matched
+        if not selected:
+            # 拖入的全是已跳过文件：保持原位，也不重开预览。
+            names = "、".join(f"「{os.path.basename(p)}」" for p in all_matched[:3])
+            more = f" 等 {len(all_matched)} 个文件" if len(all_matched) > 3 else ""
+            self.statusBar().showMessage(
+                f"{names}{more}已跳过，保持原位；其他文件勾选未变。")
+            return
+        extra = ""
+        if len(selected) < len(all_matched):
+            extra = f"；{len(all_matched) - len(selected)} 个已跳过的文件保持原位"
+        self._announce_selected_files(selected, extra=extra)
 
     def _open_dropped_files(self, files):
         """当前预览里没有这些文件时，只为它们生成预览并在完成后选中。"""
@@ -3251,20 +3262,32 @@ class MainWindow(QMainWindow):
             return
         self._pending_drop_select = []
         matched = self._check_only_dropped_files(paths, require_all=False)
-        if not matched:
+        if matched is None:
             message = ("拖入的文件没有出现在预览里。它可能受保护、被排除，"
                        "或已经不在这个文件夹中。")
             self.statusBar().showMessage(message)
             self._warn_intake([message])
             return
+        all_matched, selected = matched
+        if not selected:
+            names = "、".join(f"「{os.path.basename(p)}」" for p in all_matched)
+            self.statusBar().showMessage(f"{names} 已跳过，保持原位。")
+            return
         extra = ""
         wanted = {normalize_path(p) for p in paths}
-        if len(matched) < len(wanted):
+        if len(all_matched) < len(wanted):
             extra = "有的文件没有进入预览。"
-        self._announce_selected_files(matched, extra=extra)
+        if len(selected) < len(all_matched):
+            extra += f"{len(all_matched) - len(selected)} 个已跳过的文件保持原位。"
+        self._announce_selected_files(selected, extra=extra)
 
     def _check_only_dropped_files(self, paths, require_all=True):
-        """只勾选这些文件，并选中对应行。对不上时不改当前勾选。"""
+        """只勾选这些文件，并选中对应行。对不上时不改当前勾选。
+
+        返回 (匹配到的文件, 实际勾选的文件)；对不上返回 None。
+        已跳过（skipped）的条目永远不勾选：拖回它只定位该行，保持原位。
+        整批都是已跳过文件时，不改动其他文件的勾选。
+        """
         plan = self.current_plan
         if plan is None or not self._plan_valid:
             return None
@@ -3287,17 +3310,32 @@ class MainWindow(QMainWindow):
             return None
         if any(self.table.isRowHidden(row) for row in rows):
             self._clear_plan_filters()
+        normal_rows = [row for row in rows
+                       if not getattr(plan.items[row], "skipped", False)]
+        skipped_rows = [row for row in rows if row not in normal_rows]
         self._suppress_cell_signals = True
         try:
-            chosen = set(rows)
-            for index, item in enumerate(plan.items):
-                item.selected = index in chosen
+            def _sync(index, value):
                 cell = self.table.cellWidget(index, 0)
                 cb = cell.findChild(QCheckBox) if cell is not None else None
                 if cb is not None:
                     cb.blockSignals(True)
-                    cb.setChecked(item.selected)
+                    cb.setChecked(value)
                     cb.blockSignals(False)
+
+            if normal_rows:
+                chosen = set(normal_rows)
+                for index, item in enumerate(plan.items):
+                    # 已跳过的条目保持未勾选，不因拖放重新纳入执行批次。
+                    selected = (index in chosen
+                                and not getattr(item, "skipped", False))
+                    item.selected = selected
+                    _sync(index, selected)
+            else:
+                # 整批都是已跳过文件：不动其他文件的勾选，跳过条目保持未勾选。
+                for index in skipped_rows:
+                    plan.items[index].selected = False
+                    _sync(index, False)
         finally:
             self._suppress_cell_signals = False
         self.table.clearSelection()
@@ -3315,7 +3353,10 @@ class MainWindow(QMainWindow):
             self.table.scrollToItem(first)
         self._update_plan_counts()
         self._update_button_states()
-        return [plan.items[row].file.abs_path for row in rows]
+        return (
+            [plan.items[row].file.abs_path for row in rows],
+            [plan.items[row].file.abs_path for row in normal_rows],
+        )
 
     def _announce_selected_files(self, paths, extra=""):
         names = [os.path.basename(p) for p in paths if p]
@@ -4988,6 +5029,33 @@ class MainWindow(QMainWindow):
         self._refresh_busy_ui(msg if working else "")
         self._update_button_states()
 
+    def _revoke_skipped_selection(self, plan) -> int:
+        """把 skipped 条目收回未勾选，并同步行内复选框。返回收回数量。
+
+        最终批次只按 selected 组装，跳过的文件必须始终在原位；
+        这里再做一次兜底，避免任何路径把它重新勾上后混进执行批次。
+        """
+        revoked = 0
+        self._suppress_cell_signals = True
+        try:
+            for index, item in enumerate(plan.items):
+                if not getattr(item, "skipped", False) or not item.selected:
+                    continue
+                item.selected = False
+                revoked += 1
+                cell = self.table.cellWidget(index, 0)
+                cb = cell.findChild(QCheckBox) if cell is not None else None
+                if cb is not None:
+                    cb.blockSignals(True)
+                    cb.setChecked(False)
+                    cb.blockSignals(False)
+        finally:
+            self._suppress_cell_signals = False
+        if revoked:
+            self._update_plan_counts()
+            self._update_button_states()
+        return revoked
+
     def on_execute(self):
         if self._close_pending or self._closing:
             return  # 关闭等待期间不启动新的整理
@@ -4997,6 +5065,10 @@ class MainWindow(QMainWindow):
         if plan is None or not self._plan_valid:
             QMessageBox.warning(self, "归档盒", "请先生成有效的整理计划。")
             return
+
+        # 已跳过的条目即使 selected 因异常路径为真，也不进入最终批次：
+        # 进入确认前先收回勾选，让复选框与「已跳过」一致。
+        self._revoke_skipped_selection(plan)
 
         selected_items = [i for i in plan.items if i.selected]
         if not selected_items:

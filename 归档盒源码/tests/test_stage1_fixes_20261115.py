@@ -20,7 +20,8 @@ os.environ["ARCHIVEBOX_RECENT_FILE"] = tempfile.mktemp(prefix="stage1fix_recent_
 SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, SRC)
 
-from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtCore import QMimeData, QPointF, Qt, QUrl  # noqa: E402
+from PySide6.QtGui import QDropEvent  # noqa: E402
 from PySide6.QtWidgets import QApplication, QDialog, QCheckBox  # noqa: E402
 
 from classification_config import (  # noqa: E402
@@ -350,11 +351,129 @@ def check_content_no_escape_and_no_abs_path():
             f"错误信息含绝对路径目录：{err!r}")
 
 
+def _drop_path(window, path: str):
+    """用真实 QDropEvent 把文件拖回主窗口（与验收探针同一入口）。"""
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(path)])
+    event = QDropEvent(
+        QPointF(20.0, 20.0), Qt.CopyAction, mime,
+        Qt.LeftButton, Qt.NoModifier)
+    window.dropEvent(event)
+
+
+def check_dropped_skipped_stays_in_place():
+    """拖回已跳过文件：不重新勾选，执行后保持原位，批次里没有 moved 记录。"""
+    app()
+    root = root_dir()
+    write(root, "项目/AIGC/改选.md", "高等数学 极限 导数")
+    write(root, "项目/AIGC/跳过.md", "高等数学 极限 导数")
+    skip_src = os.path.join(root, "项目/AIGC/跳过.md")
+    apply_src = os.path.join(root, "项目/AIGC/改选.md")
+    before = {p: sha256_file(p) for p in (skip_src, apply_src)}
+
+    window = _MAIN.MainWindow()
+    try:
+        window.path_edit.setText(root)
+        window.on_scan()
+        assert wait_for_plan(window), "等待计划生成超时"
+        plan = window.current_plan
+        skip_item = item_by(plan, "项目/AIGC/跳过.md")
+        apply_item = item_by(plan, "项目/AIGC/改选.md")
+
+        # 先跳过一条，再改选另一条（改选后应保持勾选）
+        assert window.skip_ambiguity("项目/AIGC/跳过.md")
+        assert window.apply_ambiguity_choice("项目/AIGC/改选.md", 0)
+        assert apply_item.selected is True
+        assert apply_item.direction == "项目", apply_item.direction
+        assert skip_item.selected is False and skip_item.skipped is True
+
+        # 把同一个已跳过文件拖回窗口
+        _drop_path(window, skip_src)
+        QApplication.instance().processEvents()
+
+        assert skip_item.selected is False, "拖放把已跳过条目重新勾选"
+        assert skip_item.skipped is True, "拖放清掉了跳过标记"
+        row = next(r for r, it in enumerate(plan.items) if it is skip_item)
+        cell = window.table.cellWidget(row, 0)
+        cb = cell.findChild(QCheckBox) if cell is not None else None
+        assert cb is not None and cb.isChecked() is False, "行内复选框被勾上"
+        assert apply_item.selected is True, "拖放取消了已改选文件的勾选"
+        assert "已跳过" in window.statusBar().currentMessage(), (
+            window.statusBar().currentMessage())
+
+        # ---- 确认框取消：整个目录不动 ----
+        class RejectConfirm:
+            def __init__(self, *a, **k):
+                pass
+
+            def exec(self):
+                return QDialog.Rejected
+
+        real_confirm = _MAIN.ExecuteConfirmDialog
+        _MAIN.ExecuteConfirmDialog = RejectConfirm
+        try:
+            window.on_execute()
+        finally:
+            _MAIN.ExecuteConfirmDialog = real_confirm
+        for path in (skip_src, apply_src):
+            assert os.path.exists(path) and sha256_file(path) == before[path]
+
+        # ---- 确认执行 ----
+        class AcceptConfirm:
+            def __init__(self, *a, **k):
+                pass
+
+            def exec(self):
+                return QDialog.Accepted
+
+        msg_real = _patch_msgboxes()
+        _MAIN.ExecuteConfirmDialog = AcceptConfirm
+        try:
+            window.on_execute()
+            assert wait_for_idle(window), "执行未结束"
+        finally:
+            _MAIN.ExecuteConfirmDialog = real_confirm
+            _restore_msgboxes(msg_real)
+
+        # 跳过的文件仍在原路径、SHA 不变
+        assert os.path.exists(skip_src), "已跳过文件被移走"
+        assert sha256_file(skip_src) == before[skip_src], "已跳过文件内容被改"
+        # 已改选文件落到预览目标
+        apply_target = os.path.join(root, apply_item.target_rel_path)
+        assert os.path.exists(apply_target), "已改选文件未落到目标"
+        assert sha256_file(apply_target) == before[apply_src]
+        assert not os.path.exists(apply_src)
+
+        # 批次明细：只有改选文件是 moved，跳过文件没有记录
+        storage = window._storage
+        batch = storage.get_latest_batch()
+        assert batch is not None
+        actions = storage.get_actions(batch.batch_id)
+        moved = [a for a in actions if a.status == "moved"]
+        assert len(moved) == 1, [(a.source_rel, a.status) for a in actions]
+        assert moved[0].source_rel == "项目/AIGC/改选.md", moved[0].source_rel
+        assert not any(a.source_rel == "项目/AIGC/跳过.md" for a in actions), (
+            [(a.source_rel, a.status) for a in actions])
+
+        # ---- 撤销：两条都回到执行前的路径与 SHA ----
+        undo = undo_latest_batch(storage)
+        assert undo.restored >= 1, undo
+        for path in (skip_src, apply_src):
+            assert os.path.exists(path), path
+            assert sha256_file(path) == before[path], path
+        assert not os.path.exists(apply_target)
+    finally:
+        if getattr(window, "_storage", None) is not None:
+            window._storage.close()
+        window.close()
+
+
 CHECKS = [
     ("扫描后歧义面板可用", check_ambiguity_panel_enabled_after_scan),
     ("跳过不被重选 + 执行撤销闭环", check_skipped_not_reselected_and_execute_undo),
     ("候选目标路径完整保留", check_resolve_ambiguity_preserves_candidate_target),
     ("正文不越界且错误无绝对路径", check_content_no_escape_and_no_abs_path),
+    ("拖回已跳过文件仍保持原位", check_dropped_skipped_stays_in_place),
 ]
 
 
