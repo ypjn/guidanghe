@@ -1,7 +1,7 @@
 PY 3.14.8 (main, Oct  1 2026, 20:50:07) [Clang 22.1.3 ]
 6.12.0
 ===== tests/test_stage1_fixes_20261115.py =====
-qt.qpa.fonts: Populating font family aliases took 55 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
+qt.qpa.fonts: Populating font family aliases took 47 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
 PASS 扫描后歧义面板可用
 PASS 跳过不被重选 + 执行撤销闭环
 PASS 候选目标路径完整保留
@@ -204,22 +204,22 @@ This plugin does not support propagateSizeHints()
         计划内生效=True；配置无长期规则=True；重扫恢复自动=True；配置来源=default
 [PASS] T02  由手动修正生成长期规则 → 保存 → 重新生成后自动命中
         写入配置=True；来源=custom；规则数=1
-        rule_key=long_term:lt-69f7aca4cfbe
+        rule_key=long_term:lt-b1107454aa08
         方向=项目 内部=作业
         目标=_已整理/项目/数据大创/作业/a.pdf
 [PASS] T03  长期规则覆盖已命中「学期内目录」映射的文件
         原依据=semester_dir:大二上/数据结构
         原目标=_已整理/课程/大二上/数据结构/文档/作业/a.pdf
-        新依据=long_term:lt-b1d74890fd8a
+        新依据=long_term:lt-ec0466340f72
         新目标=_已整理/项目/数据大创/作业/a.pdf
         保留内部路径=作业
 [PASS] T04  精确路径匹配只改变目标文件，同目录其他文件不受影响
         a 依据=long_term:lt-t04 方向=项目
         b 依据=semester_dir:大二上/数据结构 方向=课程
 [PASS] T05  目录范围：仅本级 / 含子目录 / 路径边界不误匹配
-        本级目录直接子文件命中=long_term:lt-79cb18daa6b3
+        本级目录直接子文件命中=long_term:lt-10cd0ae75ab1
         仅本级模式下子目录文件=semester_dir:大二上/数据结构
-        含子目录模式下子目录文件=long_term:lt-5ddd1c14c57f
+        含子目录模式下子目录文件=long_term:lt-c5109ce4a22a
         相似目录（数据结构实验）=semester_dir:大二上/数据结构实验
 [PASS] T06  文件名关键词命中，且限定目录之外的同名关键词不命中
         目录内+关键词=long_term:lt-t06
@@ -238,7 +238,7 @@ This plugin does not support propagateSizeHints()
 [PASS] T09  保存→重启→规则恢复；不同根目录互不串用
         root1 来源=custom 规则数=1 名称=root1 专属
         root2 来源=default 规则数=0
-        root1 命中=long_term:lt-5959cd6a71bd；root2 命中=semester_dir:大二上/数据结构
+        root1 命中=long_term:lt-e4e7670126b7；root2 命中=semester_dir:大二上/数据结构
 [PASS] T10  取消/非法配置/保存失败不破坏既有配置
         空名称错误数=1；路径逃逸错误数=1
         非法保存被拒绝=True；原文件字节不变=True
@@ -265,7 +265,7 @@ This plugin does not support propagateSizeHints()
         CSV 表头含规则列=True
 [PASS] T15  试运行在后台线程执行：界面不阻塞、运行中可关闭、迟到结果丢弃、线程回收
         调用返回耗时=0.000s（应 <0.25s）
-        0.35s 内事件心跳=58 次（应 >30）
+        0.35s 内事件心跳=57 次（应 >30）
         中途仍在运行=True
         关闭返回耗时=0.000s（应 <0.2s）
         关闭后迟到结果被忽略=True
@@ -299,13 +299,13 @@ qt.qpa.fonts: Populating font family aliases took 46 ms. Replace uses of missing
 [PASS] S05 恢复上一次配置：自定义/内置默认可恢复，损坏备份被跳过且保留
         恢复自定义=True；恢复默认=True；损坏备份已跳过=True；损坏文件保留=True
         提示=已恢复上一次应用的配置。
-        恢复前的当前配置已备份为 config-backup-20261115-224029-118779.json；本次使用的备份 config-backup-20261115-224029-111750.json 已保留。
+        恢复前的当前配置已备份为 config-backup-20261115-230122-967734.json；本次使用的备份 config-backup-20261115-230122-960295.json 已保留。
         已跳过 1 份损坏/无效的备份（文件均保留）：config-backup-99999999-999999-000000.json
 [PASS] S06 配置备份按根目录隔离
         根1备份=1；根2备份=0
 [PASS] S07 方案库：内置只读、保存/复制/改名/导入导出/删除
         内置=[('内置默认方案', True), ('空白方案', True)]
-        保存=sc-abe7441b242c 复制=sc-ef6bc220059c 改名=改名后
+        保存=sc-434d2da1e427 复制=sc-f42785b718f5 改名=改名后
         导出存在=True 导入新标识=True 删除=True
 [PASS] S08 修改方案库模板不改变已应用到目录的配置
         应用前=['lt-s08']；改库后=['lt-s08']
@@ -326,7 +326,7 @@ qt.qpa.fonts: Populating font family aliases took 46 ms. Replace uses of missing
 [PASS] S09 方案中心可导出当前配置，并按替换/影响确认流程应用方案
         内置行>=2=True；导出文件=True；应用回调规则数=1
 [PASS] S10 方案标识非法时拒绝写入，导入的越界标识被替换为安全标识
-        直接保存被拒=True；方案库外文件=True；导入路径在库内=True；标识安全=True（sc-a1397b88e15d）
+        直接保存被拒=True；方案库外文件=True；导入路径在库内=True；标识安全=True（sc-3a5f2c53d9a4）
 [PASS] S11 备份失败时停止应用，原配置与当前状态保持不变
         应用被拒绝=True；配置来源=default；规则数=0
 [PASS] X01 组合演练：导出→另一目录导入→执行→历史→撤销
@@ -336,7 +336,7 @@ qt.qpa.fonts: Populating font family aliases took 46 ms. Replace uses of missing
 合计 19 项：通过 19 / 未通过 0；退出码 0
 EXIT:0
 ===== tests/test_v13_config.py =====
-qt.qpa.fonts: Populating font family aliases took 50 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
+qt.qpa.fonts: Populating font family aliases took 47 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
 This plugin does not support propagateSizeHints()
 This plugin does not support propagateSizeHints()
 This plugin does not support propagateSizeHints()
@@ -434,13 +434,13 @@ This plugin does not support propagateSizeHints()
 结果已保存: /private/tmp/stage3-delivery/归档盒源码/tests/results_v13_config.json
 EXIT:0
 ===== tests/test_stage2_preferences.py =====
-qt.qpa.fonts: Populating font family aliases took 46 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
+qt.qpa.fonts: Populating font family aliases took 47 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
 [PASS] T01 未保存偏好时样本 A 不会进入「项目/归档盒」 — target=_已整理/待定/下载/归档盒/开发说明.md
 [PASS] T02 从界面修正入口保存空间偏好，字段与确认信息落库 — rows=1 scope=space enabled=True match=下载/归档盒 target=项目 / 归档盒
 [PASS] T03 保存对话框同时展示匹配条件、适用范围、目标 — <b>规则预览：</b>开发文档按项目归档 | <b>匹配条件：</b>来源目录 = 下载/归档盒（含子目录） | <b>适用范围：</b>当前整理空间「space」 | <b>目标：</b>→ 项目 / （无学期） / 归档盒
-[PASS] T04 空间偏好同步写入该空间 JSON 长期规则镜像 — json_ids=['lt-62185f731817']
-[PASS] T05 关闭重开后样本 B 命中偏好；对照空间 / 生效空间目标不同 — control=_已整理/待定/下载/归档盒/接口草稿.md | space=_已整理/项目/归档盒/接口草稿.md | 依据=长期偏好「开发文档按项目归档」(lt-62185f731817)：来源目录「下载/归档盒」（含子目录） → 项目/归档盒
-[PASS] T06 预览依据同时包含偏好名称与 preference_id — 长期偏好「开发文档按项目归档」(lt-62185f731817)：来源目录「下载/归档盒」（含子目录） → 项目/归档盒
+[PASS] T04 空间偏好同步写入该空间 JSON 长期规则镜像 — json_ids=['lt-5ea9e7e007b2']
+[PASS] T05 关闭重开后样本 B 命中偏好；对照空间 / 生效空间目标不同 — control=_已整理/待定/下载/归档盒/接口草稿.md | space=_已整理/项目/归档盒/接口草稿.md | 依据=长期偏好「开发文档按项目归档」(lt-5ea9e7e007b2)：来源目录「下载/归档盒」（含子目录） → 项目/归档盒
+[PASS] T06 预览依据同时包含偏好名称与 preference_id — 长期偏好「开发文档按项目归档」(lt-5ea9e7e007b2)：来源目录「下载/归档盒」（含子目录） → 项目/归档盒
 [PASS] T07 「仅改本次」立即生效且不写偏好库 — target=_已整理/课程/2026秋-大二上/高等数学/文档/临时稿.md rows 1->1
 [PASS] T08 重新生成预览后本次临时修正消失，已保存偏好仍生效 — target=_已整理/项目/归档盒/临时稿.md
 [PASS] T09 对照空间「仅改本次」重启后回到无偏好结果 — one_off=_已整理/课程/2026秋-大二上/高等数学/文档/说明.md auto_again=_已整理/待定/下载/归档盒/说明.md auto=_已整理/待定/下载/归档盒/说明.md rows=0
@@ -449,12 +449,12 @@ qt.qpa.fonts: Populating font family aliases took 46 ms. Replace uses of missing
 [PASS] T12 配置页修改目标后新预览使用新目标 — target=_已整理/项目/课程设计/接口草稿.md
 [PASS] T13 停用后新预览不再命中；偏好行保留但 enabled=false — enabled=False target=_已整理/待定/下载/归档盒/接口草稿.md
 [PASS] T14 重启后仍停用且不新增偏好行 — rows=1 enabled=False
-[PASS] T20 「仅改本次」覆盖已保存偏好并在依据里说明 — target=_已整理/课程/2026秋-大二上/高等数学/文档/接口草稿.md 依据=手动修正：方向「课程」 / 学期「2026秋-大二上」 / 类别「高等数学」；已覆盖本次预览采用的长期偏好「开发文档按项目归档」(lt-62185f731817)：来源目录「下载/归档盒」（含子目录） → 项目/课程设计
+[PASS] T20 「仅改本次」覆盖已保存偏好并在依据里说明 — target=_已整理/课程/2026秋-大二上/高等数学/文档/接口草稿.md 依据=手动修正：方向「课程」 / 学期「2026秋-大二上」 / 类别「高等数学」；已覆盖本次预览采用的长期偏好「开发文档按项目归档」(lt-5ea9e7e007b2)：来源目录「下载/归档盒」（含子目录） → 项目/课程设计
 [PASS] T15 旧 JSON 只迁一次；停用规则迁入后仍停用 — rows=1 enabled=False kind=migrated_json marker=True
 [PASS] T16 JSON 改回 enabled=true 不会重新启用或重复插入 — rows=1 enabled=False target=_已整理/待定/下载/归档盒/旧稿.md
 [PASS] T17 另一整理空间相同相对路径不命中空间偏好 — control=_已整理/待定/下载/归档盒/接口草稿.md space2=_已整理/待定/下载/归档盒/接口草稿.md
-[PASS] T18 只有点选「全局」才写入全局库，且不写任何空间 JSON — global_ids=['lt-d13eee67d350'] json_ids=[]
-[PASS] T19 已启用全局偏好在第二空间生效，依据含 preference_id — target=_已整理/项目/全局归档/说明.md 依据=长期偏好「全局说明归档」(lt-d13eee67d350)：来源目录「下载/其它」（含子目录） → 项目/全局归档
+[PASS] T18 只有点选「全局」才写入全局库，且不写任何空间 JSON — global_ids=['lt-d22373d64c81'] json_ids=[]
+[PASS] T19 已启用全局偏好在第二空间生效，依据含 preference_id — target=_已整理/项目/全局归档/说明.md 依据=长期偏好「全局说明归档」(lt-d22373d64c81)：来源目录「下载/其它」（含子目录） → 项目/全局归档
 [PASS] T21 同等级同匹配/不同目标生成歧义且默认不勾选 — selected=False candidates=3 ids=['lt-a', 'lt-b']
 [PASS] T22 歧义改选后勾选且不新写偏好 — selected=True target=_已整理/项目/课程设计/冲突.md rows 2->2
 [PASS] T23 已有 long_term: 历史行在打开偏好库后保持不变 — rule_key=long_term:lt-history source=长期规则
@@ -479,7 +479,7 @@ qt.qpa.fonts: Populating font family aliases took 46 ms. Replace uses of missing
 [PASS] T40 空间库打不开时只用全局偏好，不回退 JSON 空间规则 — target=_已整理/项目/全局目标/样本.md rule_key=long_term:lt-global selected=True note=本空间偏好库不可用：file is not a database
 [PASS] T41 旧窗口不覆盖另一窗口对同一条偏好的修改 — unchanged={'lt-global': '全局目标', 'lt-global-first': 'A', 'lt-shared': '另一窗口新目标', 'lt-shared-new': '新增目标', 'lt-global-second': 'B'} conflict={'lt-global': '全局目标', 'lt-global-first': 'A', 'lt-shared': '另一窗口新目标', 'lt-shared-new': '新增目标', 'lt-global-second': 'B'} raised=True
 [PASS] T42 恢复备份同步失败时 JSON 回到恢复前，且不提示已恢复 — raised=True json=新方案目标 db=新方案目标 status='请先选择文件夹，再重新扫描。'
-[PASS] T42.2 恢复成功时 JSON 与库一起回到备份目标 — message='已恢复上一次应用的配置。\n恢复前的当前配置已备份为 config-backup-20261115-224043-304972.json；本次使用的备份 config-backup-20261115-224043-182895.json 已保留。' json=归档盒 db=归档盒 target=_已整理/项目/归档盒/恢复.md
+[PASS] T42.2 恢复成功时 JSON 与库一起回到备份目标 — message='已恢复上一次应用的配置。\n恢复前的当前配置已备份为 config-backup-20261115-230136-936389.json；本次使用的备份 config-backup-20261115-230136-815591.json 已保留。' json=归档盒 db=归档盒 target=_已整理/项目/归档盒/恢复.md
 [PASS] T43 全局库提交失败后空间库/全局库/JSON 都回到保存前 — space=归档盒 global=全局旧目标 json=归档盒 target=_已整理/项目/归档盒/样本.md rule_key=long_term:lt-space selected=True msg=偏好库写入失败，已整体回滚：database is locked
 
 已生效的规则和偏好保持不变，配置文件与偏好库都没有被改写。
@@ -526,11 +526,11 @@ qt.qpa.fonts: Populating font family aliases took 46 ms. Replace uses of missing
 合计 65 项：通过 65 / 未通过 0
 EXIT:0
 ===== tests/test_stage3_delivery.py =====
-qt.qpa.fonts: Populating font family aliases took 47 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
+qt.qpa.fonts: Populating font family aliases took 51 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
 [PASS] S12 重置不覆盖已有文件和目录外符号链接，只写回脚本自己创建的文件
 root退出码=0
-整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_root_6bsq6_2l/普通资料
-范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_root_6bsq6_2l/范围外-不要放进样本.md
+整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_root_ugezwgp0/普通资料
+范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_root_ugezwgp0/范围外-不要放进样本.md
 范围外对照已存在，未覆盖
 已新建演示文件：下载/归档盒/开发说明.md
 已新建演示文件：下载/笔记.txt
@@ -539,8 +539,8 @@ root退出码=0
 保留的非演示文件：
   作业/保留.md
 默认路径退出码=0
-整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_default_ofd342on/演示样本
-范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_default_ofd342on/范围外-不要放进样本.md
+整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_default_j4iseghj/演示样本
+范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_default_j4iseghj/范围外-不要放进样本.md
 已新建范围外对照
 已新建演示文件：下载/归档盒/开发说明.md
 已新建演示文件：下载/笔记.txt
@@ -549,16 +549,16 @@ root退出码=0
 保留的非演示文件：
   普通资料/保留.md
 已有文件退出码=0
-整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_user_192hox0e/普通资料
-范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_user_192hox0e/范围外-不要放进样本.md
+整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_user_i9bxe_lw/普通资料
+范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_user_i9bxe_lw/范围外-不要放进样本.md
 已新建范围外对照
 已新建演示文件：下载/归档盒/开发说明.md
 已有文件未覆盖：下载/笔记.txt
 已新建演示文件：项目/AIGC/项目说明.md
 本空间没有已保存的偏好
 符号链接退出码=0
-整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_user_192hox0e/链接样本
-范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_user_192hox0e/范围外-不要放进样本.md
+整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_user_i9bxe_lw/链接样本
+范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_user_i9bxe_lw/范围外-不要放进样本.md
 范围外对照已存在，未覆盖
 已新建演示文件：下载/归档盒/开发说明.md
 符号链接未跟随：下载/笔记.txt
@@ -569,15 +569,41 @@ root退出码=0
 第一次=_已整理/待定/下载/归档盒/开发说明.md fallback selected=False
 重置后=_已整理/待定/下载/归档盒/开发说明.md fallback selected=False
 偏好行=0
+[PASS] S14 从未做过演示的整理空间，重置不删除已有偏好
+重置前=_已整理/项目/归档盒/自己的资料.md long_term:lt-23c65709741a selected=True
+整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_delivery__tcgp3gg/existing-space
+范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_delivery__tcgp3gg/范围外-不要放进样本.md
+范围外对照已存在，未覆盖
+已新建演示文件：下载/归档盒/开发说明.md
+已新建演示文件：下载/笔记.txt
+已新建演示文件：项目/AIGC/项目说明.md
+已保留进入演示前的偏好
+保留的非演示文件：
+  .organizer/classification_config.json
+  .organizer/history.db
+  .organizer/preferences.db
+  下载/归档盒/自己的资料.md
+重置后=_已整理/项目/归档盒/自己的资料.md long_term:lt-23c65709741a selected=True
+偏好=['lt-23c65709741a'] sha不变=True
+[PASS] S15 清单临时文件是符号链接时，不改写目录外文件
+退出码=0
+整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_ledger_link_nkz62sit/样本
+范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_ledger_link_nkz62sit/范围外-不要放进样本.md
+已新建范围外对照
+已新建演示文件：下载/归档盒/开发说明.md
+已新建演示文件：下载/笔记.txt
+已新建演示文件：项目/AIGC/项目说明.md
+本空间没有已保存的偏好
+外部sha不变=True 配置sha不变=True
 [PASS] S01 首次扫描只含空间内 3 个文件，范围外文件不动
 计划=['下载/归档盒/开发说明.md', '下载/笔记.txt', '项目/AIGC/项目说明.md']
 开发说明=_已整理/待定/下载/归档盒/开发说明.md selected=False
 笔记=_已整理/课程/未识别学期/高等数学/文档/笔记.txt
 范围外sha不变=True
 [PASS] S02 第二轮命中空间偏好；仅改本次不写偏好库
-偏好=lt-e7e9191cdc99 开发文档按项目归档
+偏好=lt-e4c00acfa930 开发文档按项目归档
 接口草稿=_已整理/项目/归档盒/接口草稿.md
-依据=长期偏好「开发文档按项目归档」(lt-e7e9191cdc99)：来源目录「下载/归档盒」（含子目录） → 项目/归档盒
+依据=长期偏好「开发文档按项目归档」(lt-e4c00acfa930)：来源目录「下载/归档盒」（含子目录） → 项目/归档盒
 仅改本次=_已整理/课程/2026秋-大二上/高等数学/文档/临时稿.md 偏好行=1
 [PASS] S03 取消确认不动文件；确认后只移动勾选项，历史与 SHA 一致
 取消后sha=True
@@ -623,5 +649,5 @@ batch=1 status=recovered_partial n=2
 conflict=1 errors=[]
 占位sha不变=True 目标仍在=True
 
-合计 13 项：通过 13 / 未通过 0
+合计 15 项：通过 15 / 未通过 0
 EXIT:0

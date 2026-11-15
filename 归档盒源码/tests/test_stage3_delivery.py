@@ -752,9 +752,96 @@ def test_reset_returns_to_first_preview():
     close_window(win2)
 
 
+def test_reset_keeps_preexisting_preferences():
+    module = load_reset_module()
+    script = os.path.join(os.path.dirname(SRC), "课程交付", "重置演示样本.py")
+    root = root_dir("existing-space")
+    personal = os.path.join(root, "下载", "归档盒", "自己的资料.md")
+    os.makedirs(os.path.dirname(personal))
+    with open(personal, "w", encoding="utf-8") as handle:
+        handle.write("这是整理空间里原有的资料\n")
+    personal_sha = sha256(personal)
+    win = open_window(root)
+    scan_and_preview(win)
+    install_space_pref_save()
+    try:
+        select_row(win, "下载/归档盒/自己的资料.md")
+        win.on_override_selected()
+        process(0.1)
+    finally:
+        restore_dialogs()
+    before = P.list_space_preferences(root)
+    close_window(win)
+    win = open_window(root)
+    scan_and_preview(win)
+    hit = item_of(win.current_plan, "下载/归档盒/自己的资料.md")
+    close_window(win)
+    proc = subprocess.run(
+        [sys.executable, script, "--root", root],
+        capture_output=True, text=True)
+    module.reset(__import__("pathlib").Path(root))
+    win = open_window(root)
+    scan_and_preview(win)
+    after = item_of(win.current_plan, "下载/归档盒/自己的资料.md")
+    kept_ids = [row.preference_id for row in P.list_space_preferences(root)]
+    ok = (
+        len(before) == 1
+        and str(hit.rule_key).startswith("long_term:")
+        and hit.selected is True
+        and proc.returncode == 0
+        and "已保留进入演示前的偏好" in proc.stdout
+        and "已清除" not in proc.stdout
+        and sha256(personal) == personal_sha
+        and kept_ids == [before[0].preference_id]
+        and after.rule_key == hit.rule_key
+        and after.selected is True
+        and "待定" not in after.target_rel_path)
+    rec("S14", "从未做过演示的整理空间，重置不删除已有偏好",
+        ok,
+        f"重置前={hit.target_rel_path} {hit.rule_key} selected={hit.selected}\n"
+        f"{proc.stdout}"
+        f"重置后={after.target_rel_path} {after.rule_key} selected={after.selected}\n"
+        f"偏好={kept_ids} sha不变={sha256(personal) == personal_sha}")
+    close_window(win)
+
+
+def test_ledger_tmp_symlink_stays_outside():
+    script = os.path.join(os.path.dirname(SRC), "课程交付", "重置演示样本.py")
+    parent = tempfile.mkdtemp(prefix="stage3_ledger_link_")
+    root = os.path.join(parent, "样本")
+    org = os.path.join(root, ".organizer")
+    os.makedirs(org)
+    external = os.path.join(parent, "目录外清单.txt")
+    with open(external, "w", encoding="utf-8") as handle:
+        handle.write("外部文件原来的内容\n")
+    external_sha = sha256(external)
+    os.symlink(external, os.path.join(org, "演示样本清单.json.tmp"))
+    config_external = os.path.join(parent, "目录外配置.txt")
+    with open(config_external, "w", encoding="utf-8") as handle:
+        handle.write("外部配置原来的内容\n")
+    config_sha = sha256(config_external)
+    os.symlink(config_external, os.path.join(org, "classification_config.json.tmp"))
+    proc = subprocess.run(
+        [sys.executable, script, "--root", root],
+        capture_output=True, text=True)
+    ok = (
+        proc.returncode == 0
+        and sha256(external) == external_sha
+        and open(external, encoding="utf-8").read() == "外部文件原来的内容\n"
+        and sha256(config_external) == config_sha
+        and os.path.islink(os.path.join(org, "演示样本清单.json.tmp")))
+    rec("S15", "清单临时文件是符号链接时，不改写目录外文件",
+        ok,
+        f"退出码={proc.returncode}\n{proc.stdout}"
+        f"外部sha不变={sha256(external) == external_sha} "
+        f"配置sha不变={sha256(config_external) == config_sha}")
+
+
 def main():
     test_reset_keeps_unrelated_files()
     test_reset_returns_to_first_preview()
+    test_reset_keeps_preexisting_preferences()
+    test_ledger_tmp_symlink_stays_outside()
     test_two_rounds_and_execute()
     test_stale_and_conflict()
     test_cancel_interrupt_undo_conflict()
