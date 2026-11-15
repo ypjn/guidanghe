@@ -348,6 +348,7 @@ class PlanWorker(QThread):
                 self.scan_result.files,
                 cancel_event=self.cancel_event,
                 progress_cb=_progress,
+                root=self.scan_result.root,
             )
             if self.cancel_event.is_set() or extraction.cancelled:
                 # 取消后不发布半成品计划；界面按 seq 丢弃迟到的结果。
@@ -3931,6 +3932,10 @@ class MainWindow(QMainWindow):
         self._plan_cancel_requested = False
         self._apply_progress(0, 0)
         self._refresh_busy_ui()
+        # 计划真正结束、界面空闲后再刷新歧义面板：_on_plan_done 发布计划时
+        # _plan_working 仍为真，面板控件会被判定为忙碌而禁用；这里设回空闲
+        # 后必须再刷一次，否则「按所选归入」「跳过」等按钮一直不可点。
+        self._refresh_ambiguity_panel()
         self._update_button_states()
 
     def _cancel_plan_generation(self):
@@ -4100,10 +4105,23 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(
                 "计划已失效，勾选没有保存；请先重新生成预览。")
             return
+        # 已跳过的条目不能被行内复选框重新勾选：弹回未勾选，不进入执行批次。
+        item = self.current_plan.items[row]
+        checked = Qt.CheckState(state) == Qt.CheckState.Checked
+        if checked and getattr(item, "skipped", False):
+            self._suppress_cell_signals = True
+            try:
+                cb = self.table.cellWidget(row, 0)
+                box = cb.findChild(QCheckBox) if cb is not None else None
+                if box is not None:
+                    box.setChecked(False)
+            finally:
+                self._suppress_cell_signals = False
+            self.statusBar().showMessage("该文件已跳过，保持原位；如需整理请重新生成预览。")
+            return
         # stateChanged 在 PySide6 中以 int 发出，Qt.Checked 是严格枚举，
         # 必须先转换再比较，否则行内复选框只能取消、不能勾选。
-        self.current_plan.items[row].selected = (
-            Qt.CheckState(state) == Qt.CheckState.Checked)
+        item.selected = checked
         self._update_plan_counts()
         status_item = self.table.item(row, 4)
         if status_item is not None:
@@ -4377,6 +4395,9 @@ class MainWindow(QMainWindow):
             if not visible:
                 continue
             item = plan.items[row]
+            # 已跳过的条目保持不勾选：批量勾选/对调都不能把它重新纳入执行批次。
+            if getattr(item, "skipped", False):
+                continue
             new_value = (not item.selected) if invert else bool(value)
             item.selected = new_value
             cell = self.table.cellWidget(row, 0)

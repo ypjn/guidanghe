@@ -92,13 +92,64 @@ def read_text_excerpt(path: str, limit: int = MAX_TEXT_BYTES):
     return text, decode_note, reached_limit
 
 
-def extract_contents(files, cancel_event=None, progress_cb=None) -> ContentExtraction:
+def _is_within_root(path: str, root: str) -> bool:
+    """解析符号链接后，path 的真实路径是否仍在 root 的真实路径之内。
+
+    与 executor._is_within_root 保持同一套 realpath 规则：整理空间本身
+    若是符号链接，仍以 realpath(root) 为基准，只拦截从空间内部逃到空间外
+    的路径（含文件或中间目录被换成空间外链接的情况）。
+    """
+    real_root = os.path.realpath(root)
+    real_path = os.path.realpath(path)
+    root_key = os.path.normcase(real_root)
+    path_key = os.path.normcase(real_path)
+    return path_key == root_key or path_key.startswith(root_key + os.sep)
+
+
+def _derive_root(files) -> str | None:
+    """从文件条目的 abs_path / rel_path 反推扫描根目录。"""
+    for entry in files:
+        ap = getattr(entry, "abs_path", None)
+        rp = getattr(entry, "rel_path", None)
+        if not ap or not rp:
+            continue
+        parts = rp.split(os.sep)
+        root = ap
+        for _ in parts:
+            root = os.path.dirname(root)
+        if root:
+            return root
+    return None
+
+
+def _short_error(exc: OSError) -> str:
+    """只返回 strerror 这类短原因，绝不把绝对路径写进错误信息。"""
+    reason = getattr(exc, "strerror", None)
+    if reason:
+        return reason
+    errno = getattr(exc, "errno", None)
+    if errno is not None:
+        try:
+            return os.strerror(errno)
+        except (OSError, ValueError):
+            pass
+    return type(exc).__name__
+
+
+def extract_contents(files, cancel_event=None, progress_cb=None,
+                     root: str | None = None) -> ContentExtraction:
     """按文件提取正文；单个文件失败不影响其余文件。
 
     取消时不抛异常，返回已处理的部分，并置 cancelled=True。调用方应丢弃
     这次结果，不把半成品计划交给界面。
+
+    root 是整理空间根目录；若未提供则从文件条目反推。读取每个正文文件前，
+    会用与 executor 相同的 realpath 规则核对真实路径仍在整理空间内，
+    防止扫描后文件被换成指向空间外的符号链接而泄露外部字节。
     """
     result = ContentExtraction()
+    if root is None:
+        root = _derive_root(files)
     candidates = [entry for entry in files if os.path.isfile(entry.abs_path)]
     total = len(candidates)
     for index, entry in enumerate(candidates, start=1):
@@ -111,10 +162,17 @@ def extract_contents(files, cancel_event=None, progress_cb=None) -> ContentExtra
         name = entry.filename or os.path.basename(entry.abs_path)
         ext = os.path.splitext(name)[1].lower()
         if ext in TEXT_EXTENSIONS:
+            # 真正 open 之前重新核对真实路径：扫描后文件或中间目录可能被
+            # 换成指向空间外的链接，此时不打开、不读取外部字节。
+            if root is not None and not _is_within_root(entry.abs_path, root):
+                result.errors[entry.rel_path] = "无法读取正文：越出整理空间"
+                result.kinds[entry.rel_path] = "读取失败"
+                continue
             try:
                 text, decode_note, reached = read_text_excerpt(entry.abs_path)
             except OSError as exc:
-                result.errors[entry.rel_path] = f"无法读取正文：{exc}"
+                # 只写 strerror 短原因，不把本机绝对路径暴露给界面和模型。
+                result.errors[entry.rel_path] = f"无法读取正文：{_short_error(exc)}"
                 result.kinds[entry.rel_path] = "读取失败"
                 continue
             if decode_note:

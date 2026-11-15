@@ -668,9 +668,16 @@ def resolve_ambiguity(plan: OrganizePlan, source_rel: str,
     item.semester = semester or None
     item.category = category or None
     item.course = category or direction
-    item.inner_path = None
-    item.target_dir_rel = _build_target_dir_v2(
-        direction, semester, category, item.file_type)
+    # 直接采用候选上已经写好的完整 target_dir_rel（含长期规则的内部层级），
+    # 不再按方向/学期/类别重算，也不清掉内部路径——否则选中候选后落点会缩水。
+    chosen_target = chosen.get("target_dir_rel")
+    if chosen_target:
+        item.target_dir_rel = chosen_target
+        item.inner_path = None
+    else:
+        item.inner_path = None
+        item.target_dir_rel = _build_target_dir_v2(
+            direction, semester, category, item.file_type)
     item.target_filename = item.file.filename
     item.target_rel_path = os.path.join(
         item.target_dir_rel, item.file.filename)
