@@ -2048,6 +2048,8 @@ def _mixed_compensation_case():
     root = root_dir("mixed_compensation")
     write(root, "下载/归档盒/样本.md")
     write(root, "资料/另一份.md")
+    mapping_sample = "独立归档源/普通笔记.md"
+    write(root, mapping_sample)
     save_pref(root, "lt-space-1", "空间一", category="空间一旧目标")
     P.save_preference(root, P.Preference(
         preference_id="lt-space-2", name="空间二",
@@ -2090,6 +2092,10 @@ def _mixed_compensation_case():
         return real_apply(conn, prefs, delete_ids)
 
     def mutate(dlg):
+        mapping = dlg.table_top
+        row = next(r for r in range(mapping.rowCount())
+                   if mapping.item(r, 1).text() == "项目")
+        mapping.item(row, 1).setText("独立归档源")
         dlg.table_longterm.item(config_row(dlg, "lt-space-1"), 8).setText(
             "A 空间一未完成的新目标")
         dlg.table_longterm.item(config_row(dlg, "lt-space-2"), 8).setText(
@@ -2135,6 +2141,14 @@ def _mixed_compensation_case():
 
     win2 = preview(root)
     scanner = win2.scan_result
+    mapping_item = item_of(win2.current_plan, mapping_sample)
+    mapping_sources = {r.source for r in load_config(root)[0].top_direction_rules}
+    rec("T52.2", "全局提交失败时普通分类映射也恢复，保留 B 的空间偏好",
+        stores_ok and msg_ok and "独立归档源" not in mapping_sources
+        and "项目" in mapping_sources and mapping_item.rule_key == "fallback"
+        and not mapping_item.selected,
+        f"target={mapping_item.target_rel_path} selected={mapping_item.selected} "
+        f"B={space.get('lt-space-1')}")
     item1 = item_of(win2.current_plan, "下载/归档盒/样本.md")
     item2 = item_of(win2.current_plan, "资料/另一份.md")
     official_ok = (
@@ -2457,6 +2471,45 @@ def _global_to_space_failure_without_other_window():
         f"global={global_rows} msg={msg[:90]}")
 
 
+def test_two_confirmations_keep_both_space_rules():
+    root = root_dir("two_confirmed_saves")
+    sample = "资料乙/普通笔记.md"
+    write(root, "下载/归档盒/样本.md")
+    write(root, sample)
+    win = open_window(root)
+    rule_a = _pref(root, "lt-window-a", "窗口 A", "A 确认的目标")
+    rule_b = _pref(root, "lt-window-b", "窗口 B", "B 确认的目标",
+                   source="资料乙")
+    real_open = P._open
+    b_saved = False
+
+    def open_with_b_save(path):
+        nonlocal b_saved
+        if not b_saved and os.path.realpath(path) == os.path.realpath(P.space_db_path(root)):
+            b_saved = True
+            P.save_preference(root, rule_b)
+        return real_open(path)
+
+    P._open = open_with_b_save
+    try:
+        win._save_preference(root, rule_a)
+    finally:
+        P._open = real_open
+    space = {p.preference_id for p in P.list_space_preferences(root)}
+    mirror = {r.rule_id for r in load_config(root)[0].long_term_rules}
+    win._apply_scheme_config(default_config())
+    win._restore_last_config()
+    close_window(win)
+    win = preview(root)
+    restored = item_of(win.current_plan, sample)
+    rec("T54", "两次成功确认都进入空间库、JSON 和恢复后的预览",
+        b_saved and space == mirror == {"lt-window-a", "lt-window-b"}
+        and restored.rule_key == "long_term:lt-window-b" and restored.selected,
+        f"SQLite={sorted(space)} JSON={sorted(mirror)} "
+        f"restored={restored.target_rel_path}")
+    close_window(win)
+
+
 def run():
     control_target = test_control_without_preference()
     space_root, pref_id = test_save_space_preference_from_ui()
@@ -2495,6 +2548,7 @@ def run():
     test_scope_change_fails_when_target_db_unavailable()
     test_mixed_compensation_keeps_json_and_space_db_in_sync()
     test_failed_scope_migration_never_writes_global_rule_into_space_json()
+    test_two_confirmations_keep_both_space_rules()
 
 
 def main():
