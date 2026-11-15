@@ -52,6 +52,7 @@ import preferences as P  # noqa: E402
 from ai_fallback import AiSettings, apply_ai_fallback  # noqa: E402
 from classification_config import (  # noqa: E402
     INNER_CLEAR, INNER_KEEP, INNER_REPLACE, MATCH_DIR_SCOPE,
+    MATCH_EXACT_PATH,
     LongTermRule, config_path, default_config, load_config, save_config,
 )
 from config_dialog import ClassificationConfigDialog  # noqa: E402
@@ -60,9 +61,10 @@ from executor import execute_plan, undo_latest_batch  # noqa: E402
 from main import MainWindow  # noqa: E402
 from planner import (  # noqa: E402
     MODE_BY_COURSE_THEN_TYPE, MODE_BY_DIRECTION_SEMESTER, MODE_BY_TYPE,
-    generate_plan,
+    build_plan, generate_plan,
 )
 from scanner import scan_directory  # noqa: E402
+import scheme_store  # noqa: E402
 from storage import Storage  # noqa: E402
 
 APP = QApplication.instance() or QApplication([])
@@ -2036,6 +2038,156 @@ def _scope_unavailable_case():
         f"selected={item.selected} msg={msg[:80]} reverse={reverse_ok}")
 
 
+def test_mixed_compensation_keeps_json_and_space_db_in_sync():
+    """问题：一条规则保留 B、另一条已恢复时，JSON 与空间库不得一旧一新。"""
+    with isolated_app_dir():
+        _mixed_compensation_case()
+
+
+def _mixed_compensation_case():
+    root = root_dir("mixed_compensation")
+    write(root, "下载/归档盒/样本.md")
+    write(root, "资料/另一份.md")
+    save_pref(root, "lt-space-1", "空间一", category="空间一旧目标")
+    P.save_preference(root, P.Preference(
+        preference_id="lt-space-2", name="空间二",
+        match_type=MATCH_EXACT_PATH,
+        source_path="资料/另一份.md", include_subdirs=False,
+        direction="项目", category="空间二旧目标", inner_mode=INNER_CLEAR,
+        enabled=True, scope=P.SCOPE_SPACE, space_root=root,
+        confirmed_at="2026-11-15T00:00:00",
+        confirmed_source_rel="资料/另一份.md"))
+    P.save_preference(root, _pref(
+        root, "lt-global", "全局", "全局旧目标",
+        source="下载/其他", scope=P.SCOPE_GLOBAL))
+    win = open_window(root)
+
+    state = {}
+    real_apply = P._apply_rows
+
+    def apply_and_interleave(conn, prefs, delete_ids):
+        if (os.path.realpath(_db_path_of(conn))
+                == os.path.realpath(P.global_db_path())
+                and "holder" not in state):
+            holder = sqlite3.connect(P.global_db_path(), timeout=10)
+            holder.execute("PRAGMA busy_timeout=5000")
+            holder.execute("BEGIN")
+            holder.execute("SELECT * FROM preferences").fetchall()
+            state["holder"] = holder
+
+            def b_save():
+                time.sleep(1.0)
+                try:
+                    P.save_preference(root, _pref(
+                        root, "lt-space-1", "空间一", "B 已保存的空间目标"))
+                    state["b_ok"] = True
+                except Exception as e:
+                    state["b_error"] = e
+
+            thread = threading.Thread(target=b_save)
+            thread.start()
+            state["thread"] = thread
+        return real_apply(conn, prefs, delete_ids)
+
+    def mutate(dlg):
+        dlg.table_longterm.item(config_row(dlg, "lt-space-1"), 8).setText(
+            "A 空间一未完成的新目标")
+        dlg.table_longterm.item(config_row(dlg, "lt-space-2"), 8).setText(
+            "A 空间二未完成的新目标")
+        dlg.table_longterm.item(config_row(dlg, "lt-global"), 8).setText(
+            "A 全局未完成的新目标")
+
+    P._apply_rows = apply_and_interleave
+    try:
+        cap = save_via_config_page(win, mutate)
+    finally:
+        P._apply_rows = real_apply
+        thread = state.get("thread")
+        if thread is not None:
+            thread.join(20)
+        holder = state.get("holder")
+        if holder is not None:
+            try:
+                holder.rollback()
+            except Exception:
+                pass
+            holder.close()
+    close_window(win)
+
+    space = {p.preference_id: p.category
+             for p in P.list_space_preferences(root)}
+    global_cat = next((p.category for p in P.list_global_preferences()
+                       if p.preference_id == "lt-global"), None)
+    json_rules = {r.rule_id: r.category
+                  for r in load_config(root)[0].long_term_rules}
+    msg = " ".join(cap["errors"])
+    stores_ok = (
+        space.get("lt-space-1") == "B 已保存的空间目标"
+        and space.get("lt-space-2") == "空间二旧目标"
+        and json_rules.get("lt-space-1") == "B 已保存的空间目标"
+        and json_rules.get("lt-space-2") == "空间二旧目标"
+        and "A 空间二未完成的新目标" not in json_rules.values()
+        and global_cat == "全局旧目标")
+    msg_ok = (bool(cap["errors"]) and not cap["accepted"]
+              and "已整体回滚" not in msg
+              and "保留了其他窗口的较新内容" in msg
+              and "lt-space-1" in msg and "lt-space-2" in msg)
+
+    win2 = preview(root)
+    scanner = win2.scan_result
+    item1 = item_of(win2.current_plan, "下载/归档盒/样本.md")
+    item2 = item_of(win2.current_plan, "资料/另一份.md")
+    official_ok = (
+        item1.target_dir_rel == os.path.join(
+            "_已整理", "项目", "B 已保存的空间目标")
+        and item1.rule_key == "long_term:lt-space-1" and item1.selected is True
+        and item2.target_dir_rel == os.path.join(
+            "_已整理", "项目", "空间二旧目标")
+        and item2.rule_key == "long_term:lt-space-2" and item2.selected is True)
+
+    json_cfg = load_config(root)[0]
+    json_plan = build_plan(
+        scanner, MODE_BY_DIRECTION_SEMESTER, [], config=json_cfg,
+        compute_duplicates=False)
+    json_item = item_of(json_plan, "资料/另一份.md")
+    dry_run_ok = (
+        json_item.target_dir_rel == os.path.join(
+            "_已整理", "项目", "空间二旧目标")
+        and json_item.rule_key == "long_term:lt-space-2")
+
+    export_path = os.path.join(tempfile.mkdtemp(prefix="stage2_export_"),
+                               "scheme.json")
+    scheme_store.export_current_config(export_path, json_cfg, "导出方案")
+    with open(export_path, "r", encoding="utf-8") as f:
+        exported = f.read()
+    export_ok = ("A 空间二未完成的新目标" not in exported
+                 and "空间二旧目标" in exported)
+
+    # 真实入口：应用默认方案 → 恢复这次应用刚生成的备份
+    win2._apply_scheme_config(default_config())
+    restore_message = win2._restore_last_config()
+    close_window(win2)
+    win3 = preview(root)
+    restored_item = item_of(win3.current_plan, "资料/另一份.md")
+    close_window(win3)
+    restore_ok = (
+        "A 空间二未完成的新目标" not in restored_item.target_rel_path
+        and restored_item.target_dir_rel == os.path.join(
+            "_已整理", "项目", "空间二旧目标")
+        and restored_item.rule_key == "long_term:lt-space-2"
+        and restored_item.selected is True
+        and "已恢复" in restore_message)
+    rec("T52", "多规则失败补偿时 JSON 与空间库逐条一致，恢复备份后不复活被取消目标",
+        stores_ok and msg_ok and official_ok and dry_run_ok and export_ok
+        and restore_ok,
+        f"space1={space.get('lt-space-1')} space2={space.get('lt-space-2')} "
+        f"json1={json_rules.get('lt-space-1')} "
+        f"json2={json_rules.get('lt-space-2')} global={global_cat} "
+        f"preview2={item2.target_rel_path} dry={json_item.target_rel_path} "
+        f"restored={restored_item.target_rel_path} "
+        f"b_ok={state.get('b_ok')} msg={msg[:120]}")
+
+
 def run():
     control_target = test_control_without_preference()
     space_root, pref_id = test_save_space_preference_from_ui()
@@ -2072,6 +2224,7 @@ def run():
     test_rollback_does_not_erase_newer_save()
     test_write_recheck_rejects_newer_save()
     test_scope_change_fails_when_target_db_unavailable()
+    test_mixed_compensation_keeps_json_and_space_db_in_sync()
 
 
 def main():

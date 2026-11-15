@@ -611,14 +611,15 @@ def _begin_write(conn: sqlite3.Connection) -> None:
 
 def _restore_db_rows(conn: sqlite3.Connection,
                      snapshot: Dict[str, Preference],
-                     written: Dict[str, Optional[Preference]]) -> str:
-    """补偿已提交的偏好库，返回 restored / kept / failed。
+                     written: Dict[str, Optional[Preference]]):
+    """补偿已提交的偏好库。
 
-    `written` 是本次实际写下去的内容（删除记 None）。只有当前值仍等于本次
-    写下去的值时才恢复；某个 id 已被其他窗口改成别的值，就保留那个较新的
-    值，不把别人的保存抹掉。
+    返回 (status, decisions)：status 为 restored / kept / mixed / failed，
+    decisions 是每个 id 的处理结果（kept 表示保留了其他窗口的较新值，
+    restored 表示已回到本次开始前）。JSON 镜像必须按同一份 decisions
+    逐条处理，不能一处恢复、一处保留。
     """
-    kept = False
+    decisions: Dict[str, str] = {}
     try:
         conn.execute("BEGIN IMMEDIATE")
         for pid, written_pref in written.items():
@@ -631,7 +632,7 @@ def _restore_db_rows(conn: sqlite3.Connection,
             written_fp = (preference_fingerprint(written_pref)
                           if written_pref is not None else None)
             if current_fp != written_fp:
-                kept = True
+                decisions[pid] = "kept"
                 continue
             old = snapshot.get(pid)
             if old is not None:
@@ -639,14 +640,24 @@ def _restore_db_rows(conn: sqlite3.Connection,
             else:
                 conn.execute(
                     "DELETE FROM preferences WHERE preference_id = ?", (pid,))
+            decisions[pid] = "restored"
         conn.commit()
-        return "kept" if kept else "restored"
     except Exception:
         try:
             conn.rollback()
         except Exception:
             pass
-        return "failed"
+        return "failed", {}
+    kept = [d for d in decisions.values() if d == "kept"]
+    restored = [d for d in decisions.values() if d == "restored"]
+    if kept and restored:
+        return "mixed", decisions
+    if kept:
+        return "kept", decisions
+    return "restored", decisions
+
+
+_DROP_RULE = object()
 
 
 def _json_state(root: str):
@@ -661,14 +672,62 @@ def _json_state(root: str):
         return None
 
 
-def _restore_after_failure(root: str, old_cfg, old_raw, old_existed,
-                           written_state) -> str:
-    """失败补偿 JSON：只有当前内容仍是本次写下去的内容时才恢复。"""
-    if _json_state(root) != written_state:
-        return "kept"
-    if _restore_config_state(root, old_cfg, old_raw, old_existed):
-        return "restored"
-    return "failed"
+def _merge_json_after_failure(root: str, decisions: Dict[str, str],
+                              final_rows: Dict[str, Preference],
+                              snapshot: Optional[Dict[str, Preference]],
+                              old_cfg: Optional[ClassificationConfig]):
+    """按空间库的逐条补偿结果修正 JSON 镜像。
+
+    基线：另一个窗口已经写过这份 JSON，不能整份换回本次开始前的版本。
+    未碰过的规则和 JSON 里的其他字段保留后来者写下的内容；本次碰过的
+    每条空间规则按空间库同一份 decisions 处理：库保留较新值，JSON 也保留
+    同一个较新值；库恢复成开始前，JSON 同一条也回到开始前。
+    返回 (status, kept_ids)。
+    """
+    try:
+        cfg, _raw, _existed = _read_config_state(root)
+    except Exception:
+        return "failed", []
+    if cfg is None:
+        return "failed", []
+    merged = clone_config(cfg)
+    rules = list(merged.long_term_rules)
+    index = {r.rule_id: i for i, r in enumerate(rules)}
+    planned: Dict[int, object] = {}
+
+    def _old_rule(pid: str):
+        if snapshot is not None:
+            old = snapshot.get(pid)
+            return old.to_rule() if old is not None else None
+        if old_cfg is not None:
+            for rule in old_cfg.long_term_rules:
+                if rule.rule_id == pid:
+                    return rule
+        return None
+
+    for pid, decision in decisions.items():
+        if decision == "kept":
+            pref = final_rows.get(pid)
+            rule = pref.to_rule() if pref is not None else None
+        else:
+            rule = _old_rule(pid)
+        if pid in index:
+            planned[index[pid]] = rule if rule is not None else _DROP_RULE
+        elif rule is not None:
+            rules.append(rule)
+            planned[len(rules) - 1] = rule
+    merged.long_term_rules = [
+        (planned[i] if i in planned else rule)
+        for i, rule in enumerate(rules)
+        if not (i in planned and planned[i] is _DROP_RULE)
+    ]
+    try:
+        save_config(root, merged)
+    except Exception:
+        return "failed", []
+    kept_ids = [pid for pid, d in decisions.items() if d == "kept"]
+    return ("kept" if kept_ids else "restored"), kept_ids
+
 
 
 def save_preference(root: str, pref: Preference) -> None:
@@ -1034,48 +1093,68 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
         for pid in global_delete:
             global_written.setdefault(pid, None)
 
+        space_decisions: Dict[str, str] = {
+            pid: "restored" for pid in space_written}
         space_state = "restored"
         if committed_space:
-            space_state = _restore_db_rows(
+            space_state, space_decisions = _restore_db_rows(
                 space_conn, pre_space, space_written)
         global_state = "restored"
         if committed_global:
-            global_state = _restore_db_rows(
+            global_state, _global_decisions = _restore_db_rows(
                 global_conn, pre_global, global_written)
+        space_kept_ids = [pid for pid, d in space_decisions.items()
+                          if d == "kept"]
+        space_restored_ids = [pid for pid, d in space_decisions.items()
+                              if d == "restored"]
+
+        # JSON 镜像与空间库共用同一份逐条 decisions：另一个窗口写过整份
+        # 文件时按条合并，而不是整份换回本次开始前（那会让同一条规则在
+        # 库和 JSON 里一个旧、一个新）。文件字节仍是本次写下的内容时，
+        # 才整份恢复。
         json_state = "restored"
         if json_written:
-            json_state = _restore_after_failure(
-                root, old_cfg, old_raw, old_existed, written_json)
-
-        restored: List[str] = []
-        kept: List[str] = []
-        failed: List[str] = []
-
-        def _record(label: str, state: str) -> None:
-            if state == "restored":
-                restored.append(label)
-            elif state == "kept":
-                kept.append(label)
+            if _json_state(root) == written_json:
+                json_state = ("restored" if _restore_config_state(
+                    root, old_cfg, old_raw, old_existed) else "failed")
             else:
-                failed.append(label)
+                final_rows = (_rows_from_conn(space_conn)
+                              if space_conn is not None else {})
+                json_state, _json_kept = _merge_json_after_failure(
+                    root, space_decisions, final_rows,
+                    snapshot_prefs, old_cfg)
 
-        if json_written:
-            _record("JSON 镜像", json_state)
-        if space_conn is not None:
-            _record("空间偏好库", space_state)
-        if global_conn is not None:
-            _record("全局偏好库", global_state)
-        if failed:
+        failed_parts: List[str] = []
+        if json_written and json_state == "failed":
+            failed_parts.append("JSON 镜像")
+        if space_conn is not None and space_state == "failed":
+            failed_parts.append("空间偏好库")
+        if global_conn is not None and global_state == "failed":
+            failed_parts.append("全局偏好库")
+        if failed_parts:
             raise PreferenceError(
                 "偏好库写入失败，以下位置未能确认回到保存前："
-                + "、".join(failed)
-                + (f"；已恢复：{'、'.join(restored)}" if restored else "")
+                + "、".join(failed_parts)
                 + f"。请检查后再操作：{e}")
-        if kept:
+        if space_kept_ids:
+            message = (
+                "偏好库写入失败；空间偏好库与 JSON 镜像保留了其他窗口的"
+                f"较新内容（{'、'.join(space_kept_ids)}）")
+            if space_restored_ids:
+                message += (
+                    "，其余本次改动的规则已恢复为保存前"
+                    f"（{'、'.join(space_restored_ids)}）")
+            if global_conn is not None:
+                message += "；全局偏好库已恢复"
+            raise PreferenceError(message + f"：{e}")
+        if json_written and json_state == "kept":
             raise PreferenceError(
-                "偏好库写入失败；以下位置保留了其他窗口的较新内容，"
-                "未按本次开始前回滚：" + "、".join(kept)
-                + (f"；已恢复：{'、'.join(restored)}" if restored else "")
+                "偏好库写入失败；JSON 镜像保留了其他窗口写入的较新内容"
+                + ("；空间偏好库已恢复" if space_conn is not None else "")
+                + f"：{e}")
+        if global_state == "kept":
+            raise PreferenceError(
+                "偏好库写入失败；全局偏好库保留了其他窗口的较新内容"
                 + f"：{e}")
         if json_written:
             raise PreferenceError(f"偏好库写入失败，已整体回滚：{e}")
