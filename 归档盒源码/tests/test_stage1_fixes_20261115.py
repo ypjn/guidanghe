@@ -50,7 +50,9 @@ def app():
 
 
 def root_dir() -> str:
-    return tempfile.mkdtemp(prefix="stage1fix_sample_")
+    # 取 realpath：macOS 的 /var 是指向 /private/var 的符号链接，扫描与
+    # 待整理清单都按真实路径比较，测试样本必须与之一致。
+    return os.path.realpath(tempfile.mkdtemp(prefix="stage1fix_sample_"))
 
 
 def write(root: str, rel: str, data, binary: bool = False) -> str:
@@ -351,10 +353,139 @@ def check_content_no_escape_and_no_abs_path():
             f"错误信息含绝对路径目录：{err!r}")
 
 
-def _drop_path(window, path: str):
+def wait_for_new_plan(window, old_plan, timeout: float = 25.0) -> bool:
+    """等新版面替换旧计划（新扫描 + 新计划都结束）。"""
+    deadline = time.time() + timeout
+    qapp = QApplication.instance()
+    while time.time() < deadline:
+        qapp.processEvents()
+        plan = window.current_plan
+        if (plan is not None and plan is not old_plan and window._plan_valid
+                and not window._plan_working and not window._working):
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def check_mixed_drop_keeps_skipped_in_new_plan():
+    """已跳过文件与新增文件一起拖入：新预览仍保持跳过，只勾选新增文件。"""
+    app()
+    root = root_dir()
+    write(root, "项目/AIGC/跳过.md", "高等数学 极限 导数")
+    os.makedirs(os.path.join(root, "下载"), exist_ok=True)
+    skip_src = os.path.join(root, "项目/AIGC/跳过.md")
+    added_src = os.path.join(root, "下载/新增.md")
+    before_skip = sha256_file(skip_src)
+
+    window = _MAIN.MainWindow()
+    try:
+        window.path_edit.setText(root)
+        window.on_scan()
+        assert wait_for_plan(window), "等待计划生成超时"
+        old_plan = window.current_plan
+        assert window.skip_ambiguity("项目/AIGC/跳过.md")
+        old_item = item_by(old_plan, "项目/AIGC/跳过.md")
+        assert old_item.skipped is True and old_item.selected is False
+
+        # 扫描之后才新建的文件，再和已跳过文件一起拖入
+        write(root, "下载/新增.md", "高等数学 极限 导数")
+        before_added = sha256_file(added_src)
+        _drop_path(window, skip_src, added_src)
+        assert wait_for_new_plan(window, old_plan), "新预览未替换旧计划"
+
+        plan = window.current_plan
+        skip_item = item_by(plan, "项目/AIGC/跳过.md")
+        added_item = item_by(plan, "下载/新增.md")
+        # 跳过文件在新预览里仍保持跳过，且不再要求确认歧义
+        assert skip_item.skipped is True, "新计划丢了跳过标记"
+        assert skip_item.selected is False, "跳过文件被重新勾选"
+        assert getattr(skip_item, "ambiguity", None) is None, "跳过文件歧义未清空"
+        row = next(r for r, it in enumerate(plan.items) if it is skip_item)
+        cell = window.table.cellWidget(row, 0)
+        cb = cell.findChild(QCheckBox) if cell is not None else None
+        assert cb is not None and cb.isChecked() is False, "跳过文件复选框被勾上"
+        # 新增文件已勾选，且没有未确认歧义
+        assert added_item.selected is True, "新增文件未勾选"
+        assert getattr(added_item, "ambiguity", None) is None, "新增文件存在歧义"
+        # 歧义面板不再要求确认跳过文件
+        assert getattr(window, "_ambiguity_item", None) is None, (
+            f"歧义面板仍停在 {window._ambiguity_item}")
+        assert window.btn_ambiguity_apply.isEnabled() is False
+
+        # 「开始整理」不再弹未确认歧义
+        warnings = []
+        real_warn = _MAIN.QMessageBox.warning
+        real_info = _MAIN.QMessageBox.information
+        _MAIN.QMessageBox.warning = lambda *a, **k: warnings.append(a[2] if len(a) > 2 else "")
+        _MAIN.QMessageBox.information = (
+            lambda *a, **k: warnings.append(a[2] if len(a) > 2 else ""))
+
+        class RejectConfirm:
+            def __init__(self, *a, **k):
+                pass
+
+            def exec(self):
+                return QDialog.Rejected
+
+        real_confirm = _MAIN.ExecuteConfirmDialog
+        _MAIN.ExecuteConfirmDialog = RejectConfirm
+        try:
+            window.on_execute()
+        finally:
+            _MAIN.ExecuteConfirmDialog = real_confirm
+        assert not any("未确认的歧义" in str(m) for m in warnings), warnings
+        # 取消确认时两个源文件都不动
+        assert os.path.exists(skip_src) and sha256_file(skip_src) == before_skip
+        assert os.path.exists(added_src) and sha256_file(added_src) == before_added
+
+        # ---- 确认执行 ----
+        class AcceptConfirm:
+            def __init__(self, *a, **k):
+                pass
+
+            def exec(self):
+                return QDialog.Accepted
+
+        _MAIN.ExecuteConfirmDialog = AcceptConfirm
+        try:
+            window.on_execute()
+            assert wait_for_idle(window), "执行未结束"
+        finally:
+            _MAIN.ExecuteConfirmDialog = real_confirm
+            _MAIN.QMessageBox.warning = real_warn
+            _MAIN.QMessageBox.information = real_info
+
+        assert os.path.exists(skip_src), "已跳过文件被移走"
+        assert sha256_file(skip_src) == before_skip, "已跳过文件内容被改"
+        added_target = os.path.join(root, added_item.target_rel_path)
+        assert os.path.exists(added_target), "新增文件未落到目标"
+        assert sha256_file(added_target) == before_added
+        assert not os.path.exists(added_src)
+
+        storage = window._storage
+        batch = storage.get_latest_batch()
+        actions = storage.get_actions(batch.batch_id)
+        moved = [a for a in actions if a.status == "moved"]
+        assert len(moved) == 1, [(a.source_rel, a.status) for a in actions]
+        assert moved[0].source_rel == "下载/新增.md", moved[0].source_rel
+
+        # ---- 撤销 ----
+        undo = undo_latest_batch(storage)
+        assert undo.restored >= 1, undo
+        assert os.path.exists(added_src), "撤销未恢复新增文件"
+        assert sha256_file(added_src) == before_added
+        assert os.path.exists(skip_src) and sha256_file(skip_src) == before_skip
+        assert not os.path.exists(added_target)
+    finally:
+        if getattr(window, "_storage", None) is not None:
+            window._storage.close()
+        window.close()
+
+
+def _drop_path(window, *paths):
     """用真实 QDropEvent 把文件拖回主窗口（与验收探针同一入口）。"""
     mime = QMimeData()
-    mime.setUrls([QUrl.fromLocalFile(path)])
+    mime.setUrls([QUrl.fromLocalFile(p) for p in paths])
     event = QDropEvent(
         QPointF(20.0, 20.0), Qt.CopyAction, mime,
         Qt.LeftButton, Qt.NoModifier)
@@ -474,6 +605,7 @@ CHECKS = [
     ("候选目标路径完整保留", check_resolve_ambiguity_preserves_candidate_target),
     ("正文不越界且错误无绝对路径", check_content_no_escape_and_no_abs_path),
     ("拖回已跳过文件仍保持原位", check_dropped_skipped_stays_in_place),
+    ("混合拖入后跳过文件仍跳过", check_mixed_drop_keeps_skipped_in_new_plan),
 ]
 
 

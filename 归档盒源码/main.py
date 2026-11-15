@@ -1533,6 +1533,9 @@ class MainWindow(QMainWindow):
         self._intake_dialog = None
         self._pending_intake_selection = []
         self._pending_drop_select = []
+        # 拖放新文件会重建计划（_discard_plan 清掉旧计划），已跳过信息记在
+        # 窗口上，等新计划发布时套用一次，再清空。
+        self._carry_skipped_rels = []
         self._quiet_drop_scan = False
         self._recent_dialog = None
         self._duplicate_dialog = None
@@ -2509,6 +2512,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "归档盒", "请先选择一个有效的文件夹。")
             return
         self._pending_drop_select = []
+        self._carry_skipped_rels = []
         self._quiet_drop_scan = False
         self._plan_scope = "space"
         self._plan_scope_note = ""
@@ -3250,6 +3254,13 @@ class MainWindow(QMainWindow):
             return
         self._plan_scope = "intake"
         self._pending_drop_select = list(normalized)
+        # 这次预览可能重建计划（新文件不在已完成扫描里），先记下当前计划里
+        # 已跳过的相对路径，等新计划发布时套用，避免跳过状态丢失后歧义重现。
+        self._carry_skipped_rels = [
+            item.file.rel_path for item in (self.current_plan.items
+                                            if self.current_plan is not None else [])
+            if getattr(item, "skipped", False)
+        ]
         self._sync_intake_label()
         self._update_scope_label()
         self._update_button_states()
@@ -3885,6 +3896,9 @@ class MainWindow(QMainWindow):
 
         self.current_plan = plan
         self._plan_valid = True
+        # 拖入新文件后重建的计划：把拖放前记下的已跳过文件恢复成跳过，
+        # 歧义一并清空，避免「开始整理」再次要求确认。只套用一次。
+        self._apply_carried_skips(plan)
         self._invalidate_duplicate_cache(close=True)
         self.invalid_label.hide()
 
@@ -3934,6 +3948,30 @@ class MainWindow(QMainWindow):
                 f"✓ {plan.summary()}{ocr_msg}（仍可更改，点击「开始整理」才会移动文件）"
             )
         self._apply_pending_drop_select()
+
+    def _apply_carried_skips(self, plan) -> int:
+        """在新计划上恢复拖放前记下的已跳过文件，然后丢弃记录。
+
+        只按相对路径匹配（同一整理空间内路径稳定）：置 skipped、取消勾选、
+        清空 ambiguity，随后由 _populate_table 与 _refresh_ambiguity_panel
+        按新状态渲染，歧义面板就不会再要求确认它。
+        """
+        rels = getattr(self, "_carry_skipped_rels", None)
+        if not rels:
+            self._carry_skipped_rels = []
+            return 0
+        self._carry_skipped_rels = []
+        wanted = {os.path.normcase(os.path.normpath(rel)) for rel in rels}
+        applied = 0
+        for item in plan.items:
+            key = os.path.normcase(os.path.normpath(item.file.rel_path))
+            if key not in wanted:
+                continue
+            item.skipped = True
+            item.selected = False
+            item.ambiguity = None
+            applied += 1
+        return applied
 
     def _on_plan_cancelled(self, seq: int):
         if self._closing or self._close_pending:
@@ -4301,6 +4339,10 @@ class MainWindow(QMainWindow):
         items = self._ambiguity_items()
         if not items:
             self._ambiguity_item = None
+            # 没有待确认项时把控件一并禁用，避免隐藏面板残留上一次的可用态。
+            self.ambiguity_combo.setEnabled(False)
+            self.btn_ambiguity_apply.setEnabled(False)
+            self.btn_ambiguity_skip.setEnabled(False)
             if hasattr(self, "ambiguity_panel"):
                 self.ambiguity_panel.hide()
             return
