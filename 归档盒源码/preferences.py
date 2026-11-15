@@ -505,20 +505,6 @@ def import_marker_present(root: str) -> bool:
 
 # ======================== JSON 镜像 ========================
 
-def _upsert_rule(rules: List[LongTermRule], rule: LongTermRule) -> None:
-    for index, existing in enumerate(rules):
-        if existing.rule_id == rule.rule_id:
-            rules[index] = rule
-            return
-    rules.append(rule)
-
-
-def _remove_rule(rules: List[LongTermRule], rule_id: str) -> bool:
-    before = len(rules)
-    rules[:] = [r for r in rules if r.rule_id != rule_id]
-    return len(rules) != before
-
-
 def _read_json_config(root: str) -> ClassificationConfig:
     try:
         cfg, _source = load_config(root)
@@ -714,11 +700,30 @@ def _merge_json_after_failure(root: str, decisions: Dict[str, str],
 
 
 
+def _publish_space_mirror(conn: sqlite3.Connection, root: str) -> None:
+    """在持有空间写锁的事务里，把 JSON 镜像整份重建为当前空间库的行。
+
+    只有数据库提交成功之后才调用：磁盘上的镜像从不含未提交（或最终
+    提交失败）的偏好，等待期间其他窗口生成的备份不会收进这类内容。
+    整份重建也把等待期间其他窗口已提交的行一并收进镜像。
+    """
+    new_cfg = clone_config(_read_json_config(root))
+    new_cfg.long_term_rules = [
+        p.to_rule() for p in _rows_from_conn(conn).values()]
+    ensure_valid(new_cfg)
+    save_config(root, new_cfg)
+    try:
+        conn.commit()
+    except Exception:
+        # 镜像与库均已落盘，这里只剩释放写锁；失败不影响结果。
+        pass
+
+
 def save_preference(root: str, pref: Preference) -> None:
     """保存一条用户确认偏好。
 
-    空间偏好在同一个写事务内读写 JSON 镜像，避免两个确认覆盖彼此的镜像。
-    SQLite 提交失败时，在释放写锁前恢复 JSON。
+    空间偏好先提交空间库，再在持有写锁的第二个事务里发布 JSON 镜像：
+    提交前磁盘上一直是旧镜像，提交失败时 JSON 完全不动。
     全局偏好只写全局库，不写任何空间的 classification_config.json。
     """
     _raise_if_invalid(pref)
@@ -733,50 +738,92 @@ def save_preference(root: str, pref: Preference) -> None:
 
     if pref.scope != SCOPE_SPACE:
         raise PreferenceError(f"未知作用范围：{pref.scope!r}")
+    # 先确认镜像可读：损坏时在打开库之前失败，两边都保持调用前。
+    _read_json_config(root)
     conn = _open(space_db_path(root))
     try:
+        rows = conn.execute(
+            "SELECT * FROM preferences WHERE preference_id = ?",
+            (pref.preference_id,)).fetchall()
+        old_row = _row_to_pref(rows[0]) if rows else None
+        # 事务 1：先提交数据库。
         _begin_write(conn)
-        old_cfg = _read_json_config(root)
-        new_cfg = clone_config(old_cfg)
-        _upsert_rule(new_cfg.long_term_rules, pref.to_rule())
-        ensure_valid(new_cfg)
         try:
             _upsert(conn, pref)
-            save_config(root, new_cfg)
-        except Exception as e:
-            raise PreferenceError(f"偏好库写入失败，未写入任何一边：{e}")
-        try:
             conn.commit()
         except Exception as e:
-            if _restore_json(root, old_cfg):
-                raise PreferenceError(f"偏好库写入失败，已回滚 JSON 镜像：{e}")
+            raise PreferenceError(f"偏好库写入失败，未写入任何一边：{e}")
+        # 事务 2：持锁发布镜像（含等待期间其他窗口已提交的行）。
+        try:
+            _begin_write(conn)
+            _publish_space_mirror(conn, root)
+        except Exception as e:
+            restored = False
+            try:
+                _begin_write(conn)
+                rows = conn.execute(
+                    "SELECT * FROM preferences WHERE preference_id = ?",
+                    (pref.preference_id,)).fetchall()
+                current = _row_to_pref(rows[0]) if rows else None
+                if (current is not None
+                        and preference_fingerprint(current)
+                        == preference_fingerprint(pref)):
+                    if old_row is not None:
+                        _upsert(conn, old_row)
+                    else:
+                        conn.execute(
+                            "DELETE FROM preferences WHERE preference_id = ?",
+                            (pref.preference_id,))
+                    conn.commit()
+                    restored = True
+            except Exception:
+                pass
+            if restored:
+                raise PreferenceError(f"偏好库写入失败，已回滚：{e}")
             raise PreferenceError(
-                f"偏好库写入失败，且 JSON 镜像未能确认恢复，请检查配置文件：{e}")
+                f"偏好库写入失败，且未能确认回滚，请检查偏好库：{e}")
     finally:
         conn.close()
 
 
 def delete_preference(root: str, preference_id: str) -> bool:
-    """删除一条偏好；空间偏好同时从 JSON 镜像移除。"""
+    """删除一条偏好；空间偏好先删库，提交成功后再发布 JSON 镜像。"""
     for pref in list_space_preferences(root):
         if pref.preference_id == preference_id:
-            old_cfg = _read_json_config(root)
-            new_cfg = clone_config(old_cfg)
-            _remove_rule(new_cfg.long_term_rules, preference_id)
-            ensure_valid(new_cfg)
-            save_config(root, new_cfg)
+            # 先确认镜像可读：损坏时在打开库之前失败，两边都保持调用前。
+            _read_json_config(root)
             conn = _open(space_db_path(root))
             try:
-                with conn:
-                    conn.execute("DELETE FROM preferences WHERE preference_id = ?",
-                                 (preference_id,))
-            except Exception as e:
-                restored = _restore_json(root, old_cfg)
-                if restored:
+                # 事务 1：先提交删除。
+                _begin_write(conn)
+                try:
+                    conn.execute(
+                        "DELETE FROM preferences WHERE preference_id = ?",
+                        (preference_id,))
+                    conn.commit()
+                except Exception as e:
+                    raise PreferenceError(f"偏好库删除失败，未写入任何一边：{e}")
+                # 事务 2：持锁发布镜像（删除的行随之从镜像消失）。
+                try:
+                    _begin_write(conn)
+                    _publish_space_mirror(conn, root)
+                except Exception as e:
+                    restored = False
+                    try:
+                        _begin_write(conn)
+                        rows = conn.execute(
+                            "SELECT * FROM preferences WHERE preference_id = ?",
+                            (preference_id,)).fetchall()
+                        if not rows:
+                            _upsert(conn, pref)
+                            conn.commit()
+                            restored = True
+                    except Exception:
+                        pass
+                    if restored:
+                        raise PreferenceError(f"偏好库删除失败，已回滚：{e}")
                     raise PreferenceError(
-                        f"偏好库删除失败，已回滚 JSON 镜像：{e}")
-                raise PreferenceError(
-                    f"偏好库删除失败，且 JSON 镜像未能确认恢复，请检查：{e}")
+                        f"偏好库删除失败，且未能确认回滚，请检查偏好库：{e}")
             finally:
                 conn.close()
             return True
@@ -911,12 +958,14 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
     - `original_ids` 仅在未提供 baseline 时用于删除：只删打开时已存在、
       本次又移除的行；编辑期间其他窗口新增的行保留。
     - `write_space=False` / `write_global=False` 时不触碰对应库。
-    - 先打开所有需要的库，再写数据库语句；JSON 偏好镜像在提交前写入，
-      普通分类规则在偏好提交成功后才发布。
-      任一库提交失败都会把已提交的库补偿回保存前，并恢复 JSON，不会出现
-      “报错但新目标已生效”。只有三处都确认恢复才会写“已整体回滚”。
-    - 旧 JSON 无法解析时不阻止保存：偏好库都写成功就用新配置覆盖它；
-      后续失败则把损坏的原文件字节放回去。
+    - 先打开所有需要的库，再写数据库语句；两个库都提交成功后才在持有
+      空间写锁的发布事务里写 JSON（偏好镜像按提交后的空间库整份重建，
+      普通分类规则与等待期间其他窗口的更新冲突时整次取消）。提交前磁盘
+      上一直是旧镜像：等待提交期间其他窗口生成的备份不会收进本次最终
+      可能失败的偏好。任一库提交失败都会把已提交的库补偿回保存前，
+      JSON 在提交失败时完全未动，不会出现“报错但新目标已生效”。
+    - 旧 JSON 无法解析时不阻止保存：偏好库都提交成功后就用新配置覆盖
+      它；提交失败则原文件字节从未被触碰。
     """
     prefs = list(preferences)
     space_prefs = [p for p in prefs if p.scope == SCOPE_SPACE]
@@ -935,6 +984,7 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
     new_cfg = None
     json_written = False
     written_json = None
+    cancel_reason = ""
     committed_space = False
     committed_global = False
     pre_space: Dict[str, Preference] = {}
@@ -1069,54 +1119,62 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
                                    if p.preference_id == pid), None)
                     raise _conflict_error(target or new_row or old_row)
 
-        defer_classification = False
         if sync_json:
             old_cfg, old_raw, old_existed = _read_config_state(root)
             base_cfg = old_cfg if old_cfg is not None else default_config()
             original_classification = replace(base_cfg, long_term_rules=[])
             new_cfg = clone_config(config if config is not None else base_cfg)
-            defer_classification = (
-                space_conn is not None
-                and replace(new_cfg, long_term_rules=[]) != original_classification)
 
         if space_conn is not None:
             _apply_rows(space_conn, space_write, space_delete)
         if global_conn is not None:
             _apply_rows(global_conn, global_write, global_delete)
 
-        # 先发布偏好镜像；全局提交等待期间，其他窗口能继续保存空间偏好。
-        if sync_json:
-            if write_space and space_conn is not None:
-                final_rows = _rows_from_conn(space_conn).values()
-                new_cfg.long_term_rules = [p.to_rule() for p in final_rows]
-            ensure_valid(new_cfg)
-            cfg_to_save = (
-                replace(original_classification, long_term_rules=new_cfg.long_term_rules)
-                if defer_classification else new_cfg)
-            save_config(root, cfg_to_save)
-            json_written = True
-            written_json = _json_state(root)
-
+        # 两个库都提交成功后才发布 JSON：提交前磁盘上一直是旧镜像，
+        # 等待全局提交期间其他窗口生成的备份不会收进本次最终可能失败
+        # 的偏好或分类规则。
         if space_conn is not None:
             space_conn.commit()
             committed_space = True
         if global_conn is not None:
             global_conn.commit()
             committed_global = True
-        if defer_classification:
-            # 镜像里的普通规则此前一直是旧版。发布新版时重新取空间库，
-            # 避免覆盖等待全局提交时另一窗口写入的偏好或分类配置。
-            _begin_write(space_conn)
-            current_cfg, current_raw, _ = _read_config_state(root)
-            current_classification = replace(
-                current_cfg if current_cfg is not None else default_config(),
-                long_term_rules=[])
-            if current_raw is not None or current_classification != original_classification:
-                raise PreferenceError(
-                    "普通分类规则已在其他窗口更新，请重新打开配置页后再保存。")
-            new_cfg.long_term_rules = [
-                p.to_rule() for p in _rows_from_conn(space_conn).values()]
+        if sync_json:
+            # 发布时持有空间写锁：读取等待期间其他窗口已提交的行，
+            # 也不与并发的单条保存竞争镜像文件。
+            if space_conn is not None:
+                _begin_write(space_conn)
+            current_cfg, current_raw, _existed = _read_config_state(root)
+            if current_raw is not None and current_raw != old_raw:
+                # 文件在本次保存期间被别处改成（或改成另一种）损坏状态，
+                # 无法安全合并，整次取消。
+                cancel_reason = (
+                    "classification_config.json 已被其他窗口更改，"
+                    "请重新打开配置页后再保存。")
+                raise PreferenceError(cancel_reason)
+            if current_cfg is not None:
+                current_classification = replace(
+                    current_cfg, long_term_rules=[])
+                if current_classification != original_classification:
+                    # 普通分类规则在等待提交期间被其他窗口改过，
+                    # 不能用本次草稿覆盖，整次取消。
+                    cancel_reason = (
+                        "普通分类规则已在其他窗口更新，"
+                        "请重新打开配置页后再保存。")
+                    raise PreferenceError(cancel_reason)
+            if write_space and space_conn is not None:
+                new_cfg.long_term_rules = [
+                    p.to_rule() for p in _rows_from_conn(space_conn).values()]
+            ensure_valid(new_cfg)
             save_config(root, new_cfg)
+            json_written = True
+            written_json = _json_state(root)
+            if space_conn is not None:
+                try:
+                    space_conn.commit()
+                except Exception:
+                    # 镜像已落盘，这里只剩释放发布锁；失败不影响结果。
+                    pass
     except Exception as e:
         for conn in (space_conn, global_conn):
             if conn is not None:
@@ -1124,7 +1182,8 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
                     conn.rollback()
                 except Exception:
                     pass
-        if isinstance(e, PreferenceError) and not json_written:
+        if (isinstance(e, PreferenceError) and not json_written
+                and not committed_space and not committed_global):
             raise
         # 已经提交的库无法用 rollback 撤销：只补偿本次写下去、且现在仍
         # 保持本次写入值的内容；已被别的窗口改过的 id 保留那个较新的值。
@@ -1153,23 +1212,30 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
         space_restored_ids = [pid for pid, d in space_decisions.items()
                               if d == "restored"]
 
-        # JSON 镜像与空间库共用同一份逐条 decisions：另一个窗口写过整份
-        # 文件时按条合并，而不是整份换回本次开始前（那会让同一条规则在
-        # 库和 JSON 里一个旧、一个新）。文件字节仍是本次写下的内容时，
-        # 才整份恢复。
+        # JSON 镜像与空间库共用同一份逐条 decisions。即使本次没有发布过
+        # 镜像，等待期间另一窗口的单条保存也可能按当时的空间库整份重建
+        # 镜像，把本次已提交、随后被补偿回去的行带进去（或把恢复回来的
+        # 行挤掉）：只要文件存在且可解析，就按补偿后的决策修正。文件字节
+        # 仍是本次写下的内容时，才整份恢复。
         json_state = "restored"
-        if json_written:
+        if sync_json:
             try:
                 if space_conn is not None:
                     _begin_write(space_conn)
-                if _json_state(root) == written_json:
+                if json_written and _json_state(root) == written_json:
                     json_state = ("restored" if _restore_config_state(
                         root, old_cfg, old_raw, old_existed) else "failed")
                 else:
-                    final_rows = (_rows_from_conn(space_conn)
-                                  if space_conn is not None else {})
-                    json_state, _json_kept = _merge_json_after_failure(
-                        root, space_decisions, final_rows)
+                    cfg_now, raw_now, _existed_now = _read_config_state(root)
+                    if (cfg_now is None and raw_now is not None
+                            and raw_now != old_raw):
+                        # 保存期间被别处改成另一种损坏状态，无法合并修正。
+                        json_state = "failed"
+                    elif cfg_now is not None and space_decisions:
+                        final_rows = (_rows_from_conn(space_conn)
+                                      if space_conn is not None else {})
+                        json_state, _json_kept = _merge_json_after_failure(
+                            root, space_decisions, final_rows)
             except sqlite3.Error:
                 json_state = "failed"
 
@@ -1187,11 +1253,22 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
                 + f"。请检查后再操作：{e}")
         # 提示以补偿后的实际状态为准，不能只看本次写入名单：其他窗口
         # 保存的可能是本次没碰过的偏好，那条不在名单里，但它的较新内容
-        # 已经留在空间库和 JSON 中。
-        kept_ids = _kept_other_window_ids(
-            (_rows_from_conn(space_conn)
-             if space_conn is not None else {}),
-            pre_space, root, old_cfg)
+        # 已经留在空间库和 JSON 中；本次碰过、又被其他窗口改写（含删除）
+        # 的 id 同样保留了较新的状态。
+        kept_ids = list(dict.fromkeys(
+            _kept_other_window_ids(
+                (_rows_from_conn(space_conn)
+                 if space_conn is not None else {}),
+                pre_space, root, old_cfg)
+            + [pid for pid, d in space_decisions.items() if d == "kept"]))
+        if cancel_reason:
+            message = cancel_reason
+            if kept_ids:
+                message += (f"；空间偏好库保留了其他窗口的较新内容"
+                            f"（{'、'.join(kept_ids)}）")
+            elif committed_space or committed_global:
+                message += "；偏好库已恢复为保存前"
+            raise PreferenceError(message)
         if kept_ids:
             message = (
                 "偏好库写入失败；空间偏好库与 JSON 镜像保留了其他窗口的"
@@ -1209,7 +1286,7 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
             raise PreferenceError(
                 "偏好库写入失败；全局偏好库保留了其他窗口的较新内容"
                 + f"：{e}")
-        if json_written:
+        if json_written or committed_space or committed_global:
             raise PreferenceError(f"偏好库写入失败，已整体回滚：{e}")
         raise PreferenceError(f"偏好库写入失败，未写入任何一边：{e}")
     finally:
