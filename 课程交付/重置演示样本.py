@@ -3,9 +3,10 @@
 
 只创建还没有的演示文件。再次运行时，只写回本脚本创建过的普通文件。
 已经存在的用户文件、符号链接，以及链接指向的目录外文件，都不改写。
-演示开始前已经存在的空间偏好保留。只有脚本先建过这份演示清单之后
-才确认的偏好，会在下一次重置时从本空间拿掉，方便同一演示目录重新
-从首次预览开始。操作历史保留。
+演示开始前已经存在的空间偏好保留，之后在这个空间里新确认的偏好也保留。
+只有一开始没有任何偏好的演示目录，才会在下一次重置时去掉演示过程中
+新确认的偏好，方便同一演示目录重新从首次预览开始。操作历史保留。
+范围外对照若已是符号链接，包括指向尚不存在文件的链接，一律不跟随。
 """
 
 from __future__ import annotations
@@ -289,7 +290,9 @@ def _filter_config_rules(root: Path, preserved: set[str]) -> str | None:
 
 
 def _drop_preferences_added_during_demo(root: Path, preserved: set[str]) -> str:
-    """只删除演示清单记下之后新增的偏好。演示前的编号原样保留。"""
+    """空演示目录才清掉后来确认的偏好。已有偏好的整理空间一律不删。"""
+    if preserved:
+        return "已保留该整理空间后来确认的偏好"
     blocked = _filter_config_rules(root, preserved)
     if blocked:
         return blocked
@@ -327,6 +330,28 @@ def _drop_preferences_added_during_demo(root: Path, preserved: set[str]) -> str:
     return "已保留进入演示前的偏好"
 
 
+def _place_outside(outside: Path) -> str:
+    """只在对照路径完全不存在时新建普通文件。悬空符号链接也不跟随。"""
+    if outside.is_symlink():
+        return "范围外对照是符号链接，未跟随"
+    if outside.exists():
+        return "范围外对照已存在，未覆盖"
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        fd = os.open(outside, flags, 0o644)
+    except FileExistsError:
+        return "范围外对照已存在，未覆盖"
+    except OSError:
+        return "范围外对照是符号链接，未跟随"
+    try:
+        os.write(fd, OUTSIDE_TEXT.encode("utf-8"))
+    finally:
+        os.close(fd)
+    return "已新建范围外对照"
+
+
 def reset(root: Path) -> Path:
     root = _reject_root(root)
     _files, recorded = _read_ledger(root)
@@ -344,8 +369,7 @@ def reset(root: Path) -> Path:
         place_owned_files(root, recorded)
         reset.last_note = _drop_preferences_added_during_demo(root, set(recorded))
     outside = root.parent / OUTSIDE_NAME
-    if not outside.exists():
-        outside.write_text(OUTSIDE_TEXT, encoding="utf-8")
+    reset.last_outside_note = _place_outside(outside)
     return outside
 
 
@@ -362,7 +386,6 @@ def main(argv: list[str] | None = None) -> int:
         print(exc, file=sys.stderr)
         return 2
     outside = root.parent / OUTSIDE_NAME
-    outside_existed = outside.exists()
     _files, recorded = _read_ledger(root)
     if recorded is None:
         preserved = _snapshot_preference_ids(root)
@@ -376,14 +399,10 @@ def main(argv: list[str] | None = None) -> int:
     else:
         notes = place_owned_files(root, recorded)
         preference_note = _drop_preferences_added_during_demo(root, set(recorded))
-    if not outside.exists():
-        outside.write_text(OUTSIDE_TEXT, encoding="utf-8")
+    outside_note = _place_outside(outside)
     print(f"整理空间：{root}")
     print(f"范围外对照：{outside}")
-    if outside_existed:
-        print("范围外对照已存在，未覆盖")
-    else:
-        print("已新建范围外对照")
+    print(outside_note)
     for line in notes:
         print(line)
     print(preference_note)

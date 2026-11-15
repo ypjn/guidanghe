@@ -245,6 +245,39 @@ def install_space_pref_save():
     pp.RuleDraftDialog.exec = rd_exec
 
 
+def install_named_dir_pref(name, source, category):
+    def mo_exec(self):
+        self.dir_combo.setCurrentText("项目")
+        self.cat_edit.setText(category)
+        self._on_save_as_rule()
+        return self.dlg.result()
+
+    def rd_exec(self):
+        self.name_edit.setText(name)
+        for i in range(self.match_combo.count()):
+            if self.match_combo.itemData(i) == MATCH_DIR_SCOPE:
+                self.match_combo.setCurrentIndex(i)
+                break
+        self.source_edit.setText(source)
+        self.subdir_check.setChecked(True)
+        self.dir_combo.setCurrentText("项目")
+        self.cat_edit.setText(category)
+        for i in range(self.inner_combo.count()):
+            if "清空" in self.inner_combo.itemText(i):
+                self.inner_combo.setCurrentIndex(i)
+                break
+        self.scope_combo.setCurrentIndex(0)
+        self._on_preview()
+        with yes_answer():
+            self._on_save()
+        result = self.dlg.result() == 1
+        self._on_closed()
+        return result
+
+    pp.ManualOverrideDialog.exec = mo_exec
+    pp.RuleDraftDialog.exec = rd_exec
+
+
 def install_one_off():
     def mo_exec(self):
         self.dir_combo.setCurrentText("课程")
@@ -805,6 +838,99 @@ def test_reset_keeps_preexisting_preferences():
     close_window(win)
 
 
+def test_later_preference_on_ordinary_space_stays():
+    script = os.path.join(os.path.dirname(SRC), "课程交付", "重置演示样本.py")
+    root = root_dir("ordinary-later")
+    personal = os.path.join(root, "下载", "归档盒", "自己的资料.md")
+    os.makedirs(os.path.dirname(personal))
+    with open(personal, "w", encoding="utf-8") as handle:
+        handle.write("原有资料\n")
+    win = open_window(root)
+    scan_and_preview(win)
+    install_space_pref_save()
+    try:
+        select_row(win, "下载/归档盒/自己的资料.md")
+        win.on_override_selected()
+        process(0.1)
+    finally:
+        restore_dialogs()
+    close_window(win)
+    first = subprocess.run(
+        [sys.executable, script, "--root", root],
+        capture_output=True, text=True)
+    new_rel = "后来新加的资料/实验记录.md"
+    new_file = os.path.join(root, new_rel)
+    os.makedirs(os.path.dirname(new_file))
+    with open(new_file, "w", encoding="utf-8") as handle:
+        handle.write("后来确认的实验记录\n")
+    new_sha = sha256(new_file)
+    win = open_window(root)
+    scan_and_preview(win)
+    install_named_dir_pref("后来新增的项目资料", "后来新加的资料", "新增资料")
+    try:
+        select_row(win, new_rel)
+        win.on_override_selected()
+        process(0.1)
+    finally:
+        restore_dialogs()
+    close_window(win)
+    win = open_window(root)
+    scan_and_preview(win)
+    before = item_of(win.current_plan, new_rel)
+    ids_before = {row.preference_id for row in P.list_space_preferences(root)}
+    close_window(win)
+    second = subprocess.run(
+        [sys.executable, script, "--root", root],
+        capture_output=True, text=True)
+    win = open_window(root)
+    scan_and_preview(win)
+    after = item_of(win.current_plan, new_rel)
+    ids_after = {row.preference_id for row in P.list_space_preferences(root)}
+    ok = (
+        first.returncode == 0
+        and second.returncode == 0
+        and "已清除" not in second.stdout
+        and len(ids_before) == 2
+        and ids_after == ids_before
+        and str(before.rule_key).startswith("long_term:")
+        and before.selected is True
+        and after.rule_key == before.rule_key
+        and after.selected is True
+        and "新增资料" in after.target_rel_path
+        and sha256(new_file) == new_sha)
+    rec("S16", "普通空间在重置之后新确认的偏好，再次重置仍保留",
+        ok,
+        f"第一次重置：{first.stdout}"
+        f"第二次重置：{second.stdout}"
+        f"重置前={before.target_rel_path} {before.rule_key} selected={before.selected}\n"
+        f"重置后={after.target_rel_path} {after.rule_key} selected={after.selected}\n"
+        f"偏好前={sorted(ids_before)} 偏好后={sorted(ids_after)} "
+        f"sha不变={sha256(new_file) == new_sha}")
+    close_window(win)
+
+
+def test_dangling_outside_symlink_is_not_followed():
+    script = os.path.join(os.path.dirname(SRC), "课程交付", "重置演示样本.py")
+    parent = tempfile.mkdtemp(prefix="stage3_dangling_")
+    root = os.path.join(parent, "样本")
+    os.makedirs(root)
+    target = os.path.join(parent, "尚不存在的外部文件.txt")
+    link = os.path.join(parent, "范围外-不要放进样本.md")
+    os.symlink(target, link)
+    proc = subprocess.run(
+        [sys.executable, script, "--root", root],
+        capture_output=True, text=True)
+    ok = (
+        proc.returncode == 0
+        and os.path.islink(link)
+        and not os.path.exists(target)
+        and "未跟随" in proc.stdout)
+    rec("S17", "范围外对照是悬空符号链接时，不在目录外创建文件",
+        ok,
+        f"退出码={proc.returncode}\n{proc.stdout}"
+        f"链接仍在={os.path.islink(link)} 外部文件被创建={os.path.exists(target)}")
+
+
 def test_ledger_tmp_symlink_stays_outside():
     script = os.path.join(os.path.dirname(SRC), "课程交付", "重置演示样本.py")
     parent = tempfile.mkdtemp(prefix="stage3_ledger_link_")
@@ -841,6 +967,8 @@ def main():
     test_reset_keeps_unrelated_files()
     test_reset_returns_to_first_preview()
     test_reset_keeps_preexisting_preferences()
+    test_later_preference_on_ordinary_space_stays()
+    test_dangling_outside_symlink_is_not_followed()
     test_ledger_tmp_symlink_stays_outside()
     test_two_rounds_and_execute()
     test_stale_and_conflict()
