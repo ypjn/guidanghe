@@ -673,15 +673,13 @@ def _json_state(root: str):
 
 
 def _merge_json_after_failure(root: str, decisions: Dict[str, str],
-                              final_rows: Dict[str, Preference],
-                              snapshot: Optional[Dict[str, Preference]],
-                              old_cfg: Optional[ClassificationConfig]):
-    """按空间库的逐条补偿结果修正 JSON 镜像。
+                              final_rows: Dict[str, Preference]):
+    """按空间库补偿后的行修正 JSON 镜像。
 
     基线：另一个窗口已经写过这份 JSON，不能整份换回本次开始前的版本。
     未碰过的规则和 JSON 里的其他字段保留后来者写下的内容；本次碰过的
-    每条空间规则按空间库同一份 decisions 处理：库保留较新值，JSON 也保留
-    同一个较新值；库恢复成开始前，JSON 同一条也回到开始前。
+    每条规则只看补偿后的空间库：库里还有这一行，JSON 就用这一行；库里
+    没有，就从 JSON 删掉。配置页快照里的全局偏好不能写进空间 JSON。
     返回 (status, kept_ids)。
     """
     try:
@@ -694,23 +692,9 @@ def _merge_json_after_failure(root: str, decisions: Dict[str, str],
     rules = list(merged.long_term_rules)
     index = {r.rule_id: i for i, r in enumerate(rules)}
     planned: Dict[int, object] = {}
-
-    def _old_rule(pid: str):
-        if snapshot is not None:
-            old = snapshot.get(pid)
-            return old.to_rule() if old is not None else None
-        if old_cfg is not None:
-            for rule in old_cfg.long_term_rules:
-                if rule.rule_id == pid:
-                    return rule
-        return None
-
-    for pid, decision in decisions.items():
-        if decision == "kept":
-            pref = final_rows.get(pid)
-            rule = pref.to_rule() if pref is not None else None
-        else:
-            rule = _old_rule(pid)
+    for pid in decisions:
+        pref = final_rows.get(pid)
+        rule = pref.to_rule() if pref is not None else None
         if pid in index:
             planned[index[pid]] = rule if rule is not None else _DROP_RULE
         elif rule is not None:
@@ -1093,12 +1077,15 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
         for pid in global_delete:
             global_written.setdefault(pid, None)
 
-        space_decisions: Dict[str, str] = {
-            pid: "restored" for pid in space_written}
+        space_decisions: Dict[str, str] = {}
         space_state = "restored"
-        if committed_space:
-            space_state, space_decisions = _restore_db_rows(
-                space_conn, pre_space, space_written)
+        if space_conn is not None:
+            if committed_space:
+                space_state, space_decisions = _restore_db_rows(
+                    space_conn, pre_space, space_written)
+            else:
+                space_decisions = {pid: "restored"
+                                   for pid in space_written}
         global_state = "restored"
         if committed_global:
             global_state, _global_decisions = _restore_db_rows(
@@ -1121,8 +1108,7 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
                 final_rows = (_rows_from_conn(space_conn)
                               if space_conn is not None else {})
                 json_state, _json_kept = _merge_json_after_failure(
-                    root, space_decisions, final_rows,
-                    snapshot_prefs, old_cfg)
+                    root, space_decisions, final_rows)
 
         failed_parts: List[str] = []
         if json_written and json_state == "failed":

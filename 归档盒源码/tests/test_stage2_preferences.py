@@ -2188,6 +2188,269 @@ def _mixed_compensation_case():
         f"b_ok={state.get('b_ok')} msg={msg[:120]}")
 
 
+def test_failed_scope_migration_never_writes_global_rule_into_space_json():
+    """全局改当前空间失败时，配置页快照里的全局规则不得写进空间 JSON。"""
+    with isolated_app_dir():
+        _global_to_space_failure_case()
+        _space_to_global_failure_case()
+        _global_to_space_failure_without_other_window()
+
+
+def _exact_pref(root: str, pid: str, name: str, rel: str, category: str,
+                scope: str = P.SCOPE_SPACE) -> P.Preference:
+    return P.Preference(
+        preference_id=pid, name=name, match_type=MATCH_EXACT_PATH,
+        source_path=rel, include_subdirs=False, direction="项目",
+        category=category, inner_mode=INNER_CLEAR, enabled=True,
+        scope=scope, space_root=(root if scope == P.SCOPE_SPACE else ""),
+        confirmed_at="2026-11-15T00:00:00",
+        confirmed_source_rel=rel)
+
+
+def _interleave_b_save(root: str, pid: str, category: str):
+    """返回 (包装后的 _apply_rows, 收尾函数)：全局库读锁 + B 线程保存。"""
+    state = {}
+    real_apply = P._apply_rows
+
+    def apply_and_interleave(conn, prefs, delete_ids):
+        if (os.path.realpath(_db_path_of(conn))
+                == os.path.realpath(P.global_db_path())
+                and "holder" not in state):
+            holder = sqlite3.connect(P.global_db_path(), timeout=10)
+            holder.execute("PRAGMA busy_timeout=5000")
+            holder.execute("BEGIN")
+            holder.execute("SELECT * FROM preferences").fetchall()
+            state["holder"] = holder
+
+            def b_save():
+                time.sleep(1.0)
+                try:
+                    current = next(p for p in P.list_space_preferences(root)
+                                   if p.preference_id == pid)
+                    P.save_preference(root, P.Preference(
+                        **{**current.__dict__, "category": category}))
+                    state["b_ok"] = True
+                except Exception as e:
+                    state["b_error"] = e
+
+            thread = threading.Thread(target=b_save)
+            thread.start()
+            state["thread"] = thread
+        return real_apply(conn, prefs, delete_ids)
+
+    def cleanup():
+        P._apply_rows = real_apply
+        thread = state.get("thread")
+        if thread is not None:
+            thread.join(20)
+        holder = state.get("holder")
+        if holder is not None:
+            try:
+                holder.rollback()
+            except Exception:
+                pass
+            holder.close()
+
+    return apply_and_interleave, cleanup, state
+
+
+def _global_to_space_failure_case():
+    root = root_dir("global_to_space_failure")
+    write(root, "下载/归档盒/样本.md")
+    write(root, "下载/归档盒/另一份.md")
+    P.save_preference(root, _exact_pref(
+        root, "lt-space-1", "空间一", "下载/归档盒/样本.md", "空间一旧目标"))
+    P.save_preference(root, _pref(
+        root, "lt-global", "全局", "全局旧目标",
+        source="下载/归档盒", scope=P.SCOPE_GLOBAL))
+    win = open_window(root)
+
+    def mutate(dlg):
+        dlg.table_longterm.item(config_row(dlg, "lt-global"), 11).setText(
+            P.SCOPE_LABELS[P.SCOPE_SPACE])
+
+    apply_lock, cleanup, state = _interleave_b_save(
+        root, "lt-space-1", "B 已保存的空间目标")
+    P._apply_rows = apply_lock
+    try:
+        cap = save_via_config_page(win, mutate)
+    finally:
+        cleanup()
+    close_window(win)
+
+    space = {p.preference_id: p for p in P.list_space_preferences(root)}
+    global_rows = {p.preference_id: p for p in P.list_global_preferences()}
+    json_rules = {r.rule_id: r.category
+                  for r in load_config(root)[0].long_term_rules}
+    msg = " ".join(cap["errors"])
+    stores_ok = (
+        set(space) == {"lt-space-1"}
+        and space["lt-space-1"].category == "B 已保存的空间目标"
+        and "lt-global" in global_rows
+        and global_rows["lt-global"].scope == P.SCOPE_GLOBAL
+        and global_rows["lt-global"].category == "全局旧目标"
+        and "lt-global" not in json_rules
+        and json_rules.get("lt-space-1") == "B 已保存的空间目标"
+        and "偏好库写入失败" in msg)
+    export_path = os.path.join(tempfile.mkdtemp(prefix="stage2_g2s_"),
+                               "scheme.json")
+    scheme_store.export_current_config(
+        export_path, load_config(root)[0], "导出方案")
+    with open(export_path, "r", encoding="utf-8") as f:
+        exported = f.read()
+    export_ok = "lt-global" not in exported
+
+    win2 = preview(root)
+    item1 = item_of(win2.current_plan, "下载/归档盒/样本.md")
+    item2 = item_of(win2.current_plan, "下载/归档盒/另一份.md")
+    preview_ok = (
+        item1.target_dir_rel == os.path.join(
+            "_已整理", "项目", "B 已保存的空间目标")
+        and item1.selected is True
+        and item2.target_dir_rel == os.path.join(
+            "_已整理", "项目", "全局旧目标")
+        and item2.rule_key == "long_term:lt-global"
+        and item2.selected is True)
+
+    win2._apply_scheme_config(default_config())
+    win2._restore_last_config()
+    close_window(win2)
+    space2 = {p.preference_id for p in P.list_space_preferences(root)}
+    json2 = {r.rule_id for r in load_config(root)[0].long_term_rules}
+    global2 = {p.preference_id: p.scope for p in P.list_global_preferences()}
+    restore_ok = ("lt-global" not in space2 and "lt-global" not in json2
+                  and global2.get("lt-global") == P.SCOPE_GLOBAL)
+
+    other = root_dir("global_to_space_other_space")
+    write(other, "下载/归档盒/样本.md")
+    disabled = P.set_preference_enabled(other, "lt-global", False)
+    win3 = preview(root)
+    item3 = item_of(win3.current_plan, "下载/归档盒/另一份.md")
+    close_window(win3)
+    disabled_ok = (disabled
+                   and item3.rule_key != "long_term:lt-global"
+                   and item3.target_dir_rel != os.path.join(
+                       "_已整理", "项目", "全局旧目标"))
+    rec("T53", "全局改当前空间失败后空间 JSON 不残留全局规则",
+        stores_ok and export_ok and preview_ok and restore_ok and disabled_ok,
+        f"space={sorted(space)} global={list(global_rows)} "
+        f"json={json_rules} export_lt_global={'lt-global' in exported} "
+        f"preview={item2.target_rel_path} rule={item2.rule_key} "
+        f"restored_space={sorted(space2)} disabled={disabled_ok} "
+        f"b_ok={state.get('b_ok')} msg={msg[:110]}")
+
+
+def _space_to_global_failure_case():
+    root = root_dir("space_to_global_failure")
+    write(root, "资料/迁移.md")
+    write(root, "下载/归档盒/样本2.md")
+    P.save_preference(root, _exact_pref(
+        root, "lt-move", "迁移", "资料/迁移.md", "保存前目标"))
+    P.save_preference(root, _exact_pref(
+        root, "lt-space-2", "空间二", "下载/归档盒/样本2.md", "空间二旧目标"))
+    win = open_window(root)
+
+    def mutate(dlg):
+        dlg.table_longterm.item(config_row(dlg, "lt-move"), 11).setText(
+            P.SCOPE_LABELS[P.SCOPE_GLOBAL])
+
+    apply_lock, cleanup, state = _interleave_b_save(
+        root, "lt-space-2", "B 的新目标")
+    P._apply_rows = apply_lock
+    try:
+        cap = save_via_config_page(win, mutate)
+    finally:
+        cleanup()
+    close_window(win)
+
+    space = {p.preference_id: p.category
+             for p in P.list_space_preferences(root)}
+    global_rows = {p.preference_id for p in P.list_global_preferences()}
+    json_rules = {r.rule_id: r.category
+                  for r in load_config(root)[0].long_term_rules}
+    msg = " ".join(cap["errors"])
+    stores_ok = (space.get("lt-move") == "保存前目标"
+                 and space.get("lt-space-2") == "B 的新目标"
+                 and "lt-move" not in global_rows
+                 and json_rules.get("lt-move") == "保存前目标"
+                 and json_rules.get("lt-space-2") == "B 的新目标"
+                 and "偏好库写入失败" in msg)
+
+    win2 = preview(root)
+    item = item_of(win2.current_plan, "资料/迁移.md")
+    preview_ok = (
+        item.target_dir_rel == os.path.join("_已整理", "项目", "保存前目标")
+        and item.rule_key == "long_term:lt-move" and item.selected is True)
+    win2._apply_scheme_config(default_config())
+    win2._restore_last_config()
+    close_window(win2)
+    win3 = preview(root)
+    item2 = item_of(win3.current_plan, "资料/迁移.md")
+    global_after = {p.preference_id for p in P.list_global_preferences()}
+    close_window(win3)
+    restore_ok = (
+        item2.target_dir_rel == os.path.join("_已整理", "项目", "保存前目标")
+        and item2.rule_key == "long_term:lt-move" and item2.selected is True
+        and "lt-move" not in global_after)
+    rec("T53.2", "空间改全局失败后原行回到空间库与 JSON，不留在全局库",
+        stores_ok and preview_ok and restore_ok,
+        f"space={space} global={sorted(global_rows)} json={json_rules} "
+        f"preview={item.target_rel_path} restored={item2.target_rel_path} "
+        f"b_ok={state.get('b_ok')} msg={msg[:110]}")
+
+
+def _global_to_space_failure_without_other_window():
+    root = root_dir("global_to_space_no_other")
+    write(root, "下载/归档盒/另一份.md")
+    P.save_preference(root, _pref(
+        root, "lt-global", "全局", "全局旧目标",
+        source="下载/归档盒", scope=P.SCOPE_GLOBAL))
+    win = open_window(root)
+
+    def mutate(dlg):
+        dlg.table_longterm.item(config_row(dlg, "lt-global"), 11).setText(
+            P.SCOPE_LABELS[P.SCOPE_SPACE])
+
+    real_open = P._open
+
+    class _FailCommit:
+        def __init__(self, conn):
+            self._conn = conn
+
+        def __getattr__(self, name):
+            return getattr(self._conn, name)
+
+        def commit(self):
+            raise sqlite3.OperationalError("database is locked")
+
+    def fake_open(db_path):
+        conn = real_open(db_path)
+        if os.path.realpath(db_path) == os.path.realpath(P.global_db_path()):
+            return _FailCommit(conn)
+        return conn
+
+    P._open = fake_open
+    try:
+        cap = save_via_config_page(win, mutate)
+    finally:
+        P._open = real_open
+    close_window(win)
+
+    space = {p.preference_id for p in P.list_space_preferences(root)}
+    global_rows = {p.preference_id: p.scope
+                   for p in P.list_global_preferences()}
+    json_rules = {r.rule_id for r in load_config(root)[0].long_term_rules}
+    msg = " ".join(cap["errors"])
+    ok = (bool(cap["errors"]) and not cap["accepted"]
+          and "lt-global" not in space
+          and "lt-global" not in json_rules
+          and global_rows.get("lt-global") == P.SCOPE_GLOBAL
+          and "已整体回滚" in msg)
+    rec("T53.3", "无其他窗口时全局改当前空间失败仍整份回到保存前", ok,
+        f"space={sorted(space)} json={sorted(json_rules)} "
+        f"global={global_rows} msg={msg[:90]}")
+
+
 def run():
     control_target = test_control_without_preference()
     space_root, pref_id = test_save_space_preference_from_ui()
@@ -2225,6 +2488,7 @@ def run():
     test_write_recheck_rejects_newer_save()
     test_scope_change_fails_when_target_db_unavailable()
     test_mixed_compensation_keeps_json_and_space_db_in_sync()
+    test_failed_scope_migration_never_writes_global_rule_into_space_json()
 
 
 def main():
