@@ -700,16 +700,38 @@ def _merge_json_after_failure(root: str, decisions: Dict[str, str],
 
 
 
-def _publish_space_mirror(conn: sqlite3.Connection, root: str) -> None:
-    """在持有空间写锁的事务里，把 JSON 镜像整份重建为当前空间库的行。
+def _upsert_rule(rules: List[LongTermRule], rule: LongTermRule) -> None:
+    for index, existing in enumerate(rules):
+        if existing.rule_id == rule.rule_id:
+            rules[index] = rule
+            return
+    rules.append(rule)
 
-    只有数据库提交成功之后才调用：磁盘上的镜像从不含未提交（或最终
-    提交失败）的偏好，等待期间其他窗口生成的备份不会收进这类内容。
-    整份重建也把等待期间其他窗口已提交的行一并收进镜像。
+
+def _remove_rule(rules: List[LongTermRule], rule_id: str) -> bool:
+    before = len(rules)
+    rules[:] = [r for r in rules if r.rule_id != rule_id]
+    return len(rules) != before
+
+
+def _publish_space_rule_mirror(conn: sqlite3.Connection, root: str,
+                               preference_id: str) -> None:
+    """在持有空间写锁的事务里，只发布这一条规则的镜像。
+
+    只在数据库提交成功之后调用：磁盘上的镜像从不含未提交（或最终
+    提交失败）的偏好。镜像以当前文件为基、只更新这一条规则——等待
+    期间其他窗口已提交但尚未整体完成的偏好不会被带进镜像，此时生成
+    的备份也不会收进这类内容。
     """
+    rows = conn.execute(
+        "SELECT * FROM preferences WHERE preference_id = ?",
+        (preference_id,)).fetchall()
     new_cfg = clone_config(_read_json_config(root))
-    new_cfg.long_term_rules = [
-        p.to_rule() for p in _rows_from_conn(conn).values()]
+    if rows:
+        _upsert_rule(new_cfg.long_term_rules,
+                     _row_to_pref(rows[0]).to_rule())
+    else:
+        _remove_rule(new_cfg.long_term_rules, preference_id)
     ensure_valid(new_cfg)
     save_config(root, new_cfg)
     try:
@@ -753,13 +775,15 @@ def save_preference(root: str, pref: Preference) -> None:
             conn.commit()
         except Exception as e:
             raise PreferenceError(f"偏好库写入失败，未写入任何一边：{e}")
-        # 事务 2：持锁发布镜像（含等待期间其他窗口已提交的行）。
+        # 事务 2：持锁发布这一条规则的镜像。
         try:
             _begin_write(conn)
-            _publish_space_mirror(conn, root)
+            _publish_space_rule_mirror(conn, root, pref.preference_id)
         except Exception as e:
             restored = False
             try:
+                # 先清掉失败的发布事务，再开恢复事务。
+                conn.rollback()
                 _begin_write(conn)
                 rows = conn.execute(
                     "SELECT * FROM preferences WHERE preference_id = ?",
@@ -806,10 +830,12 @@ def delete_preference(root: str, preference_id: str) -> bool:
                 # 事务 2：持锁发布镜像（删除的行随之从镜像消失）。
                 try:
                     _begin_write(conn)
-                    _publish_space_mirror(conn, root)
+                    _publish_space_rule_mirror(conn, root, preference_id)
                 except Exception as e:
                     restored = False
                     try:
+                        # 先清掉失败的发布事务，再开恢复事务。
+                        conn.rollback()
                         _begin_write(conn)
                         rows = conn.execute(
                             "SELECT * FROM preferences WHERE preference_id = ?",
@@ -1213,10 +1239,10 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
                               if d == "restored"]
 
         # JSON 镜像与空间库共用同一份逐条 decisions。即使本次没有发布过
-        # 镜像，等待期间另一窗口的单条保存也可能按当时的空间库整份重建
-        # 镜像，把本次已提交、随后被补偿回去的行带进去（或把恢复回来的
-        # 行挤掉）：只要文件存在且可解析，就按补偿后的决策修正。文件字节
-        # 仍是本次写下的内容时，才整份恢复。
+        # 镜像，等待期间另一窗口也可能改写过它（如单条保存发布自己的规
+        # 则）：只要文件存在且可解析，就按补偿后的决策把本次碰过的规则
+        # 对齐到空间库（保留的用库里的较新值，恢复的用恢复后的行）。
+        # 文件字节仍是本次写下的内容时，才整份恢复。
         json_state = "restored"
         if sync_json:
             try:

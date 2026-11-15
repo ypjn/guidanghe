@@ -2598,6 +2598,212 @@ def _backup_during_failed_save_case():
         f"b_error={state.get('b_error')} msg={msg[:90]}")
 
 
+def test_backup_during_failed_save_with_b_own_save_excludes_uncommitted():
+    """B 先保存自己的偏好再应用方案，备份仍不得收进 A 失败的偏好。"""
+    with isolated_app_dir():
+        _backup_during_failed_save_with_b_save_case()
+
+
+def _backup_during_failed_save_with_b_save_case():
+    import json as _json
+    from config_transfer import create_backup, list_backups
+    from classification_config import default_config, save_config
+
+    root = root_dir("backup_during_failed_save_b_save")
+    write(root, "下载/归档盒/样本.md")
+    save_pref(root, "lt-space-a", "空间偏好", category="空间保存前目标")
+    P.save_preference(root, _pref(
+        root, "lt-global-a", "全局偏好", "全局保存前目标",
+        source="下载/其他", scope=P.SCOPE_GLOBAL))
+    win = open_window(root)
+    failure_id = "A 最终保存失败的空间目标"
+
+    state = {}
+    real_apply = P._apply_rows
+
+    def apply_and_interleave(conn, prefs, delete_ids):
+        # A 写完全局语句、还没提交时：堵住全局库；B 等 A 的空间库提交
+        # 可见后，先保存自己的偏好，再走真实入口“备份 + 应用默认方案”。
+        if (os.path.realpath(_db_path_of(conn))
+                == os.path.realpath(P.global_db_path())
+                and "holder" not in state):
+            holder = sqlite3.connect(P.global_db_path(), timeout=10)
+            holder.execute("PRAGMA busy_timeout=5000")
+            holder.execute("BEGIN")
+            holder.execute("SELECT * FROM preferences").fetchall()
+            state["holder"] = holder
+
+            def b_save_then_apply_default():
+                deadline = time.monotonic() + 8
+                while time.monotonic() < deadline:
+                    row = P.get_preference(root, "lt-space-a")
+                    if row is not None and row.category == failure_id:
+                        break
+                    time.sleep(0.01)
+                else:
+                    state["b_error"] = "未等到 A 的空间提交"
+                    return
+                try:
+                    P.save_preference(root, _pref(
+                        root, "lt-space-b", "B 的偏好",
+                        "B 自己确认的目标", source="B 的资料"))
+                    live = {r.rule_id: r.category
+                            for r in load_config(root)[0].long_term_rules}
+                    state["live"] = live
+                    create_backup(root)
+                    save_config(root, default_config())
+                    P.sync_space_preferences_from_config(root, default_config())
+                    state["b_ok"] = True
+                except Exception as e:
+                    state["b_error"] = e
+
+            thread = threading.Thread(target=b_save_then_apply_default)
+            thread.start()
+            state["thread"] = thread
+        return real_apply(conn, prefs, delete_ids)
+
+    def mutate(dlg):
+        dlg.table_longterm.item(
+            config_row(dlg, "lt-space-a"), 8).setText(failure_id)
+        dlg.table_longterm.item(
+            config_row(dlg, "lt-global-a"), 8).setText("A 最终保存失败的全局目标")
+
+    P._apply_rows = apply_and_interleave
+    try:
+        cap = save_via_config_page(win, mutate)
+    finally:
+        P._apply_rows = real_apply
+        thread = state.get("thread")
+        if thread is not None:
+            thread.join(20)
+        holder = state.get("holder")
+        if holder is not None:
+            try:
+                holder.rollback()
+            except Exception:
+                pass
+            holder.close()
+    close_window(win)
+
+    msg = " ".join(cap["errors"])
+    space_ids = [p.preference_id for p in P.list_space_preferences(root)]
+    global_cat = next((p.category for p in P.list_global_preferences()
+                       if p.preference_id == "lt-global-a"), None)
+    latest = list_backups(root)[0]
+    with open(latest.path, "r", encoding="utf-8") as f:
+        backed_up = {r["rule_id"]: r["category"]
+                     for r in _json.load(f)["config"]["long_term_rules"]}
+    failure_ok = (bool(cap["errors"]) and not cap["accepted"]
+                  and "database is locked" in msg
+                  and space_ids == []
+                  and global_cat == "全局保存前目标"
+                  and backed_up.get("lt-space-b") == "B 自己确认的目标"
+                  and backed_up.get("lt-space-a") == "空间保存前目标"
+                  and failure_id not in backed_up.values()
+                  and state.get("live", {}).get("lt-space-a")
+                  == "空间保存前目标")
+
+    win2 = preview(root)
+    before = item_of(win2.current_plan, "下载/归档盒/样本.md")
+    before_ok = (before.rule_key == "fallback" and before.selected is False)
+    win2._restore_last_config()
+    close_window(win2)
+
+    win3 = preview(root)
+    after = item_of(win3.current_plan, "下载/归档盒/样本.md")
+    close_window(win3)
+    restored = {p.preference_id: p.category
+                for p in P.list_space_preferences(root)}
+    restore_ok = (
+        after.target_dir_rel == os.path.join(
+            "_已整理", "项目", "空间保存前目标")
+        and after.rule_key == "long_term:lt-space-a"
+        and after.selected is True
+        and restored.get("lt-space-a") == "空间保存前目标"
+        and restored.get("lt-space-b") == "B 自己确认的目标"
+        and failure_id not in restored.values())
+    rec("T56", "B 先保存再应用方案，备份仍不含 A 失败的偏好",
+        failure_ok and before_ok and restore_ok,
+        f"live={state.get('live')} backup={backed_up} space={space_ids} "
+        f"after=({after.target_rel_path},{after.rule_key},{after.selected}) "
+        f"restored={restored} b_ok={state.get('b_ok')} "
+        f"b_error={state.get('b_error')} msg={msg[:90]}")
+
+
+def test_single_save_delete_mirror_failure_keeps_both_stores():
+    """单条保存/删除遇 JSON 写入故障时，库和镜像都回到调用前。"""
+    with isolated_app_dir():
+        _mirror_write_failure_save_case()
+        _mirror_write_failure_delete_case()
+
+
+def _fail_mirror_write(*args, **kwargs):
+    from classification_config import ClassificationConfigError
+    raise ClassificationConfigError("验收注入：配置 JSON 写入失败")
+
+
+def _mirror_write_failure_save_case():
+    root = root_dir("mirror_failure_save")
+    write(root, "下载/归档盒/样本.md")
+    win = preview(root)
+    before = item_of(win.current_plan, "下载/归档盒/样本.md")
+    before_result = (before.target_rel_path, before.rule_key, before.selected)
+    new_pref = _pref(root, "lt-failed-save", "失败保存", "报错时未保存的目标")
+    raised = ""
+    real_save = P.save_config
+    P.save_config = _fail_mirror_write
+    try:
+        win._save_preference(root, new_pref)
+    except Exception as e:
+        raised = str(e)
+    finally:
+        P.save_config = real_save
+    close_window(win)
+
+    win2 = preview(root)
+    after = item_of(win2.current_plan, "下载/归档盒/样本.md")
+    close_window(win2)
+    space = {p.preference_id: p.category
+             for p in P.list_space_preferences(root)}
+    json_rules = {r.rule_id: r.category
+                  for r in load_config(root)[0].long_term_rules}
+    ok = (bool(raised) and "验收注入" in raised
+          and space == {} and json_rules == {}
+          and after.rule_key == before_result[1]
+          and after.selected is False)
+    rec("T57", "单条保存遇镜像写入故障时库与 JSON 都回到调用前", ok,
+        f"raised={raised[:80]} space={space} json={json_rules} "
+        f"after=({after.target_rel_path},{after.rule_key},{after.selected})")
+
+
+def _mirror_write_failure_delete_case():
+    root = root_dir("mirror_failure_delete")
+    write(root, "下载/归档盒/样本.md")
+    save_pref(root, "lt-retain", "保留", category="已保存的目标")
+    before_space = {p.preference_id: p.category
+                    for p in P.list_space_preferences(root)}
+    before_json = {r.rule_id: r.category
+                   for r in load_config(root)[0].long_term_rules}
+    raised = ""
+    real_save = P.save_config
+    P.save_config = _fail_mirror_write
+    try:
+        P.delete_preference(root, "lt-retain")
+    except Exception as e:
+        raised = str(e)
+    finally:
+        P.save_config = real_save
+    after_space = {p.preference_id: p.category
+                   for p in P.list_space_preferences(root)}
+    after_json = {r.rule_id: r.category
+                  for r in load_config(root)[0].long_term_rules}
+    ok = (bool(raised) and "验收注入" in raised
+          and after_space == before_space and after_json == before_json)
+    rec("T57.2", "单条删除遇镜像写入故障时库与 JSON 都回到调用前", ok,
+        f"raised={raised[:80]} before={before_space} after={after_space} "
+        f"json_before={before_json} json_after={after_json}")
+
+
 def test_two_confirmations_keep_both_space_rules():
     root = root_dir("two_confirmed_saves")
     sample = "资料乙/普通笔记.md"
@@ -2676,6 +2882,8 @@ def run():
     test_mixed_compensation_keeps_json_and_space_db_in_sync()
     test_failed_scope_migration_never_writes_global_rule_into_space_json()
     test_backup_during_failed_save_excludes_uncommitted_preference()
+    test_backup_during_failed_save_with_b_own_save_excludes_uncommitted()
+    test_single_save_delete_mirror_failure_keeps_both_stores()
     test_two_confirmations_keep_both_space_rules()
 
 
