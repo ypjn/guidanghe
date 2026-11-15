@@ -841,6 +841,53 @@ def preference_fingerprint(pref: Preference) -> str:
     return json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
 
 
+_RULE_FIELDS = (
+    "name", "match_type", "source_path", "include_subdirs", "keywords",
+    "direction", "semester", "category", "inner_mode", "inner_path",
+    "enabled", "reason",
+)
+
+
+def _rule_differs(a: LongTermRule, b: LongTermRule) -> bool:
+    """判断 JSON 里的两条长期规则在两次读取之间是否被改动。"""
+    return any(getattr(a, f) != getattr(b, f) for f in _RULE_FIELDS)
+
+
+def _kept_other_window_ids(final_space: Dict[str, Preference],
+                           pre_space: Dict[str, Preference],
+                           root: str,
+                           old_cfg) -> List[str]:
+    """补偿后比较实际状态与本次开始前，列出留下其他窗口内容的 id。
+
+    空间库每一行与开始前的空间库比，JSON 里每条长期规则与开始前的空间
+    规则比（空间库没有的 id 再对照开始前的 JSON）。开始前没有、现在有
+    的 id 也是其他窗口的内容；本次写入后被成功恢复的行等于开始前的行，
+    不会误报。已经不在空间库也不在 JSON 的 id（失败的迁入、新增又删掉
+    的行）不会被点名。
+    """
+    changed: List[str] = []
+    for pid, row in final_space.items():
+        old = pre_space.get(pid)
+        if (old is None or preference_fingerprint(row)
+                != preference_fingerprint(old)):
+            changed.append(pid)
+    try:
+        cfg_now, _raw, _existed = _read_config_state(root)
+    except Exception:
+        cfg_now = None
+    if cfg_now is not None:
+        old_json_rules = {}
+        if old_cfg is not None:
+            old_json_rules = {r.rule_id: r for r in old_cfg.long_term_rules}
+        for rule in cfg_now.long_term_rules:
+            old_pref = pre_space.get(rule.rule_id)
+            old_rule = (old_pref.to_rule() if old_pref is not None
+                        else old_json_rules.get(rule.rule_id))
+            if old_rule is None or _rule_differs(rule, old_rule):
+                changed.append(rule.rule_id)
+    return list(dict.fromkeys(changed))
+
+
 def _conflict_error(pref: Preference) -> PreferenceError:
     return PreferenceError(
         f"偏好「{pref.name}」({pref.preference_id}) 已在其他窗口被修改，"
@@ -1090,8 +1137,6 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
         if committed_global:
             global_state, _global_decisions = _restore_db_rows(
                 global_conn, pre_global, global_written)
-        space_kept_ids = [pid for pid, d in space_decisions.items()
-                          if d == "kept"]
         space_restored_ids = [pid for pid, d in space_decisions.items()
                               if d == "restored"]
 
@@ -1122,22 +1167,26 @@ def persist_preferences(root: str, preferences: Sequence[Preference],
                 "偏好库写入失败，以下位置未能确认回到保存前："
                 + "、".join(failed_parts)
                 + f"。请检查后再操作：{e}")
-        if space_kept_ids:
+        # 提示以补偿后的实际状态为准，不能只看本次写入名单：其他窗口
+        # 保存的可能是本次没碰过的偏好，那条不在名单里，但它的较新内容
+        # 已经留在空间库和 JSON 中。
+        kept_ids = _kept_other_window_ids(
+            (_rows_from_conn(space_conn)
+             if space_conn is not None else {}),
+            pre_space, root, old_cfg)
+        if kept_ids:
             message = (
                 "偏好库写入失败；空间偏好库与 JSON 镜像保留了其他窗口的"
-                f"较新内容（{'、'.join(space_kept_ids)}）")
-            if space_restored_ids:
+                f"较新内容（{'、'.join(kept_ids)}）")
+            restored_ids = [pid for pid in space_restored_ids
+                            if pid not in kept_ids]
+            if restored_ids:
                 message += (
                     "，其余本次改动的规则已恢复为保存前"
-                    f"（{'、'.join(space_restored_ids)}）")
+                    f"（{'、'.join(restored_ids)}）")
             if global_conn is not None:
                 message += "；全局偏好库已恢复"
             raise PreferenceError(message + f"：{e}")
-        if json_written and json_state == "kept":
-            raise PreferenceError(
-                "偏好库写入失败；JSON 镜像保留了其他窗口写入的较新内容"
-                + ("；空间偏好库已恢复" if space_conn is not None else "")
-                + f"：{e}")
         if global_state == "kept":
             raise PreferenceError(
                 "偏好库写入失败；全局偏好库保留了其他窗口的较新内容"

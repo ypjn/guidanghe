@@ -2291,7 +2291,10 @@ def _global_to_space_failure_case():
         and global_rows["lt-global"].category == "全局旧目标"
         and "lt-global" not in json_rules
         and json_rules.get("lt-space-1") == "B 已保存的空间目标"
-        and "偏好库写入失败" in msg)
+        and "偏好库写入失败" in msg
+        and "保留了其他窗口的较新内容" in msg
+        and "lt-space-1" in msg
+        and "已整体回滚" not in msg)
     export_path = os.path.join(tempfile.mkdtemp(prefix="stage2_g2s_"),
                                "scheme.json")
     scheme_store.export_current_config(
@@ -2374,7 +2377,10 @@ def _space_to_global_failure_case():
                  and "lt-move" not in global_rows
                  and json_rules.get("lt-move") == "保存前目标"
                  and json_rules.get("lt-space-2") == "B 的新目标"
-                 and "偏好库写入失败" in msg)
+                 and "偏好库写入失败" in msg
+                 and "保留了其他窗口的较新内容" in msg
+                 and "lt-space-2" in msg
+                 and "已整体回滚" not in msg)
 
     win2 = preview(root)
     item = item_of(win2.current_plan, "资料/迁移.md")
