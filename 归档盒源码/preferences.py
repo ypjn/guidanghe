@@ -650,19 +650,20 @@ def match_preferences(rel_path: str, preferences: Sequence[Preference],
     return out
 
 
+def _effective_inner_path(item: PlanItem, pref: Preference) -> str:
+    """偏好应用后的内部路径（保留 / 清空 / 替换）。"""
+    if pref.inner_mode == INNER_CLEAR:
+        return ""
+    if pref.inner_mode == INNER_REPLACE:
+        return (pref.inner_path or "").strip()
+    return (item.inner_path or "").strip()
+
+
 def _target_dir_for(item: PlanItem, pref: Preference) -> str:
     base = _build_target_dir_v2(
         pref.direction or "", pref.semester or "",
         pref.category or "", item.file_type)
-    if pref.inner_mode == INNER_CLEAR:
-        return base
-    if pref.inner_mode == INNER_REPLACE:
-        segs = [_sanitize_component(p)
-                for p in (pref.inner_path or "").replace("\\", "/").split("/")
-                if p]
-        return os.path.join(base, *segs) if segs else base
-    # INNER_KEEP：保留自动分类算出的内部路径
-    inner = item.inner_path or ""
+    inner = _effective_inner_path(item, pref)
     if not inner:
         return base
     segs = [_sanitize_component(p)
@@ -683,7 +684,7 @@ def _apply_target(item: PlanItem, pref: Preference, target_dir: str) -> None:
     item.direction = pref.direction or None
     item.semester = pref.semester or None
     item.category = pref.category or None
-    item.inner_path = None
+    item.inner_path = _effective_inner_path(item, pref) or None
     item.course = pref.category or pref.direction or ""
     item.target_dir_rel = target_dir
     item.target_filename = item.file.filename
@@ -842,6 +843,17 @@ def apply_preferences_to_plan(plan: OrganizePlan,
                 (ambiguity.get("reason") or "存在歧义")
                 + "；已按最高等级长期偏好确定首选候选")
             item.selected = False
+        else:
+            # 没有剩余歧义、也没有被跳过：用户已确认的偏好直接参与本次批次。
+            item.selected = True
+            # 「恢复自动分类」应回到这条偏好，而不是套用偏好之前的待定分类。
+            # 仅当没有歧义时才更新快照；有歧义时不单方面选定候选。
+            item.auto_direction = item.direction
+            item.auto_semester = item.semester
+            item.auto_category = item.category
+            item.auto_inner_path = item.inner_path
+            item.auto_rule_key = item.rule_key
+            item.auto_rule_applied = item.rule_applied
         result.adopted += 1
 
     assign_unique_targets(plan.items, plan.root)

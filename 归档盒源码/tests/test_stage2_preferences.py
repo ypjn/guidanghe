@@ -39,7 +39,9 @@ if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
 from PySide6.QtCore import Qt  # noqa: E402
-from PySide6.QtWidgets import QApplication, QDialog, QMessageBox  # noqa: E402
+from PySide6.QtWidgets import (  # noqa: E402
+    QApplication, QCheckBox, QDialog, QMessageBox,
+)
 
 import ai_fallback  # noqa: E402
 import main as main_mod  # noqa: E402
@@ -47,8 +49,8 @@ import plan_patch as pp  # noqa: E402
 import preferences as P  # noqa: E402
 from ai_fallback import AiSettings, apply_ai_fallback  # noqa: E402
 from classification_config import (  # noqa: E402
-    INNER_CLEAR, MATCH_DIR_SCOPE, LongTermRule, default_config, load_config,
-    save_config,
+    INNER_CLEAR, INNER_KEEP, INNER_REPLACE, MATCH_DIR_SCOPE,
+    LongTermRule, default_config, load_config, save_config,
 )
 from config_dialog import ClassificationConfigDialog  # noqa: E402
 from executor import execute_plan, undo_latest_batch  # noqa: E402
@@ -267,13 +269,22 @@ def install_ui_save_cancel(*, rule_level=False):
     pp.RuleDraftDialog.exec = rd_exec
 
 
-def install_ui_one_off(*, category="高等数学", direction="课程"):
+def install_ui_one_off(*, category="高等数学", direction="课程",
+                       inner_path=""):
     def mo_exec(self):
         self.dir_combo.setCurrentText(direction)
         self.sem_edit.setText("2026秋-大二上" if direction == "课程" else "")
         self.cat_edit.setText(category)
-        self.inner_edit.setText("")
+        self.inner_edit.setText(inner_path)
         self.dlg.accept()
+        return self.dlg.result()
+
+    pp.ManualOverrideDialog.exec = mo_exec
+
+
+def install_ui_revert():
+    def mo_exec(self):
+        self._on_revert_auto()
         return self.dlg.result()
 
     pp.ManualOverrideDialog.exec = mo_exec
@@ -776,6 +787,219 @@ def test_history_compatibility_and_execution():
     close_window(win)
 
 
+def save_pref(root: str, pid: str, name: str, *, category="归档盒",
+              inner_mode=INNER_CLEAR, inner_path="", source="下载/归档盒"):
+    P.save_preference(root, P.Preference(
+        preference_id=pid, name=name, match_type=MATCH_DIR_SCOPE,
+        source_path=source, include_subdirs=True, direction="项目",
+        category=category, inner_mode=inner_mode, inner_path=inner_path,
+        enabled=True, scope=P.SCOPE_SPACE, space_root=root,
+        confirmed_at="2026-11-15T00:00:00",
+        confirmed_source_rel=f"{source}/样本.md"))
+
+
+def test_adopted_preference_is_selected():
+    root = root_dir("selected")
+    write(root, "下载/归档盒/一样.md")
+    save_pref(root, "lt-selected", "明确命中要勾选")
+    win = preview(root)
+    item = item_of(win.current_plan, "下载/归档盒/一样.md")
+    ok = (
+        item.rule_key == "long_term:lt-selected"
+        and item.target_rel_path == os.path.join(
+            "_已整理", "项目", "归档盒", "一样.md")
+        and item.ambiguity is None
+        and item.selected is True
+    )
+    rec("T26", "明确命中偏好且无歧义时预览默认勾选", ok,
+        f"rule_key={item.rule_key} target={item.target_rel_path} "
+        f"ambiguity={bool(item.ambiguity)} selected={item.selected}")
+    close_window(win)
+
+
+def test_revert_auto_returns_to_preference():
+    root = root_dir("revert")
+    write(root, "下载/归档盒/恢复.md")
+    save_pref(root, "lt-revert", "恢复到偏好")
+    win = preview(root)
+    pref_target = os.path.join("_已整理", "项目", "归档盒", "恢复.md")
+    item = item_of(win.current_plan, "下载/归档盒/恢复.md")
+    before_ok = (item.target_rel_path == pref_target
+                 and item.rule_key == "long_term:lt-revert"
+                 and item.selected is True)
+
+    install_ui_revert()
+    try:
+        win.table.selectRow(row_of(win, "下载/归档盒/恢复.md"))
+        process()
+        win.on_override_selected()
+        process(0.1)
+    finally:
+        restore_dialogs()
+    direct = item_of(win.current_plan, "下载/归档盒/恢复.md")
+    ok_direct = (
+        direct.target_rel_path == pref_target
+        and direct.rule_key == "long_term:lt-revert"
+        and "lt-revert" in (direct.rule_applied or "")
+        and direct.selected is True
+        and direct.is_manual_overridden is False
+    )
+    rec("T27", "直接点「恢复自动分类」仍回到这条偏好", before_ok and ok_direct,
+        f"target={direct.target_rel_path} rule_key={direct.rule_key} "
+        f"selected={direct.selected} manual={direct.is_manual_overridden}")
+
+    rows_before = len(P.list_space_preferences(root))
+    install_ui_one_off(category="高等数学", direction="课程")
+    try:
+        win.table.selectRow(row_of(win, "下载/归档盒/恢复.md"))
+        process()
+        win.on_override_selected()
+        process(0.1)
+    finally:
+        restore_dialogs()
+    manual = item_of(win.current_plan, "下载/归档盒/恢复.md")
+    manual_ok = (manual.target_dir_rel.startswith(os.path.join(
+        "_已整理", "课程", "2026秋-大二上", "高等数学"))
+        and len(P.list_space_preferences(root)) == rows_before)
+    rec("T28", "「仅改本次」改到高等数学且不新增偏好", manual_ok,
+        f"target={manual.target_rel_path} rows={len(P.list_space_preferences(root))}")
+
+    install_ui_revert()
+    try:
+        win.table.selectRow(row_of(win, "下载/归档盒/恢复.md"))
+        process()
+        win.on_override_selected()
+        process(0.1)
+    finally:
+        restore_dialogs()
+    reverted = item_of(win.current_plan, "下载/归档盒/恢复.md")
+    ok_revert = (
+        reverted.target_rel_path == pref_target
+        and reverted.rule_key == "long_term:lt-revert"
+        and "lt-revert" in (reverted.rule_applied or "")
+        and reverted.selected is True
+        and reverted.is_manual_overridden is False
+    )
+    rec("T29", "改到高等数学后再恢复自动，回到偏好目标与 long_term 依据",
+        ok_revert,
+        f"target={reverted.target_rel_path} rule_key={reverted.rule_key} "
+        f"依据={reverted.rule_applied}")
+    close_window(win)
+
+
+def test_revert_keeps_preference_inner_path():
+    cases = [
+        ("keep", INNER_KEEP, "", os.path.join(
+            "_已整理", "项目", "归档盒", "归档盒", "保留.md")),
+        ("replace", INNER_REPLACE, "专题", os.path.join(
+            "_已整理", "项目", "归档盒", "专题", "替换.md")),
+    ]
+    for tag, mode, inner, expected in cases:
+        root = root_dir(f"revert_inner_{tag}")
+        rel = f"下载/归档盒/{'保留' if tag == 'keep' else '替换'}.md"
+        write(root, rel)
+        save_pref(root, f"lt-inner-{tag}", f"内部路径-{tag}",
+                  inner_mode=mode, inner_path=inner)
+        win = preview(root)
+        item = item_of(win.current_plan, rel)
+        pref_target = item.target_rel_path
+        initial_ok = pref_target == expected and item.selected is True
+
+        install_ui_one_off(category="高等数学", direction="课程",
+                           inner_path="实验")
+        try:
+            win.table.selectRow(row_of(win, rel))
+            process()
+            win.on_override_selected()
+            process(0.1)
+        finally:
+            restore_dialogs()
+        install_ui_revert()
+        try:
+            win.table.selectRow(row_of(win, rel))
+            process()
+            win.on_override_selected()
+            process(0.1)
+        finally:
+            restore_dialogs()
+        after = item_of(win.current_plan, rel)
+        ok = (initial_ok and after.target_rel_path == pref_target
+              and after.rule_key == f"long_term:lt-inner-{tag}")
+        rec(f"T30{'.1' if tag == 'keep' else '.2'}",
+            f"内部路径「{'保留' if tag == 'keep' else '替换'}」恢复后不丢失",
+            ok, f"before={pref_target} after={after.target_rel_path}")
+        close_window(win)
+
+
+def test_selected_preference_execution_roundtrip():
+    root = root_dir("selected_execute")
+    src_a = write(root, "下载/归档盒/勾选.md", "勾选样本")
+    src_b = write(root, "下载/归档盒/未勾.md", "未勾样本")
+    sha_a, sha_b = sha256(src_a), sha256(src_b)
+    save_pref(root, "lt-exec", "执行勾选回归")
+    win = preview(root)
+    item_a = item_of(win.current_plan, "下载/归档盒/勾选.md")
+    item_b = item_of(win.current_plan, "下载/归档盒/未勾.md")
+    both_selected = item_a.selected is True and item_b.selected is True
+
+    row_b = row_of(win, "下载/归档盒/未勾.md")
+    box = win.table.cellWidget(row_b, 0)
+    check = box.findChild(QCheckBox) if box is not None else None
+    assert check is not None, "表格行没有复选框"
+    check.setChecked(False)
+    process()
+    uncheck_ok = item_b.selected is False and item_a.selected is True
+
+    class FakeReject:
+        def __init__(self, *a, **k):
+            pass
+
+        def exec(self):
+            return QDialog.Rejected
+
+    old_dialog = main_mod.ExecuteConfirmDialog
+    main_mod.ExecuteConfirmDialog = FakeReject
+    try:
+        win.on_execute()
+        process(0.1)
+    finally:
+        main_mod.ExecuteConfirmDialog = old_dialog
+    cancel_ok = (os.path.exists(src_a) and os.path.exists(src_b)
+                 and sha256(src_a) == sha_a and sha256(src_b) == sha_b)
+
+    class FakeAccept:
+        def __init__(self, *a, **k):
+            pass
+
+        def exec(self):
+            return QDialog.Accepted
+
+    main_mod.ExecuteConfirmDialog = FakeAccept
+    try:
+        win.on_execute()
+        assert wait_until(lambda: not win._working, 30, "execute"), "执行超时"
+    finally:
+        main_mod.ExecuteConfirmDialog = old_dialog
+    moved_a = item_a.target_rel_path
+    moved_ok = (os.path.exists(os.path.join(root, moved_a))
+                and not os.path.exists(src_a)
+                and os.path.exists(src_b) and sha256(src_b) == sha_b)
+    rec("T31", "取消确认两个都不动；确认后只移动勾选文件", cancel_ok and moved_ok,
+        f"both_selected={both_selected} uncheck={uncheck_ok} "
+        f"moved={moved_ok} cancel={cancel_ok}")
+
+    storage = Storage(root)
+    undo_result = undo_latest_batch(storage)
+    undo_ok = (os.path.exists(src_a) and sha256(src_a) == sha_a
+               and os.path.exists(src_b) and sha256(src_b) == sha_b
+               and not os.path.exists(os.path.join(root, moved_a)))
+    rec("T32", "撤销后勾选文件路径与 SHA-256 恢复，未勾选文件始终原位",
+        bool(both_selected and uncheck_ok and undo_ok),
+        f"restored={undo_result.restored} "
+        f"conflicts={len(undo_result.conflicts)} sha_ok={sha256(src_a) == sha_a}")
+    close_window(win)
+
+
 def run():
     control_target = test_control_without_preference()
     space_root, pref_id = test_save_space_preference_from_ui()
@@ -789,6 +1013,10 @@ def run():
     test_space_isolation_and_global()
     test_same_level_conflict_ambiguity()
     test_history_compatibility_and_execution()
+    test_adopted_preference_is_selected()
+    test_revert_auto_returns_to_preference()
+    test_revert_keeps_preference_inner_path()
+    test_selected_preference_execution_roundtrip()
 
 
 def main():
