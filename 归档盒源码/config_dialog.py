@@ -40,7 +40,8 @@ from classification_config import (
 from planner import MODE_BY_DIRECTION_SEMESTER
 from rule_preview import ImpactResult, PreviewWorker
 from preferences import (
-    Preference, SCOPE_GLOBAL, SCOPE_SPACE, SCOPE_LABEL_TO_KEY as PREF_SCOPE_LABEL_TO_KEY,
+    Preference, PreferenceError, SCOPE_GLOBAL, SCOPE_SPACE,
+    SCOPE_LABEL_TO_KEY as PREF_SCOPE_LABEL_TO_KEY,
     SCOPE_LABELS as PREF_SCOPE_LABELS, SOURCE_KIND_LABELS, SOURCE_USER,
     validate_preference,
 )
@@ -220,7 +221,8 @@ class ClassificationConfigDialog(QDialog):
                  scan_result=None, base_config: Optional[ClassificationConfig] = None,
                  save_callback=None, worker_registry=None, parent=None,
                  ocr_texts=None, ocr_errors=None, preferences=None,
-                 preference_save_callback=None):
+                 preference_save_callback=None, save_all_callback=None,
+                 preference_ids=None):
         super().__init__(parent)
         self.setWindowTitle(f"推荐模式分类配置 — {os.path.basename(root) or root}")
         self.resize(1080, 720)
@@ -230,6 +232,10 @@ class ClassificationConfigDialog(QDialog):
         self.base_config = base_config or config
         self.save_callback = save_callback
         self.preference_save_callback = preference_save_callback
+        self.save_all_callback = save_all_callback
+        # 打开窗口时已存在的偏好 ID：只有这些被用户删除时才删除库里的行，
+        # 另一个窗口在此期间新增的偏好不会因为旧快照保存而消失。
+        self.loaded_preference_ids = set(preference_ids or [])
         self.preferences = preferences
         self._pref_meta = {}
         if preferences:
@@ -700,6 +706,21 @@ class ClassificationConfigDialog(QDialog):
                     "请修正以下长期偏好后再保存：\n\n"
                     + "\n".join(f"· {e}" for e in errors))
                 return
+        if self.save_all_callback is not None and prefs is not None:
+            # 配置 JSON 与偏好库一起原子提交：任一步失败都不会留下
+            # “报错但新目标已写进 JSON / 空间库”的半成品。
+            try:
+                saved = self.save_all_callback(
+                    cfg, prefs, sorted(self.loaded_preference_ids))
+            except (ClassificationConfigError, PreferenceError, OSError) as e:
+                QMessageBox.critical(
+                    self, "保存失败",
+                    f"{e}\n\n已生效的规则和偏好保持不变，配置文件与偏好库"
+                    "都没有被改写。")
+                return
+            self.result_config = saved or cfg
+            self.accept()
+            return
         if self.save_callback is None:
             if prefs is not None:
                 try:

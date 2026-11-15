@@ -55,7 +55,10 @@ from classification_config import (  # noqa: E402
 from config_dialog import ClassificationConfigDialog  # noqa: E402
 from executor import execute_plan, undo_latest_batch  # noqa: E402
 from main import MainWindow  # noqa: E402
-from planner import MODE_BY_DIRECTION_SEMESTER, generate_plan  # noqa: E402
+from planner import (  # noqa: E402
+    MODE_BY_COURSE_THEN_TYPE, MODE_BY_DIRECTION_SEMESTER, MODE_BY_TYPE,
+    generate_plan,
+)
 from scanner import scan_directory  # noqa: E402
 from storage import Storage  # noqa: E402
 
@@ -798,6 +801,19 @@ def save_pref(root: str, pid: str, name: str, *, category="归档盒",
         confirmed_source_rel=f"{source}/样本.md"))
 
 
+def corrupt_global_db():
+    path = P.global_db_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"this is not a sqlite database")
+
+
+def restore_global_db():
+    path = P.global_db_path()
+    if os.path.exists(path):
+        os.remove(path)
+
+
 def test_adopted_preference_is_selected():
     root = root_dir("selected")
     write(root, "下载/归档盒/一样.md")
@@ -1000,6 +1016,149 @@ def test_selected_preference_execution_roundtrip():
     close_window(win)
 
 
+def test_global_db_corruption_keeps_space_disabled():
+    root = root_dir("global_corrupt_disabled")
+    write(root, "下载/归档盒/停用.md")
+    save_pref(root, "lt-disabled", "已停用的空间规则")
+    # SQLite 停用；JSON 镜像故意保持 enabled=true，模拟镜像过期
+    P.set_preference_enabled(root, "lt-disabled", False)
+    cfg, _ = load_config(root)
+    cfg.long_term_rules[0].enabled = True
+    save_config(root, cfg)
+    corrupt_global_db()
+    try:
+        win = preview(root)
+        item = item_of(win.current_plan, "下载/归档盒/停用.md")
+        ok = (not item.target_dir_rel.startswith(
+                  os.path.join("_已整理", "项目"))
+              and item.selected is False
+              and item.rule_key != "long_term:lt-disabled")
+        rec("T33", "全局库损坏时已停用空间规则不从 JSON 镜像复活",
+            ok, f"target={item.target_rel_path} selected={item.selected} "
+                f"rule_key={item.rule_key}")
+        close_window(win)
+    finally:
+        restore_global_db()
+
+
+def test_failed_save_is_atomic():
+    root = root_dir("save_atomic")
+    write(root, "下载/归档盒/原子.md")
+    save_pref(root, "lt-atomic", "原子保存", category="归档盒")
+    global_pref = P.Preference(
+        preference_id="lt-global-atomic", name="全局原子", match_type=MATCH_DIR_SCOPE,
+        source_path="下载/其他", include_subdirs=True, direction="项目",
+        category="全局", inner_mode=INNER_CLEAR, enabled=True,
+        scope=P.SCOPE_GLOBAL, confirmed_at="2026-11-15T00:00:00")
+    P.save_preference(root, global_pref)
+    corrupt_global_db()
+    new_space = P.Preference(**{**P.list_space_preferences(root)[0].__dict__,
+                                "category": "新目标"})
+    try:
+        P.persist_preferences(root, [new_space, global_pref], sync_json=True)
+        raised = False
+    except Exception:
+        raised = True
+    space_after = P.list_space_preferences(root)[0]
+    json_after = [r for r in load_config(root)[0].long_term_rules
+                  if r.rule_id == "lt-atomic"][0]
+    restore_global_db()
+    ok = (raised and space_after.category == "归档盒"
+          and json_after.category == "归档盒")
+    rec("T34", "保存报错后空间库与 JSON 都保持旧目标", ok,
+        f"raised={raised} db={space_after.category} json={json_after.category}")
+
+
+def test_concurrent_global_preference_not_deleted():
+    root = root_dir("global_concurrent")
+    first = P.Preference(
+        preference_id="lt-global-first", name="先开的全局", match_type=MATCH_DIR_SCOPE,
+        source_path="下载/A", include_subdirs=True, direction="项目",
+        category="A", inner_mode=INNER_CLEAR, enabled=True,
+        scope=P.SCOPE_GLOBAL, confirmed_at="2026-11-15T00:00:00")
+    P.save_preference(root, first)
+    snapshot = P.list_global_preferences()
+    second = P.Preference(
+        preference_id="lt-global-second", name="另一窗口新加", match_type=MATCH_DIR_SCOPE,
+        source_path="下载/B", include_subdirs=True, direction="项目",
+        category="B", inner_mode=INNER_CLEAR, enabled=True,
+        scope=P.SCOPE_GLOBAL, confirmed_at="2026-11-15T00:00:01")
+    P.save_preference(root, second)
+    try:
+        P.persist_preferences(root, snapshot, sync_json=False)
+    except Exception:
+        pass
+    ids = {p.preference_id for p in P.list_global_preferences()}
+    ok = {"lt-global-first", "lt-global-second"} <= ids
+    rec("T35", "旧窗口保存不会删掉另一窗口刚写入的全局偏好", ok,
+        f"global_ids={sorted(ids)}")
+
+
+def test_scheme_apply_syncs_preferences():
+    root = root_dir("scheme_apply")
+    write(root, "下载/归档盒/方案.md")
+    save_pref(root, "lt-scheme", "方案规则", category="归档盒")
+    win = open_window(root)
+    cfg, _ = load_config(root)
+    rule = next(r for r in cfg.long_term_rules if r.rule_id == "lt-scheme")
+    rule.category = "新方案目标"
+    win._apply_scheme_config(cfg)
+    close_window(win)
+    rows = P.list_space_preferences(root)
+    win2 = preview(root)
+    item = item_of(win2.current_plan, "下载/归档盒/方案.md")
+    close_window(win2)
+    ok = (rows and rows[0].category == "新方案目标"
+          and item.target_dir_rel == os.path.join(
+              "_已整理", "项目", "新方案目标"))
+    rec("T36", "应用含新长期规则的方案后正式预览使用新目标", ok,
+        f"db={rows[0].category if rows else None} target={item.target_rel_path}")
+
+
+def test_preferences_do_not_override_plain_modes():
+    root = root_dir("plain_modes")
+    write(root, "下载/归档盒/样本.md")
+    save_pref(root, "lt-plain", "只应作用于推荐模式", category="归档盒")
+    results = {}
+    for mode in (MODE_BY_TYPE, MODE_BY_COURSE_THEN_TYPE):
+        win = open_window(root)
+        idx = win.mode_combo.findData(mode)
+        assert idx >= 0, mode
+        win.mode_combo.setCurrentIndex(idx)
+        scan_and_preview(win)
+        item = item_of(win.current_plan, "下载/归档盒/样本.md")
+        results[mode] = item.target_dir_rel
+        close_window(win)
+    ok = all(not path.startswith(os.path.join("_已整理", "项目"))
+             for path in results.values())
+    rec("T37", "「按类型」「按课程再按类型」不被长期偏好改到项目目录",
+        ok, f"by_type={results.get(MODE_BY_TYPE)} "
+            f"course_then_type={results.get(MODE_BY_COURSE_THEN_TYPE)}")
+
+
+def test_preference_conflict_keeps_body_candidate():
+    root = root_dir("conflict_body")
+    write(root, "下载/混合.md", "高等数学 AIGC")
+    save_pref(root, "lt-body-a", "冲突 A", category="归档盒", source="下载")
+    save_pref(root, "lt-body-b", "冲突 B", category="课程设计", source="下载")
+    win = preview(root)
+    item = item_of(win.current_plan, "下载/混合.md")
+    ambiguity = getattr(item, "ambiguity", None) or {}
+    candidates = ambiguity.get("candidates") or []
+    pref_ids = {c.get("preference_id") for c in candidates
+                if c.get("preference_id")}
+    evidence_text = " ".join(c.get("evidence") or "" for c in candidates)
+    categories_text = " ".join(c.get("category") or "" for c in candidates)
+    body_kept = ("高等数学" in evidence_text or "高等数学" in categories_text) and \
+        ("AIGC" in evidence_text or "AIGC" in categories_text)
+    ok = (bool(ambiguity) and item.selected is False
+          and body_kept and {"lt-body-a", "lt-body-b"} <= pref_ids)
+    rec("T38", "同级偏好冲突仍保留 AIGC 正文去向", ok,
+        f"selected={item.selected} body_kept={body_kept} ids={sorted(pref_ids)} "
+        f"候选={[c.get('evidence') for c in candidates]}")
+    close_window(win)
+
+
 def run():
     control_target = test_control_without_preference()
     space_root, pref_id = test_save_space_preference_from_ui()
@@ -1017,6 +1176,12 @@ def run():
     test_revert_auto_returns_to_preference()
     test_revert_keeps_preference_inner_path()
     test_selected_preference_execution_roundtrip()
+    test_global_db_corruption_keeps_space_disabled()
+    test_failed_save_is_atomic()
+    test_concurrent_global_preference_not_deleted()
+    test_scheme_apply_syncs_preferences()
+    test_preferences_do_not_override_plain_modes()
+    test_preference_conflict_keeps_body_candidate()
 
 
 def main():

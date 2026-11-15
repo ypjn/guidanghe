@@ -35,8 +35,8 @@ from classification_config import (
     match_long_term_rule, save_config, validate_config,
 )
 from planner import (
-    PlanItem, OrganizePlan, _build_target_dir_v2, _sanitize_component,
-    assign_unique_targets,
+    MODE_BY_DIRECTION_SEMESTER, PlanItem, OrganizePlan,
+    _build_target_dir_v2, _sanitize_component, assign_unique_targets,
 )
 import scheme_store
 
@@ -388,6 +388,35 @@ def list_all_preferences(root: str) -> List[Preference]:
     return out
 
 
+def _dedupe(preferences: Sequence[Preference]) -> List[Preference]:
+    seen: Dict[str, Preference] = {}
+    for pref in preferences:
+        seen.setdefault(pref.preference_id, pref)
+    return list(seen.values())
+
+
+def effective_preferences_resilient(root: str) -> Tuple[List[Preference], str]:
+    """读取生效偏好；全局库损坏时仍返回本空间偏好，并附带错误说明。
+
+    返回 (偏好列表, 全局库错误说明)。空间库本身不可读时抛异常。
+    """
+    space = [p for p in list_space_preferences(root) if p.enabled]
+    try:
+        globals_ = [p for p in list_global_preferences() if p.enabled]
+        return _dedupe(space + globals_), ""
+    except Exception as e:
+        return _dedupe(space), f"全局偏好库不可用：{e}"
+
+
+def list_all_preferences_resilient(root: str) -> Tuple[List[Preference], str]:
+    """配置页展示用；全局库损坏时仍返回本空间偏好（含停用）。"""
+    space = list_space_preferences(root)
+    try:
+        return _dedupe(space + list_global_preferences()), ""
+    except Exception as e:
+        return _dedupe(space), f"全局偏好库不可用：{e}"
+
+
 def get_preference(root: str, preference_id: str) -> Optional[Preference]:
     for pref in list_space_preferences(root):
         if pref.preference_id == preference_id:
@@ -574,52 +603,122 @@ def set_preference_enabled(root: str, preference_id: str, enabled: bool) -> bool
     return False
 
 
-def persist_preferences(root: str, preferences: Sequence[Preference],
-                        sync_json: bool = True) -> None:
-    """整体保存配置页编辑后的偏好（含停用行、含全局行）。
+def _apply_rows(conn: sqlite3.Connection, prefs: Sequence[Preference],
+                original_ids: set) -> None:
+    new_ids = set()
+    for index, pref in enumerate(prefs):
+        pref.sort_order = index
+        _upsert(conn, pref)
+        new_ids.add(pref.preference_id)
+    # 只删除本次编辑开始时确实存在、且用户已移除的行；
+    # 编辑期间其他窗口新增的行不在 original_ids 中，必须保留。
+    for stale_id in original_ids - new_ids:
+        conn.execute("DELETE FROM preferences WHERE preference_id = ?",
+                     (stale_id,))
 
-    - 空间偏好：可选先写 JSON 镜像（只写 space 行），再整体替换空间库。
-    - 全局偏好：只写全局库；绝不会出现在任何空间的 JSON 里。
-    - JSON 写失败时，SQLite 不写；SQLite 失败时回滚 JSON。
+
+def persist_preferences(root: str, preferences: Sequence[Preference],
+                        sync_json: bool = True, *,
+                        original_ids: Optional[Sequence[str]] = None,
+                        write_space: bool = True,
+                        write_global: bool = True,
+                        config: Optional[ClassificationConfig] = None) -> None:
+    """原子保存配置页编辑后的偏好。
+
+    - 只更新传入的行；`original_ids` 是打开编辑窗口时已存在的 ID，
+      用户删除的旧行才会被删除，编辑期间其他窗口新增的行保留。
+    - `write_space=False` / `write_global=False` 时不触碰对应库
+      （例如全局库损坏时仍可保存空间偏好）。
+    - 先打开所有需要的库，再写数据库语句；JSON 镜像在提交前写入。
+      任一步失败都会回滚 SQLite，并恢复 JSON，不会出现“报错但新目标已生效”。
     """
     prefs = list(preferences)
     space_prefs = [p for p in prefs if p.scope == SCOPE_SPACE]
     global_prefs = [p for p in prefs if p.scope == SCOPE_GLOBAL]
     for pref in prefs:
         _raise_if_invalid(pref)
+    originals = set(original_ids or [])
 
+    space_conn = None
+    global_conn = None
     old_cfg = None
-    if sync_json:
-        old_cfg = _read_json_config(root)
-        new_cfg = clone_config(old_cfg)
-        new_cfg.long_term_rules = [p.to_rule() for p in space_prefs]
-        ensure_valid(new_cfg)
-        save_config(root, new_cfg)
-
+    new_cfg = None
+    json_written = False
     try:
-        conn = _open(space_db_path(root))
-        try:
-            with conn:
-                conn.execute("DELETE FROM preferences")
-                for index, pref in enumerate(space_prefs):
-                    pref.sort_order = index
-                    _upsert(conn, pref)
-        finally:
-            conn.close()
+        # 1) 先打开所有需要的库；全局库损坏会在任何写入之前失败。
+        if write_space:
+            space_conn = _open(space_db_path(root))
+        if write_global:
+            global_conn = _open(global_db_path())
 
-        conn = _open(global_db_path())
-        try:
-            with conn:
-                conn.execute("DELETE FROM preferences")
-                for index, pref in enumerate(global_prefs):
-                    pref.sort_order = index
-                    _upsert(conn, pref)
-        finally:
-            conn.close()
+        # 2) 准备 JSON 镜像（不落盘）
+        if sync_json:
+            old_cfg = _read_json_config(root)
+            new_cfg = clone_config(config if config is not None else old_cfg)
+            if write_space:
+                new_cfg.long_term_rules = [p.to_rule() for p in space_prefs]
+            ensure_valid(new_cfg)
+
+        # 3) 两个库各自开启事务并写入，但先不提交
+        if space_conn is not None:
+            space_conn.execute("BEGIN")
+            _apply_rows(space_conn, space_prefs, originals)
+        if global_conn is not None:
+            global_conn.execute("BEGIN")
+            _apply_rows(global_conn, global_prefs, originals)
+
+        # 4) JSON 镜像写成功后才提交 SQLite
+        if sync_json:
+            save_config(root, new_cfg)
+            json_written = True
+
+        if space_conn is not None:
+            space_conn.commit()
+        if global_conn is not None:
+            global_conn.commit()
     except Exception as e:
-        if old_cfg is not None:
+        for conn in (space_conn, global_conn):
+            if conn is not None:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+        if json_written and old_cfg is not None:
             _restore_json(root, old_cfg)
-        raise PreferenceError(f"偏好库写入失败，已回滚 JSON 镜像：{e}")
+        raise PreferenceError(f"偏好库写入失败，已整体回滚：{e}")
+    finally:
+        for conn in (space_conn, global_conn):
+            if conn is not None:
+                conn.close()
+
+
+def sync_space_preferences_from_config(root: str,
+                                       config: ClassificationConfig) -> int:
+    """把方案 / 备份恢复后的 JSON 长期规则同步为本空间偏好。
+
+    只替换空间偏好，全局偏好完全不动。rule_id / enabled 原样保留；
+    已有同 ID 行保留原确认信息，新行记为 JSON 迁入。
+    """
+    current = list_space_preferences(root)
+    by_id = {p.preference_id: p for p in current}
+    now = _now()
+    new_prefs: List[Preference] = []
+    for index, rule in enumerate(config.long_term_rules or []):
+        old = by_id.get(rule.rule_id)
+        new_prefs.append(Preference.from_rule(
+            rule,
+            scope=SCOPE_SPACE,
+            space_root=os.path.abspath(root),
+            confirmed_at=(old.confirmed_at if old and old.confirmed_at else now),
+            confirmed_source_rel=(old.confirmed_source_rel if old else ""),
+            source_kind=(old.source_kind if old else SOURCE_MIGRATED),
+            sort_order=index,
+        ))
+    persist_preferences(
+        root, new_prefs, sync_json=False,
+        original_ids=[p.preference_id for p in current],
+        write_space=True, write_global=False)
+    return len(new_prefs)
 
 
 # ======================== 匹配与应用 ========================
@@ -729,6 +828,9 @@ def apply_preferences_to_plan(plan: OrganizePlan,
     prefs = list(preferences or [])
     if not prefs:
         return result
+    # 长期偏好只属于推荐模式；「按类型」「按课程再按类型」保持原有落点。
+    if plan.mode != MODE_BY_DIRECTION_SEMESTER:
+        return result
     # 同一 preference_id 只匹配一次（空间偏好优先）
     seen_ids = set()
     unique: List[Preference] = []
@@ -803,12 +905,24 @@ def apply_preferences_to_plan(plan: OrganizePlan,
                 "label": (f"{item.direction}/{item.category}"
                           if item.category else (item.direction or "待定")),
             }
-            candidates = [current]
+            # 保留 generate_plan 已经识别出的正文/AIGC 候选，不能因为
+            # 同级偏好冲突把正文去向从歧义面板里挤掉。
+            existing = getattr(item, "ambiguity", None) or {}
+            existing_candidates = existing.get("candidates") or []
+            candidates = [dict(c) for c in existing_candidates]
+            if not candidates:
+                candidates = [current]
             for sig in order:
                 pref, evidence, target_dir = groups[sig][0]
-                candidates.append(_candidate(pref, evidence, target_dir))
+                candidate = _candidate(pref, evidence, target_dir)
+                if not any(
+                        os.path.normcase(str(c.get("target_dir_rel") or ""))
+                        == os.path.normcase(target_dir)
+                        for c in candidates):
+                    candidates.append(candidate)
             item.ambiguity = {
-                "reason": "同一优先级的长期偏好指向不同去向",
+                "reason": ("同一优先级的长期偏好指向不同去向"
+                           + ("；保留正文候选" if existing_candidates else "")),
                 "candidates": candidates,
             }
             item.selected = False
@@ -818,9 +932,9 @@ def apply_preferences_to_plan(plan: OrganizePlan,
             extra = f"；存在长期偏好歧义（{names}），默认不勾选，请在预览里改选或跳过"
             if extra not in (item.rule_applied or ""):
                 item.rule_applied = (item.rule_applied or "") + extra
-            item.decision_evidence = "；".join(
-                _pref_evidence(groups[sig][0][0], groups[sig][0][1])
-                for sig in order)
+            item.decision_evidence = "；".join(dict.fromkeys(
+                str(c.get("evidence") or "") for c in candidates
+                if c.get("evidence")))
             result.conflicts += 1
             continue
 

@@ -59,9 +59,11 @@ from classification_config import (
     default_config, load_config, save_config, config_path,
 )
 from preferences import (
-    Preference, PreferenceError, SCOPE_GLOBAL, SCOPE_SPACE,
-    apply_preferences_to_plan, ensure_migrated, list_all_preferences,
-    list_effective_preferences, persist_preferences, save_preference,
+    Preference, PreferenceError,
+    apply_preferences_to_plan, effective_preferences_resilient,
+    ensure_migrated, list_all_preferences_resilient,
+    persist_preferences, save_preference,
+    sync_space_preferences_from_config,
 )
 from config_dialog import ClassificationConfigDialog
 from protect_config import (
@@ -3430,14 +3432,18 @@ class MainWindow(QMainWindow):
             return False
         try:
             inserted = ensure_migrated(root, self.classification_config)
-            list_effective_preferences(root)     # 确认可读
+            _effective, global_error = effective_preferences_resilient(root)
             self._preferences_available = True
+            self._preference_note = global_error
             if inserted:
                 append_startup_log(
                     f"已把 classification_config.json 中的 {inserted} 条长期规则"
                     "一次性迁入本空间偏好库；JSON 原内容保持不变。")
+            if global_error:
+                append_startup_log(global_error + "；本轮只使用本空间偏好。")
             return True
         except Exception as e:
+            self._preferences_available = False
             self._preference_note = str(e)
             append_startup_log(f"偏好库不可用，本轮回退到 JSON 长期规则：{e}")
             return False
@@ -3495,14 +3501,19 @@ class MainWindow(QMainWindow):
             draft = copy.deepcopy(self.classification_config)
 
         ocr_texts, ocr_errors = ocr_maps_from_plan(self.current_plan)
-        # 阶段 2：长期修正规则页读写偏好库；先做一次性迁移再展示
+        # 阶段 2：长期修正规则页读写偏好库；先做一次性迁移再展示。
+        # 全局库损坏时只展示本空间偏好，保存也只写本空间，不因全局库不可用
+        # 而拒绝保存，也不会删除其他窗口刚写入的全局偏好。
+        preference_rows = None
+        global_error = ""
         try:
             ensure_migrated(root, self.classification_config)
-            preference_rows = list_all_preferences(root)
+            preference_rows, global_error = list_all_preferences_resilient(root)
         except Exception as e:
-            preference_rows = None
             self._preference_note = str(e)
             append_startup_log(f"读取偏好库失败，配置页暂不显示长期偏好：{e}")
+        if global_error:
+            append_startup_log(global_error + "；配置页只显示本空间偏好。")
         dlg = ClassificationConfigDialog(
             root=root,
             config=draft,
@@ -3513,6 +3524,14 @@ class MainWindow(QMainWindow):
             save_callback=lambda cfg: self._save_classification_config(root, cfg),
             preference_save_callback=(
                 (lambda prefs: self._save_preferences_from_config(root, prefs))
+                if preference_rows is not None else None),
+            save_all_callback=(
+                (lambda cfg, prefs, original_ids: self._save_config_and_preferences(
+                    root, cfg, prefs, original_ids=original_ids,
+                    write_global=not bool(global_error)))
+                if preference_rows is not None else None),
+            preference_ids=(
+                [p.preference_id for p in preference_rows]
                 if preference_rows is not None else None),
             preferences=preference_rows,
             worker_registry=self,
@@ -3580,6 +3599,36 @@ class MainWindow(QMainWindow):
         self._preferences_available = True
         self._preference_note = ""
 
+    def _save_config_and_preferences(self, root: str,
+                                     cfg: ClassificationConfig,
+                                     preferences: list,
+                                     original_ids=None,
+                                     write_global: bool = True):
+        """配置页「保存并应用」：配置 JSON 与偏好库一起原子提交。
+
+        任何一步失败都会回滚两边的库并恢复 JSON；不会出现“报错但新目标
+        已经生效”。「按类型」「按课程再按类型」不使用这些长期规则，但配置
+        本身仍需保存。
+        """
+        if self._close_pending or self._closing:
+            raise ClassificationConfigError(
+                "窗口正在关闭，未保存分类配置；已生效的规则保持不变。")
+        current = self.path_edit.text().strip()
+        if not current or _norm_root(current) != _norm_root(root):
+            raise ClassificationConfigError(
+                "当前根目录已变化，拒绝把配置写入其他目录。请重新选择目录后再编辑。")
+        if os.path.isfile(config_path(root)):
+            create_backup(root)
+        persist_preferences(
+            root, preferences, sync_json=True,
+            original_ids=original_ids,
+            write_space=True, write_global=write_global, config=cfg)
+        self._load_root_config(root)
+        self._preferences_available = True
+        self._preference_note = ""
+        self._invalidate_for_config_change()
+        return self.classification_config
+
     # ============== 整理方案：导入 / 导出 / 方案库 / 回退（V1.6） ==============
 
     def on_scheme_center(self):
@@ -3637,8 +3686,24 @@ class MainWindow(QMainWindow):
     def _apply_scheme_config(self, cfg):
         """应用方案：先备份当前配置，再原子保存并重新加载、作废旧计划。"""
         root = self._require_idle_root()
+        try:
+            previous_cfg, _source = load_config(root)
+        except ClassificationConfigError:
+            # 当前配置已损坏时允许方案直接覆盖，没有可回滚的旧配置。
+            previous_cfg = None
         create_backup(root)
         save_config(root, cfg)
+        # 方案里的长期规则必须同步进本空间偏好库；否则正式预览仍会按
+        # SQLite 里的旧目标分类。偏好库写入失败时回滚刚写入的 JSON。
+        try:
+            sync_space_preferences_from_config(root, cfg)
+        except Exception:
+            if previous_cfg is not None:
+                try:
+                    save_config(root, previous_cfg)
+                except Exception:
+                    pass
+            raise
         self._load_root_config(root)
         self._invalidate_for_config_change()
         self.statusBar().showMessage(
@@ -3648,6 +3713,9 @@ class MainWindow(QMainWindow):
         """恢复上一次应用前的配置（只改配置，不移动/撤销文件）。"""
         root = self._require_idle_root()
         _state, message = restore_latest_backup(root)
+        # 恢复出来的 JSON 长期规则同样要覆盖本空间偏好，否则预览继续用旧目标。
+        cfg, _source = load_config(root)
+        sync_space_preferences_from_config(root, cfg)
         self._load_root_config(root)
         self._invalidate_for_config_change()
         self.statusBar().showMessage(
@@ -3989,7 +4057,11 @@ class MainWindow(QMainWindow):
         pref_result = None
         if self._preferences_available:
             try:
-                effective = list_effective_preferences(plan.root)
+                effective, global_error = effective_preferences_resilient(plan.root)
+                if global_error:
+                    self._preference_note = global_error
+                    append_startup_log(
+                        global_error + "；本轮只使用本空间偏好。")
                 pref_result = apply_preferences_to_plan(
                     plan, effective, plan.root)
             except Exception as e:
@@ -4045,7 +4117,10 @@ class MainWindow(QMainWindow):
         if pref_result is not None and getattr(pref_result, "conflicts", 0):
             ocr_msg += f"；{pref_result.conflicts} 个偏好冲突待确认"
         if self._preference_note:
-            ocr_msg += "；偏好库不可用，已回退到原有长期规则"
+            if self._preferences_available:
+                ocr_msg += f"；{self._preference_note}"
+            else:
+                ocr_msg += "；偏好库不可用，已回退到原有长期规则"
         rejected = len(getattr(plan, "ai_rejections", []) or [])
         if rejected:
             ocr_msg += f"；{rejected} 个 AI 建议未通过校验，保持原位"
