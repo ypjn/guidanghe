@@ -29,6 +29,7 @@ import copy
 import os
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import List, Optional, Tuple
 
 from planner import (
@@ -99,6 +100,7 @@ class ManualOverrideDialog:
         # 为 None 时「保存为长期规则…」按钮禁用。
         self.rule_context = rule_context
         self.long_term_saved_config = None
+        self.long_term_saved_preference = None
         self.saved_rule = None
         if mode != MODE_BY_DIRECTION_SEMESTER:
             raise OverrideValidationError(
@@ -215,7 +217,7 @@ class ManualOverrideDialog:
 
         self.bb = QDialogButtonBox(
             QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        self.bb.button(QDialogButtonBox.Ok).setText("应用到本次计划")
+        self.bb.button(QDialogButtonBox.Ok).setText("仅改本次")
         self.bb.button(QDialogButtonBox.Cancel).setText("取消")
         self.bb.accepted.connect(self.dlg.accept)
         self.bb.rejected.connect(self.dlg.reject)
@@ -292,6 +294,9 @@ class ManualOverrideDialog:
             scan_result=ctx.get("scan_result"),
             config=ctx.get("config"),
             save_callback=ctx.get("save_callback"),
+            preference_save_callback=ctx.get("preference_save_callback"),
+            space_root=ctx.get("space_root", ""),
+            space_label=ctx.get("space_label", ""),
             worker_registry=ctx.get("worker_registry"),
             parent=self.dlg,
         )
@@ -299,9 +304,11 @@ class ManualOverrideDialog:
             return
         self.saved_rule = draft.saved_rule
         self.long_term_saved_config = draft.saved_config
+        self.long_term_saved_preference = draft.saved_preference
         self._revert_on_ok = False
-        # 长期规则已保存 → 本次计划必然失效，直接关闭；
-        # main.py 依据 long_term_saved_config 处理配置刷新与提示。
+        # 长期偏好已保存 → 本次计划必然失效，直接关闭；
+        # main.py 依据 long_term_saved_preference / long_term_saved_config
+        # 处理配置刷新与提示。
         self.dlg.accept()
 
     # ---- 供 main.py 调用的接口 ----
@@ -551,6 +558,8 @@ def apply_override_to_plan(
     def _same(a, b) -> bool:
         return (a or "").strip() == (b or "").strip()
 
+    previous_rule_key = target.rule_key or ""
+    previous_rule_applied = target.rule_applied or ""
     same_as_auto = (
         _same(new_dir, target.auto_direction)
         and _same(new_sem, target.auto_semester)
@@ -563,7 +572,11 @@ def apply_override_to_plan(
         target.rule_key = target.auto_rule_key or target.rule_key
         target.rule_applied = target.auto_rule_applied or target.rule_applied
     else:
-        target.rule_applied = new_reason
+        override_evidence = ""
+        if previous_rule_key.startswith("long_term:"):
+            # 阶段 2：本轮「仅改本次」优先于历史偏好，依据里写清覆盖了哪一条。
+            override_evidence = f"；已覆盖本次预览采用的{previous_rule_applied}"
+        target.rule_applied = new_reason + override_evidence
         target.rule_key = f"manual_override:{source_rel}"
         target.is_manual_overridden = True
         target.override_note = p.override_note or ""
@@ -809,7 +822,9 @@ class RuleDraftDialog:
 
     def __init__(self, *, mode: str, plan: OrganizePlan, source_rel: str,
                  params: OverrideParams, scan_result, config,
-                 save_callback, worker_registry=None, parent=None):
+                 save_callback, worker_registry=None, parent=None,
+                 preference_save_callback=None, space_root: str = "",
+                 space_label: str = ""):
         self.mode = mode
         self.plan = plan
         self.source_rel = source_rel
@@ -817,9 +832,14 @@ class RuleDraftDialog:
         self.scan_result = scan_result
         self.config = config
         self.save_callback = save_callback
+        self.preference_save_callback = preference_save_callback
+        self.space_root = space_root
+        self.space_label = space_label or (
+            os.path.basename(os.path.abspath(space_root)) if space_root else "")
         self.worker_registry = worker_registry
         self.saved_rule: Optional[LongTermRule] = None
         self.saved_config = None
+        self.saved_preference = None
         self._impact: Optional[RuleImpact] = None
         self._previewed_rule: Optional[LongTermRule] = None
         self._preview_seq = 0
@@ -849,7 +869,7 @@ class RuleDraftDialog:
             f"{params.semester or '（无学期）'} / "
             f"{params.category or '（无类别）'}"
             + (f" / {params.inner_path}" if params.inner_path else "")
-            + "\n长期规则会覆盖原有学期/方向/目录映射，但仍低于当前计划的临时修正。"
+            + "\n长期偏好会覆盖原有学期/方向/目录映射，但仍低于当前计划的「仅改本次」。"
         )
         head.setStyleSheet("padding:6px;background:#f5f5f5;border-radius:4px;")
         head.setWordWrap(True)
@@ -860,6 +880,13 @@ class RuleDraftDialog:
                         or os.path.basename(source_rel) or "新规则")
         self.name_edit = QLineEdit(default_name + " 修正规则")
         form.addRow("规则名称", self.name_edit)
+
+        # 适用范围：默认当前整理空间；只有用户主动点选「全局」才写全局库。
+        self.scope_combo = QComboBox()
+        self.scope_combo.addItem("当前整理空间", "space")
+        self.scope_combo.addItem("全局（所有整理空间）", "global")
+        self.scope_combo.setCurrentIndex(0)
+        form.addRow("适用范围", self.scope_combo)
 
         self.match_combo = QComboBox()
         for key in (MATCH_EXACT_PATH, MATCH_DIR_SCOPE,
@@ -939,6 +966,7 @@ class RuleDraftDialog:
 
         # 所有控件就绪后再连接信号，避免构造期间访问尚未创建的控件
         self.match_combo.currentIndexChanged.connect(self._on_match_changed)
+        self.scope_combo.currentIndexChanged.connect(self._update_rule_desc)
         self.source_edit.textChanged.connect(self._on_match_changed)
         self.subdir_check.stateChanged.connect(self._on_match_changed)
         self.kw_edit.textChanged.connect(self._on_match_changed)
@@ -1000,9 +1028,16 @@ class RuleDraftDialog:
             kws = self.kw_edit.text().strip() or "（未填关键词）"
             scope = self.source_edit.text().strip()
             cond = f"文件名关键词 = {kws}" + (f"，限定目录 = {scope}" if scope else "")
+        scope_key = self.scope_combo.currentData() if hasattr(
+            self, "scope_combo") else "space"
+        scope_text = ("全局（所有整理空间）" if scope_key == "global"
+                      else (f"当前整理空间「{self.space_label}」"
+                            if self.space_label else "当前整理空间"))
         self.rule_desc.setText(
             f"<b>规则预览：</b>{self.name_edit.text().strip() or '（未命名）'}<br>"
-            f"<b>匹配：</b>{cond}<br><b>目标：</b>{arrow}")
+            f"<b>匹配条件：</b>{cond}<br>"
+            f"<b>适用范围：</b>{scope_text}<br>"
+            f"<b>目标：</b>{arrow}")
 
     def _current_rule(self) -> LongTermRule:
         mt = self._match_type()
@@ -1250,17 +1285,49 @@ class RuleDraftDialog:
                 self.QMessageBox.No)
             if ret != self.QMessageBox.Yes:
                 return
+        scope_key = (self.scope_combo.currentData()
+                     if hasattr(self, "scope_combo") else "space")
+        scope_text = ("全局（所有整理空间）" if scope_key == "global"
+                      else (f"当前整理空间「{self.space_label}」"
+                            if self.space_label else "当前整理空间"))
         ret = self.QMessageBox.question(
-            self.dlg, "确认保存长期规则",
+            self.dlg, "确认保存长期偏好",
             f"规则：{rule.name}\n"
+            f"适用范围：{scope_text}\n"
             f"命中 {impact.matched} 个文件，{impact.changed} 个目标位置变化。\n\n"
             "保存后：\n"
-            "· 规则写入该目录的配置并在重启后继续生效；\n"
+            "· 偏好写入本地偏好库并在重启后继续生效；\n"
             "· 当前计划的临时手动修正会随计划一起失效；\n"
-            "· 需要点击「重新生成预览」才能按新规则生成计划。\n\n继续保存吗？",
+            "· 需要点击「重新生成预览」才能按新偏好生成计划。\n\n继续保存吗？",
             self.QMessageBox.Yes | self.QMessageBox.No,
             self.QMessageBox.Yes)
         if ret != self.QMessageBox.Yes:
+            return
+
+        if self.preference_save_callback is not None:
+            from preferences import (
+                Preference, SCOPE_GLOBAL, SCOPE_SPACE, SOURCE_USER,
+            )
+            scope = (SCOPE_GLOBAL if scope_key == "global" else SCOPE_SPACE)
+            pref = Preference.from_rule(
+                rule,
+                scope=scope,
+                space_root=(self.space_root if scope == SCOPE_SPACE else ""),
+                confirmed_at=datetime.now().isoformat(timespec="seconds"),
+                confirmed_source_rel=self.source_rel,
+                source_kind=SOURCE_USER,
+            )
+            try:
+                self.preference_save_callback(pref)
+            except Exception as e:
+                self.QMessageBox.critical(
+                    self.dlg, "保存失败",
+                    f"{e}\n\n已生效的偏好保持不变。")
+                return
+            self.saved_rule = rule
+            self.saved_preference = pref
+            self.saved_config = None
+            self.dlg.accept()
             return
 
         new_cfg = clone_config(self.config)

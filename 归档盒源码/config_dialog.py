@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import re
+from datetime import datetime
 from typing import List, Optional
 
 from PySide6.QtCore import Qt
@@ -38,6 +39,11 @@ from classification_config import (
 )
 from planner import MODE_BY_DIRECTION_SEMESTER
 from rule_preview import ImpactResult, PreviewWorker
+from preferences import (
+    Preference, SCOPE_GLOBAL, SCOPE_SPACE, SCOPE_LABEL_TO_KEY as PREF_SCOPE_LABEL_TO_KEY,
+    SCOPE_LABELS as PREF_SCOPE_LABELS, SOURCE_KIND_LABELS, SOURCE_USER,
+    validate_preference,
+)
 
 
 SCOPE_KEY_TO_LABEL = dict(SCOPE_LABELS)
@@ -213,7 +219,8 @@ class ClassificationConfigDialog(QDialog):
                  using_defaults: bool = False, config_error: str = "",
                  scan_result=None, base_config: Optional[ClassificationConfig] = None,
                  save_callback=None, worker_registry=None, parent=None,
-                 ocr_texts=None, ocr_errors=None):
+                 ocr_texts=None, ocr_errors=None, preferences=None,
+                 preference_save_callback=None):
         super().__init__(parent)
         self.setWindowTitle(f"推荐模式分类配置 — {os.path.basename(root) or root}")
         self.resize(1080, 720)
@@ -222,6 +229,16 @@ class ClassificationConfigDialog(QDialog):
         self.scan_result = scan_result
         self.base_config = base_config or config
         self.save_callback = save_callback
+        self.preference_save_callback = preference_save_callback
+        self.preferences = preferences
+        self._pref_meta = {}
+        if preferences:
+            for pref in preferences:
+                self._pref_meta[pref.preference_id] = {
+                    "confirmed_source_rel": pref.confirmed_source_rel,
+                    "sort_order": pref.sort_order,
+                    "space_root": pref.space_root,
+                }
         self.worker_registry = worker_registry
         self.ocr_texts = ocr_texts
         self.ocr_errors = ocr_errors
@@ -315,10 +332,11 @@ class ClassificationConfigDialog(QDialog):
                  TRIGGER_LABELS[TRIGGER_SUBDIR]]),
             "关键词兜底")
 
-        # ---- V1.5：长期修正规则 ----
+        # ---- 阶段 2：长期修正规则改读写本空间偏好库 ----
         self.table_longterm = _make_table([
             "启用", "名称", "匹配方式", "来源路径/目录", "含子目录",
-            "关键词（用 / 分隔）", "方向", "学期", "类别", "内部路径", "规则ID"])
+            "关键词（用 / 分隔）", "方向", "学期", "类别", "内部路径",
+            "规则ID", "范围", "确认时间", "来源"])
         self.table_longterm.setColumnHidden(10, True)  # 稳定标识，仅内部使用
         self._set_header_tip(self.table_longterm, {
             2: "可选：" + " / ".join(MATCH_TYPE_LABELS.values())
@@ -329,7 +347,10 @@ class ClassificationConfigDialog(QDialog):
             4: "仅「目录范围」使用：填「是」包含子目录，填「否」只匹配该层目录。",
             5: "仅「文件名关键词」使用；任一关键词命中即生效，英文按词边界匹配。",
             9: "保留 / 清空 / 替换:路径。替换时填「替换:实验一」这种形式。",
-            10: "规则稳定标识，不随排序变化；不需要手动修改。",
+            10: "偏好稳定标识（preference_id），不随排序变化；不需要手动修改。",
+            11: "当前整理空间 / 全局。全局偏好写入应用数据目录，不写入任何空间的 JSON。",
+            12: "用户确认保存的时间；旧 JSON 迁入的规则也会记录迁移时间。",
+            13: "用户确认 / 旧 JSON 迁入。",
         })
         self.tabs.addTab(self._long_term_page(), "长期修正规则")
 
@@ -377,10 +398,13 @@ class ClassificationConfigDialog(QDialog):
         page = QWidget()
         v = QVBoxLayout(page)
         note = QLabel(
-            "长期修正规则：命中后**覆盖**上面的学期 / 顶层方向 / 学期内目录等映射，"
-            "但仍低于「当前计划的临时手动修正」。\n"
-            "优先级：临时手动修正 > 长期规则（从上到下取第一条命中）> 原有推荐模式逻辑。\n"
-            "目录匹配按路径边界判断，「课程A」不会匹配「课程AB」。"
+            "长期修正规则现在读写本地偏好库（preferences.db），不再只依赖 JSON。\n"
+            "命中后**覆盖**上面的学期 / 顶层方向 / 学期内目录等映射，但仍低于"
+            "「当前计划的仅改本次」。\n"
+            "匹配等级：精确路径 > 文件名关键词 > 目录范围；同等级目标不同会在预览里"
+            "列为歧义，默认不勾选。\n"
+            "「当前整理空间」偏好只在本空间预览生效，并同步写入该空间 JSON 镜像；"
+            "「全局」偏好写入应用数据目录，不写入任何空间的 JSON。"
         )
         note.setWordWrap(True)
         note.setStyleSheet("color:#4E342E;background:#FFF3E0;padding:6px 8px;"
@@ -418,6 +442,9 @@ class ClassificationConfigDialog(QDialog):
             "",
             INNER_MODE_SHORT[INNER_KEEP],
             new_rule_id(),
+            PREF_SCOPE_LABELS[SCOPE_SPACE],
+            "",
+            SOURCE_KIND_LABELS[SOURCE_USER],
         ]
         for c, value in enumerate(defaults, start=1):
             t.setItem(r, c, _text_item(value))
@@ -450,16 +477,37 @@ class ClassificationConfigDialog(QDialog):
              SCOPE_KEY_TO_LABEL.get(r.scope, r.scope),
              TRIGGER_KEY_TO_LABEL.get(r.trigger, r.trigger)]
             for r in cfg.keyword_rules])
-        _set_rows(self.table_longterm, [
-            [r.enabled, r.name,
-             MATCH_TYPE_LABELS.get(r.match_type, r.match_type),
-             r.source_path,
-             "是" if r.include_subdirs else "否",
-             " / ".join(r.keywords),
-             r.direction, r.semester, r.category,
-             self._inner_display(r),
-             r.rule_id]
-            for r in cfg.long_term_rules])
+        if self.preferences is not None:
+            rows = [
+                [p.enabled, p.name,
+                 MATCH_TYPE_LABELS.get(p.match_type, p.match_type),
+                 p.source_path,
+                 "是" if p.include_subdirs else "否",
+                 " / ".join(p.keywords),
+                 p.direction, p.semester, p.category,
+                 self._inner_display(p.to_rule()),
+                 p.preference_id,
+                 p.scope_label,
+                 p.confirmed_at,
+                 SOURCE_KIND_LABELS.get(p.source_kind, p.source_kind)]
+                for p in self.preferences
+            ]
+        else:
+            rows = [
+                [r.enabled, r.name,
+                 MATCH_TYPE_LABELS.get(r.match_type, r.match_type),
+                 r.source_path,
+                 "是" if r.include_subdirs else "否",
+                 " / ".join(r.keywords),
+                 r.direction, r.semester, r.category,
+                 self._inner_display(r),
+                 r.rule_id,
+                 PREF_SCOPE_LABELS[SCOPE_SPACE],
+                 "",
+                 SOURCE_KIND_LABELS[SOURCE_USER]]
+                for r in cfg.long_term_rules
+            ]
+        _set_rows(self.table_longterm, rows)
         if self.config_error:
             self.error_label.setText(
                 f"当前配置不可用，已阻止推荐模式生成计划：\n{self.config_error}\n"
@@ -545,7 +593,23 @@ class ClassificationConfigDialog(QDialog):
                 trigger=TRIGGER_LABEL_TO_KEY.get(trigger_raw, trigger_raw),
                 enabled=_row_enabled(self.table_keyword, r),
             ))
-        long_term_rules = []
+        long_term_rules = [
+            pref.to_rule() for pref in self._collect_preferences()
+            if pref.scope == SCOPE_SPACE
+        ]
+        return ClassificationConfig(
+            semester_rules=semester_rules,
+            top_direction_rules=top_rules,
+            semester_dir_rules=sem_dir_rules,
+            generic_dir_rules=generic_rules,
+            keyword_rules=keyword_rules,
+            long_term_rules=long_term_rules,
+            version=CONFIG_VERSION,
+        )
+
+    def _collect_preferences(self) -> List[Preference]:
+        """把长期规则表读成偏好记录（含全局行，JSON 只保存 space 行）。"""
+        out: List[Preference] = []
         for r in range(self.table_longterm.rowCount()):
             raw_kw = _row_text(self.table_longterm, r, 5)
             kws = [k.strip() for k in re.split(r"[/，,;；]", raw_kw) if k.strip()]
@@ -556,8 +620,17 @@ class ClassificationConfigDialog(QDialog):
                 "否", "不", "不包含", "no", "false", "0")
             rule_id = _row_text(self.table_longterm, r, 10) or new_rule_id()
             match_label = _row_text(self.table_longterm, r, 2)
-            long_term_rules.append(LongTermRule(
-                rule_id=rule_id,
+            scope_label = _row_text(self.table_longterm, r, 11)
+            scope = PREF_SCOPE_LABEL_TO_KEY.get(scope_label, SCOPE_SPACE)
+            source_label = _row_text(self.table_longterm, r, 13)
+            source_kind = SOURCE_USER
+            for key, label in SOURCE_KIND_LABELS.items():
+                if source_label == label:
+                    source_kind = key
+                    break
+            meta = self._pref_meta.get(rule_id, {})
+            out.append(Preference(
+                preference_id=rule_id,
                 name=_row_text(self.table_longterm, r, 1),
                 match_type=MATCH_LABEL_TO_TYPE.get(match_label, match_label),
                 source_path=_row_text(self.table_longterm, r, 3),
@@ -569,16 +642,16 @@ class ClassificationConfigDialog(QDialog):
                 inner_mode=inner_mode,
                 inner_path=inner_path,
                 enabled=_row_enabled(self.table_longterm, r),
+                scope=scope,
+                space_root=(self.root if scope == SCOPE_SPACE
+                            else meta.get("space_root", "")),
+                reason="",
+                confirmed_at=_row_text(self.table_longterm, r, 12),
+                confirmed_source_rel=meta.get("confirmed_source_rel", ""),
+                source_kind=source_kind,
+                sort_order=int(meta.get("sort_order", r)),
             ))
-        return ClassificationConfig(
-            semester_rules=semester_rules,
-            top_direction_rules=top_rules,
-            semester_dir_rules=sem_dir_rules,
-            generic_dir_rules=generic_rules,
-            keyword_rules=keyword_rules,
-            long_term_rules=long_term_rules,
-            version=CONFIG_VERSION,
-        )
+        return out
 
     def _validated(self) -> Optional[ClassificationConfig]:
         cfg = self._collect_config()
@@ -612,7 +685,28 @@ class ClassificationConfigDialog(QDialog):
         cfg = self._validated()
         if cfg is None:
             return
+        prefs = None
+        if self.preference_save_callback is not None:
+            prefs = self._collect_preferences()
+            now = datetime.now().isoformat(timespec="seconds")
+            errors = []
+            for pref in prefs:
+                if not pref.confirmed_at:
+                    pref.confirmed_at = now
+                errors.extend(validate_preference(pref))
+            if errors:
+                QMessageBox.critical(
+                    self, "偏好未通过校验",
+                    "请修正以下长期偏好后再保存：\n\n"
+                    + "\n".join(f"· {e}" for e in errors))
+                return
         if self.save_callback is None:
+            if prefs is not None:
+                try:
+                    self.preference_save_callback(prefs)
+                except Exception as e:
+                    QMessageBox.critical(self, "保存失败", str(e))
+                    return
             self.result_config = cfg
             self.accept()
             return
@@ -628,6 +722,15 @@ class ClassificationConfigDialog(QDialog):
                 self, "保存失败",
                 f"无法写入配置文件，已生效的规则保持不变：\n{e}")
             return
+        if prefs is not None:
+            try:
+                self.preference_save_callback(prefs)
+            except Exception as e:
+                QMessageBox.critical(
+                    self, "偏好保存失败",
+                    f"{e}\n\n分类配置文件已写入；偏好库未更新，"
+                    "本轮预览仍按原偏好生效。")
+                return
         self.result_config = cfg
         self.accept()
 
