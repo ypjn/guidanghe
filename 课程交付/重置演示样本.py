@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
 import hashlib
 import json
 import os
@@ -46,6 +47,29 @@ class LinkedInode(Exception):
 
 class PathReplaced(Exception):
     """目标路径上的文件已不是清单里的 inode，保留现有文件。"""
+
+
+_RENAME_SWAP = 0x00000002  # macOS renamex_np 的 RENAME_SWAP 标志
+
+
+def _rename_swap(from_path: Path, to_path: Path) -> None:
+    """在同一卷内原子交换两个路径的目录项。
+
+    成功后 from_path 与 to_path 指向的 inode 互换，失败抛 OSError。
+    用 renamex_np 而不是 os.rename：标准库不暴露交换语义，普通 rename
+    会覆盖目标路径，正好丢掉对「路径已被换掉」的判断窗口。
+    """
+    libc = ctypes.CDLL(None, use_errno=True)
+    func = getattr(libc, "renamex_np", None)
+    if func is None:
+        raise OSError("当前平台不支持 renamex_np")
+    func.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+    func.restype = ctypes.c_int
+    rc = func(os.fsencode(str(from_path)), os.fsencode(str(to_path)),
+              _RENAME_SWAP)
+    if rc != 0:
+        err = ctypes.get_errno()
+        raise OSError(err, os.strerror(err))
 
 
 def _reject_root(root: Path) -> Path:
@@ -208,11 +232,14 @@ def _move_back(root: Path, src: Path, dest: Path,
 
 
 def _drop_old_name(src: Path, recorded: dict) -> tuple[bool, str]:
-    """只删除清单里的那个旧目录项。
+    """只移除清单里的那个旧目录项的名字。
 
-    先用 O_RDONLY|O_NOFOLLOW 打开旧路径并按描述符核对 inode，再 rename 到
-    同目录临时名，对临时名再核对一次。对不上就把临时名 rename 回旧路径，
-    到此停止，不 unlink。返回 (旧目录项是否已处理, 说明)。
+    先用 O_RDONLY|O_NOFOLLOW 打开旧路径并按描述符核对 inode。再在同一目录
+    建一个空的占位文件（新 inode），用 RENAME_SWAP 把旧路径上的 inode 换到
+    点文件名上（扫描跳过点开头）。交换是原子的：换完核对点文件名上必须还是
+    清单里的 inode，对不上就换回去，用户文件留在原路径。核对通过后再用
+    「改名 + 核对 + 删除」去掉占位 inode 在可见旧路径上的那一个名字；改名后
+    若被换成别的文件就改回来，不删除。返回 (旧目录项是否已处理, 说明)。
     """
     try:
         fd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW)
@@ -238,25 +265,91 @@ def _drop_old_name(src: Path, recorded: dict) -> tuple[bool, str]:
         if temp is None:
             return False, "旧路径未能删除，两份都在"
         try:
-            os.rename(src, temp)
+            pfd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                          | os.O_NOFOLLOW, 0o666)
         except OSError:
             return False, "旧路径未能删除，两份都在"
         try:
-            now = temp.lstat()
+            pinfo = os.fstat(pfd)
+        finally:
+            os.close(pfd)
+        try:
+            _rename_swap(src, temp)
+        except OSError:
+            try:
+                os.unlink(temp)
+            except OSError:
+                pass
+            return False, "旧路径未能删除，两份都在"
+        try:
+            swapped = temp.lstat()
+        except OSError:
+            swapped = None
+        if (swapped is None
+                or swapped.st_dev != recorded.get("dev")
+                or swapped.st_ino != recorded.get("ino")):
+            # 换下来的不是清单里的 inode：换回去，占位 inode 删掉
+            try:
+                _rename_swap(src, temp)
+            except OSError:
+                return False, "旧路径未能删除，两份都在"
+            try:
+                os.unlink(temp)
+            except OSError:
+                pass
+            return False, "旧路径已换成另一份文件，未删除"
+        # 可见旧路径上现在是占位 inode。改名到另一个点文件名，核对是它再删；
+        # 名字被换成别的文件就改回来，不删除。
+        spare = None
+        for index in range(1000):
+            candidate = src.parent / f".演示占位-{os.getpid()}-{index}"
+            try:
+                candidate.lstat()
+            except FileNotFoundError:
+                spare = candidate
+                break
+            except OSError:
+                continue
+        if spare is None:
+            return False, "旧路径未能删除，两份都在"
+        try:
+            os.rename(src, spare)
         except OSError:
             return False, "旧路径未能删除，两份都在"
-        if (now.st_dev != recorded.get("dev")
-                or now.st_ino != recorded.get("ino")):
-            if not os.path.lexists(src):
+        try:
+            moved = spare.lstat()
+        except OSError:
+            moved = None
+        if (moved is None or moved.st_dev != pinfo.st_dev
+                or moved.st_ino != pinfo.st_ino):
+            try:
+                os.rename(spare, src)
+            except OSError:
+                pass
+            # 占位 inode 没能按预期删掉，但点文件名上已核实的清单 inode
+            # 可以收掉，让清单文件只剩目标路径那一个名字，后续写回不会被
+            # 多出来的链接挡下。
+            try:
+                left = temp.lstat()
+            except OSError:
+                left = None
+            if (left is not None
+                    and left.st_dev == recorded.get("dev")
+                    and left.st_ino == recorded.get("ino")):
                 try:
-                    os.rename(temp, src)
+                    os.unlink(temp)
                 except OSError:
-                    return False, "旧路径已换成另一份文件，未删除"
+                    pass
             return False, "旧路径已换成另一份文件，未删除"
+        try:
+            os.unlink(spare)
+        except OSError:
+            return False, "旧路径未能删除，两份都在"
+        # 点文件名上还留着清单 inode 的名字，删掉；清单 inode 还剩目标路径那一个名字
         try:
             os.unlink(temp)
         except OSError:
-            return False, "旧路径未能删除，两份都在"
+            pass
         return True, ""
     finally:
         os.close(fd)
@@ -358,7 +451,9 @@ def _refresh_regular(path: Path, text: str, expected: dict) -> None:
     """用新 inode 刷新目标路径，不改写目标原来指向的 inode。
 
     打开并 fstat 目标，确认还是清单里的文件、nlink 仍为 1。内容写到同目录的
-    新文件，安装前再看一次路径；路径被换掉或多出链接就保留现有文件。
+    新文件，再用 RENAME_SWAP 与目标路径原子交换。交换后核对被换下来的 inode
+    必须还是清单里的文件且 nlink 仍为 1；路径在交换前被换成另一份文件、或
+    又多出目录外硬链接时，立刻换回去并删掉新 inode，现有文件保持不动。
     """
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     try:
@@ -381,7 +476,34 @@ def _refresh_regular(path: Path, text: str, expected: dict) -> None:
             raise PathReplaced(path.name)
         if now.st_nlink > 1:
             raise LinkedInode(path.name)
-        os.rename(temp, path)
+        _rename_swap(temp, path)
+        # 交换后：path 是我们的新 inode，temp 是原路径换下来的 inode
+        try:
+            swapped = temp.lstat()
+        except OSError:
+            swapped = None
+        if (swapped is None
+                or swapped.st_dev != expected.get("dev")
+                or swapped.st_ino != expected.get("ino")
+                or swapped.st_nlink > 1):
+            try:
+                _rename_swap(path, temp)
+            except OSError:
+                raise OSError("安装核对失败且无法换回")
+            try:
+                os.unlink(temp)
+            except OSError:
+                pass
+            temp = None
+            if (swapped is not None
+                    and swapped.st_dev == expected.get("dev")
+                    and swapped.st_ino == expected.get("ino")):
+                raise LinkedInode(path.name)
+            raise PathReplaced(path.name)
+        try:
+            os.unlink(temp)
+        except OSError:
+            raise OSError("旧 inode 未能删除")
         temp = None
     finally:
         if temp is not None:

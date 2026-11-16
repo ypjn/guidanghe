@@ -1,0 +1,20 @@
+阶段三 swap 收口专项输出（S29–S32）
+来源：同轮 test_stage3_delivery.py 完整输出，按编号摘录
+父提交：dbc1329d8f46cbbc26b421e97aa158dd74b8348f
+
+[PASS] S29 去掉旧目录项前被替换时，先移到临时名再核对，对不上就还原
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '已按 inode 移回演示文件（旧路径已换成另一份文件，未删除）：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+旧路径sha=53ea9c12a0bbd59b3553d95327580d2ed92f7461df67519986cffe550dd487d9 内容=b'\xe5\x8f\xa6\xe4\xb8\x80\xe5\xba\x94\xe7\x94\xa8\xe5\x88\x9a\xe4\xbf\x9d\xe5\xad\x98\xe7\x9a\x84\xe7\x94\xa8\xe6\x88\xb7\xe6\x96\x87\xe4\xbb\xb6\n'
+原路径内容='高等数学 极限 导数\n'
+[PASS] S30 安装 swap 前路径被换成用户文件时，swap 后核对并换回
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '路径已被换成另一份文件，未覆盖：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+路径sha=290f919280e6aa4456f285c9d5d579b4a15344739da5f0bebb1a6b52c6eb3051 内容=b'new document saved by another program\n'
+[PASS] S31 swap 前才多出目录外硬链接时，换下后查 nlink 再换回
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '硬链接未覆盖：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+目录外sha=290f919280e6aa4456f285c9d5d579b4a15344739da5f0bebb1a6b52c6eb3051 原路径sha=290f919280e6aa4456f285c9d5d579b4a15344739da5f0bebb1a6b52c6eb3051 同 inode=True
+[PASS] S32 旧名清理 swap 前被换成用户文件时，换下核对并保留
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '已按 inode 移回演示文件（旧路径已换成另一份文件，未删除）：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+可见旧路径sha=53ea9c12a0bbd59b3553d95327580d2ed92f7461df67519986cffe550dd487d9 内容=b'\xe5\x8f\xa6\xe4\xb8\x80\xe5\xba\x94\xe7\x94\xa8\xe5\x88\x9a\xe4\xbf\x9d\xe5\xad\x98\xe7\x9a\x84\xe7\x94\xa8\xe6\x88\xb7\xe6\x96\x87\xe4\xbb\xb6\n'
+原路径内容='高等数学 极限 导数\n'
+
+合计 32 项：通过 32 / 未通过 0

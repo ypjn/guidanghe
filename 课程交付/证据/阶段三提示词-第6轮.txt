@@ -1,0 +1,31 @@
+阶段三第 6 轮任务（按本轮对话要求整理）
+
+继续修 `课程交付/重置演示样本.py` 里「核对之后再截断、再按路径删除」剩下的两处窗口。
+产品源码（`归档盒源码/` 下的运行时代码）不要改，只改课程交付下的重置脚本、测试与文档。
+
+先写三个会失败的回归，再改代码：
+
+复现 A（S30）：`_refresh_regular` 的安装路径从 `os.rename(temp, path)` 改成 RENAME_SWAP。
+探针必须包 `module._rename_swap`，不能包 `os.rename`。swap 之前把 path 换成另一个程序
+刚保存的用户文件（`b"new document saved by another program\n"`，SHA-256 `290f9192…`）。
+修好后用户文件必须保留，不能被改成演示文本。
+
+复现 B（S31）：`_refresh_regular` 安装前的 `path.lstat()` 返回过期的 nlink=1；之后外部进程
+把这个 inode 再加一个目录外硬链接并写入同样的用户内容。修好后在 swap 之后核对被换下来的
+inode，nlink>1 就换回去并抛 `LinkedInode`，原路径与目录外文件都不被截断。
+
+复现 C（S32）：`_drop_old_name` 清理旧名。现在做的是 `swap(moved_path, 点文件名)` 放占位
+inode，再 unlink 可见旧路径。探针必须包 `module._rename_swap`，不能包 `os.unlink`。
+swap 之前把可见旧路径换成用户文件（`"另一应用刚保存的用户文件\n"`，SHA-256 `53ea9c12…`）。
+修好后用户文件留在可见旧路径，原路径仍写回演示内容。
+
+约束：
+
+- 只提交一次，父提交 `dbc1329d8f46cbbc26b421e97aa158dd74b8348f`。
+- 既有回归 S18、S21–S29（S30–S32 是这轮新增）必须保持通过；九套回归都要重跑。
+- 用 SSH 推送 `git@github.com:ypjn/guidanghe.git`，推完用 `git ls-remote` 核对远端哈希。
+- `results_*.json`、`.venv`、演示样本、启动日志不要提交。
+- 证据索引里 `截图/02–05` 自 `f28071d` 起没换过，对应 `阶段三演示运行-20261116.log`，
+  不是 `20261117.log`。
+- 同步更新 `阶段3-使用记录.md`（追加交互 010，保留 001–009）、`阶段3-课程报告.md`、
+  `证据/证据索引.md`，并保存本轮提示词与 TRAE 反馈原文。

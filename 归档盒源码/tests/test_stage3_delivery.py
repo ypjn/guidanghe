@@ -1536,6 +1536,146 @@ def test_cleanup_keeps_replacement_before_removal():
         f"原路径内容={read_text(inside)!r}")
 
 
+def test_install_swap_keeps_replaced_path():
+    """复现 A：安装用的 swap 之前，路径被另一个程序换成自己的文件。
+
+    打开、fstat、安装前 lstat 都还指向清单 inode，紧接着 swap 的瞬间路径
+    被换成另一份普通文件。swap 是原子的，换下来的 inode 不是清单里的，
+    必须立刻换回去，用户文件留在原路径。
+    """
+    module = load_reset_module()
+    parent = tempfile.mkdtemp(prefix="stage3_install_swap_")
+    root = os.path.join(parent, "演示样本")
+    module.reset(__import__("pathlib").Path(root))
+    inside = os.path.join(root, "下载", "笔记.txt")
+    real_swap = module._rename_swap
+    state = {"n": 0}
+
+    def fake_swap(from_path, to_path):
+        if (state["n"] == 0 and ".演示临时-" in str(from_path)
+                and os.path.abspath(str(to_path)) == os.path.abspath(inside)):
+            state["n"] += 1
+            # swap 之前，另一个程序把这一路径换成自己刚保存的文件
+            replace_file_with(inside, USER_BYTES)
+        return real_swap(from_path, to_path)
+
+    module._rename_swap = fake_swap
+    try:
+        notes = module.place_owned_files(__import__("pathlib").Path(root), None)
+    finally:
+        module._rename_swap = real_swap
+    data = read_bytes(inside)
+    ok = (
+        state["n"] == 1
+        and data == USER_BYTES
+        and hashlib.sha256(data or b"").hexdigest() == USER_SHA
+        and any("未覆盖" in line and "笔记.txt" in line for line in notes)
+        and not any("已写回脚本创建的文件" in line and "笔记.txt" in line
+                    for line in notes))
+    rec("S30", "安装 swap 前路径被换成用户文件时，swap 后核对并换回",
+        ok,
+        f"注入={state['n']} 说明={notes}\n"
+        f"路径sha={hashlib.sha256(data or b'').hexdigest()} 内容={data!r}")
+
+
+def test_install_swap_handles_outside_link():
+    """复现 B：安装前 lstat 看到 nlink=1，swap 前才多出目录外硬链接。
+
+    前面的检查都过完之后、swap 之前多出一个目录外硬链接并写入用户内容。
+    swap 后核对被换下来的 inode，nlink 已不是 1，就换回去并删掉新 inode，
+    原 inode 与目录外链接都不被截断。
+    """
+    module = load_reset_module()
+    parent = tempfile.mkdtemp(prefix="stage3_install_link_")
+    root = os.path.join(parent, "演示样本")
+    module.reset(__import__("pathlib").Path(root))
+    inside = os.path.join(root, "下载", "笔记.txt")
+    outside = os.path.join(parent, "目录外个人笔记-s31.txt")
+    real_swap = module._rename_swap
+    state = {"n": 0}
+
+    def fake_swap(from_path, to_path):
+        if (state["n"] == 0 and ".演示临时-" in str(from_path)
+                and os.path.abspath(str(to_path)) == os.path.abspath(inside)):
+            state["n"] += 1
+            # 检查都过了，swap 之前另一个程序把同一 inode 链接到空间外
+            os.link(inside, outside)
+            with open(outside, "wb") as handle:
+                handle.write(USER_BYTES)
+        return real_swap(from_path, to_path)
+
+    module._rename_swap = fake_swap
+    try:
+        notes = module.place_owned_files(__import__("pathlib").Path(root), None)
+    finally:
+        module._rename_swap = real_swap
+    outside_data = read_bytes(outside)
+    inside_data = read_bytes(inside)
+    inside_stat = os.stat(inside) if os.path.exists(inside) else None
+    outside_stat = os.stat(outside) if os.path.exists(outside) else None
+    ok = (
+        state["n"] == 1
+        and outside_data == USER_BYTES
+        and inside_data == USER_BYTES
+        and inside_stat is not None and outside_stat is not None
+        and inside_stat.st_ino == outside_stat.st_ino
+        and any("硬链接未覆盖" in line and "笔记.txt" in line for line in notes)
+        and not any("已写回脚本创建的文件" in line and "笔记.txt" in line
+                    for line in notes))
+    rec("S31", "swap 前才多出目录外硬链接时，换下后查 nlink 再换回",
+        ok,
+        f"注入={state['n']} 说明={notes}\n"
+        f"目录外sha={hashlib.sha256(outside_data or b'').hexdigest()} "
+        f"原路径sha={hashlib.sha256(inside_data or b'').hexdigest()} "
+        f"同 inode={inside_stat is not None and outside_stat is not None and inside_stat.st_ino == outside_stat.st_ino}")
+
+
+def test_cleanup_swap_handles_replaced_old_path():
+    """复现 C：旧名清理的 swap 之前，可见旧路径被换成用户文件。
+
+    swap(src, 点文件名) 之前另一个程序把旧路径换成自己的文件。交换后核对
+    点文件名上不是清单 inode，就换回去，占位 inode 删掉，用户文件留在
+    可见旧路径；原路径仍写回演示内容。
+    """
+    module = load_reset_module()
+    parent = tempfile.mkdtemp(prefix="stage3_cleanup_swap_")
+    root = os.path.join(parent, "演示样本")
+    module.reset(__import__("pathlib").Path(root))
+    inside = os.path.join(root, "下载", "笔记.txt")
+    moved = os.path.join(root, "_已整理", "课程", "未识别学期",
+                         "高等数学", "文档", "笔记.txt")
+    os.makedirs(os.path.dirname(moved), exist_ok=True)
+    os.rename(inside, moved)
+    real_swap = module._rename_swap
+    state = {"n": 0}
+
+    def fake_swap(from_path, to_path):
+        if (state["n"] == 0 and ".演示旧名-" in str(to_path)
+                and os.path.abspath(str(from_path)) == os.path.abspath(moved)):
+            state["n"] += 1
+            # swap 之前，另一个程序把旧路径换成自己刚保存的文件
+            replace_file_with(moved, OTHER_BYTES)
+        return real_swap(from_path, to_path)
+
+    module._rename_swap = fake_swap
+    try:
+        notes = module.place_owned_files(__import__("pathlib").Path(root), None)
+    finally:
+        module._rename_swap = real_swap
+    data = read_bytes(moved)
+    ok = (
+        state["n"] == 1
+        and data == OTHER_BYTES
+        and hashlib.sha256(data or b"").hexdigest() == OTHER_SHA
+        and read_text(inside) == module.OWNED["下载/笔记.txt"]
+        and any("未删除" in line and "笔记.txt" in line for line in notes))
+    rec("S32", "旧名清理 swap 前被换成用户文件时，换下核对并保留",
+        ok,
+        f"注入={state['n']} 说明={notes}\n"
+        f"可见旧路径sha={hashlib.sha256(data or b'').hexdigest()} 内容={data!r}\n"
+        f"原路径内容={read_text(inside)!r}")
+
+
 def test_reset_keeps_replacement_at_old_path():
     module = load_reset_module()
     root = root_dir("replace-source")
@@ -1677,6 +1817,9 @@ def main():
     test_move_back_keeps_replacement_after_link()
     test_writeback_ignores_stale_fstat()
     test_cleanup_keeps_replacement_before_removal()
+    test_install_swap_keeps_replaced_path()
+    test_install_swap_handles_outside_link()
+    test_cleanup_swap_handles_replaced_old_path()
     test_reset_keeps_replacement_at_old_path()
     test_demo_phase2_refuses_existing_paths()
     test_two_rounds_and_execute()
