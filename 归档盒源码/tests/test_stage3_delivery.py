@@ -155,6 +155,23 @@ def replace_file_with(path, data):
     os.replace(name, path)
 
 
+def files_with_bytes(root, data):
+    """列出整理空间里内容恰好等于 data 的普通文件（不含符号链接）。"""
+    hits = []
+    for dirpath, _dirnames, names in os.walk(root):
+        for name in names:
+            path = os.path.join(dirpath, name)
+            if os.path.islink(path):
+                continue
+            try:
+                with open(path, "rb") as handle:
+                    if handle.read() == data:
+                        hits.append(path)
+            except OSError:
+                continue
+    return hits
+
+
 def snapshot(root, rels):
     out = {}
     for rel in rels:
@@ -1676,6 +1693,139 @@ def test_cleanup_swap_handles_replaced_old_path():
         f"原路径内容={read_text(inside)!r}")
 
 
+def test_cleanup_no_unlink_old_name():
+    """复现 C：包住 os.unlink，在删 .演示旧名-* 之前换入用户文件。
+
+    旧实现核对通过后按路径 unlink 这个点文件；注入后返回，用户字节已经
+    不在，脚本仍报「已按 inode 移回演示文件」。修复后重置过程不再 unlink
+    .演示旧名-*，注入点不应发生，也没有用户字节被删掉。
+    """
+    module = load_reset_module()
+    parent = tempfile.mkdtemp(prefix="stage3_unlink_old_name_")
+    root = os.path.join(parent, "演示样本")
+    module.reset(__import__("pathlib").Path(root))
+    inside = os.path.join(root, "下载", "笔记.txt")
+    moved = os.path.join(root, "_已整理", "课程", "未识别学期",
+                         "高等数学", "文档", "笔记.txt")
+    os.makedirs(os.path.dirname(moved), exist_ok=True)
+    os.rename(inside, moved)
+    real_unlink = os.unlink
+    state = {"n": 0}
+
+    def fake_unlink(path, *args, **kwargs):
+        if ".演示旧名-" in str(path) and state["n"] == 0:
+            state["n"] += 1
+            replace_file_with(str(path), OTHER_BYTES)
+        return real_unlink(path, *args, **kwargs)
+
+    os.unlink = fake_unlink
+    try:
+        notes = module.place_owned_files(__import__("pathlib").Path(root), None)
+    finally:
+        os.unlink = real_unlink
+    left = files_with_bytes(root, OTHER_BYTES)
+    ok = (
+        state["n"] == 0
+        and not os.path.exists(moved)
+        and read_text(inside) == module.OWNED["下载/笔记.txt"]
+        and left == []
+        and any("已按 inode 移回演示文件" in line and "笔记.txt" in line
+                for line in notes))
+    rec("S33", "不再 unlink .演示旧名-*，注入点不发生且不删用户字节",
+        ok,
+        f"注入={state['n']} 说明={notes}\n"
+        f"可见旧路径仍在={os.path.exists(moved)} "
+        f"用户字节残留={left}\n"
+        f"原路径内容={read_text(inside)!r}")
+
+
+def test_refresh_no_unlink_temp():
+    """复现 D：包住 os.unlink，在删 .演示临时-* 之前换入用户文件。
+
+    旧实现在写回成功或换回之后 unlink 临时点文件；注入后返回，用户字节
+    已经不在，脚本仍报「已写回脚本创建的文件」。修复后不再 unlink 这个
+    点文件，注入点不应发生，也没有用户字节被删掉。
+    """
+    module = load_reset_module()
+    parent = tempfile.mkdtemp(prefix="stage3_unlink_temp_")
+    root = os.path.join(parent, "演示样本")
+    module.reset(__import__("pathlib").Path(root))
+    inside = os.path.join(root, "下载", "笔记.txt")
+    real_unlink = os.unlink
+    state = {"n": 0, "path": ""}
+
+    def fake_unlink(path, *args, **kwargs):
+        if ".演示临时-" in str(path) and state["n"] == 0:
+            state["n"] += 1
+            state["path"] = str(path)
+            replace_file_with(str(path), USER_BYTES)
+        return real_unlink(path, *args, **kwargs)
+
+    os.unlink = fake_unlink
+    try:
+        notes = module.place_owned_files(__import__("pathlib").Path(root), None)
+    finally:
+        os.unlink = real_unlink
+    left = files_with_bytes(root, USER_BYTES)
+    ok = (
+        state["n"] == 0
+        and read_text(inside) == module.OWNED["下载/笔记.txt"]
+        and left == []
+        and any("已写回脚本创建的文件" in line and "笔记.txt" in line
+                for line in notes))
+    rec("S34", "不再 unlink .演示临时-*，注入点不发生且不删用户字节",
+        ok,
+        f"注入={state['n']} 首个路径={state['path']} 说明={notes}\n"
+        f"用户字节残留={left}\n"
+        f"原路径内容={read_text(inside)!r}")
+
+
+def test_cleanup_no_unlink_placeholder():
+    """复现 E：包住 os.unlink，在删 .演示占位-* 之前换入用户文件。
+
+    旧实现把可见旧路径改成占位点文件后按路径 unlink；注入后返回，用户
+    字节已经不在，脚本仍报「已按 inode 移回演示文件」。修复后只改名不
+    删除，注入点不应发生，也没有用户字节被删掉。
+    """
+    module = load_reset_module()
+    parent = tempfile.mkdtemp(prefix="stage3_unlink_placeholder_")
+    root = os.path.join(parent, "演示样本")
+    module.reset(__import__("pathlib").Path(root))
+    inside = os.path.join(root, "下载", "笔记.txt")
+    moved = os.path.join(root, "_已整理", "课程", "未识别学期",
+                         "高等数学", "文档", "笔记.txt")
+    os.makedirs(os.path.dirname(moved), exist_ok=True)
+    os.rename(inside, moved)
+    real_unlink = os.unlink
+    state = {"n": 0}
+
+    def fake_unlink(path, *args, **kwargs):
+        if ".演示占位-" in str(path) and state["n"] == 0:
+            state["n"] += 1
+            replace_file_with(str(path), OTHER_BYTES)
+        return real_unlink(path, *args, **kwargs)
+
+    os.unlink = fake_unlink
+    try:
+        notes = module.place_owned_files(__import__("pathlib").Path(root), None)
+    finally:
+        os.unlink = real_unlink
+    left = files_with_bytes(root, OTHER_BYTES)
+    ok = (
+        state["n"] == 0
+        and not os.path.exists(moved)
+        and read_text(inside) == module.OWNED["下载/笔记.txt"]
+        and left == []
+        and any("已按 inode 移回演示文件" in line and "笔记.txt" in line
+                for line in notes))
+    rec("S35", "不再 unlink .演示占位-*，注入点不发生且不删用户字节",
+        ok,
+        f"注入={state['n']} 说明={notes}\n"
+        f"可见旧路径仍在={os.path.exists(moved)} "
+        f"用户字节残留={left}\n"
+        f"原路径内容={read_text(inside)!r}")
+
+
 def test_reset_keeps_replacement_at_old_path():
     module = load_reset_module()
     root = root_dir("replace-source")
@@ -1820,6 +1970,9 @@ def main():
     test_install_swap_keeps_replaced_path()
     test_install_swap_handles_outside_link()
     test_cleanup_swap_handles_replaced_old_path()
+    test_cleanup_no_unlink_old_name()
+    test_refresh_no_unlink_temp()
+    test_cleanup_no_unlink_placeholder()
     test_reset_keeps_replacement_at_old_path()
     test_demo_phase2_refuses_existing_paths()
     test_two_rounds_and_execute()

@@ -232,14 +232,15 @@ def _move_back(root: Path, src: Path, dest: Path,
 
 
 def _drop_old_name(src: Path, recorded: dict) -> tuple[bool, str]:
-    """只移除清单里的那个旧目录项的名字。
+    """只把清单里的那个旧名字从可见路径上移开，不按路径删除。
 
     先用 O_RDONLY|O_NOFOLLOW 打开旧路径并按描述符核对 inode。再在同一目录
     建一个空的占位文件（新 inode），用 RENAME_SWAP 把旧路径上的 inode 换到
     点文件名上（扫描跳过点开头）。交换是原子的：换完核对点文件名上必须还是
-    清单里的 inode，对不上就换回去，用户文件留在原路径。核对通过后再用
-    「改名 + 核对 + 删除」去掉占位 inode 在可见旧路径上的那一个名字；改名后
-    若被换成别的文件就改回来，不删除。返回 (旧目录项是否已处理, 说明)。
+    清单里的 inode，对不上就换回去，用户文件留在原路径。核对通过后把占位
+    inode 改名成另一个点文件名，可见旧路径随之消失。全程不 unlink 点文件：
+    .演示旧名-* 留着清单 inode 的那一个名字，.演示占位-* 留着占位 inode。
+    返回 (旧目录项是否已处理, 说明)。
     """
     try:
         fd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW)
@@ -276,10 +277,6 @@ def _drop_old_name(src: Path, recorded: dict) -> tuple[bool, str]:
         try:
             _rename_swap(src, temp)
         except OSError:
-            try:
-                os.unlink(temp)
-            except OSError:
-                pass
             return False, "旧路径未能删除，两份都在"
         try:
             swapped = temp.lstat()
@@ -288,18 +285,14 @@ def _drop_old_name(src: Path, recorded: dict) -> tuple[bool, str]:
         if (swapped is None
                 or swapped.st_dev != recorded.get("dev")
                 or swapped.st_ino != recorded.get("ino")):
-            # 换下来的不是清单里的 inode：换回去，占位 inode 删掉
+            # 换下来的不是清单里的 inode：换回去，占位 inode 留在点文件名上
             try:
                 _rename_swap(src, temp)
             except OSError:
                 return False, "旧路径未能删除，两份都在"
-            try:
-                os.unlink(temp)
-            except OSError:
-                pass
             return False, "旧路径已换成另一份文件，未删除"
-        # 可见旧路径上现在是占位 inode。改名到另一个点文件名，核对是它再删；
-        # 名字被换成别的文件就改回来，不删除。
+        # 可见旧路径上现在是占位 inode。改名到另一个点文件名，可见旧路径消失；
+        # 名字被换成别的文件就改回来，不删除任何东西。
         spare = None
         for index in range(1000):
             candidate = src.parent / f".演示占位-{os.getpid()}-{index}"
@@ -326,30 +319,7 @@ def _drop_old_name(src: Path, recorded: dict) -> tuple[bool, str]:
                 os.rename(spare, src)
             except OSError:
                 pass
-            # 占位 inode 没能按预期删掉，但点文件名上已核实的清单 inode
-            # 可以收掉，让清单文件只剩目标路径那一个名字，后续写回不会被
-            # 多出来的链接挡下。
-            try:
-                left = temp.lstat()
-            except OSError:
-                left = None
-            if (left is not None
-                    and left.st_dev == recorded.get("dev")
-                    and left.st_ino == recorded.get("ino")):
-                try:
-                    os.unlink(temp)
-                except OSError:
-                    pass
             return False, "旧路径已换成另一份文件，未删除"
-        try:
-            os.unlink(spare)
-        except OSError:
-            return False, "旧路径未能删除，两份都在"
-        # 点文件名上还留着清单 inode 的名字，删掉；清单 inode 还剩目标路径那一个名字
-        try:
-            os.unlink(temp)
-        except OSError:
-            pass
         return True, ""
     finally:
         os.close(fd)
@@ -424,7 +394,10 @@ def _write_ledger(root: Path, files: dict, preserved: list[str] | None) -> None:
 
 
 def _write_temp_text(parent: Path, text: str) -> Path:
-    """在同一目录写一个新的普通文件，返回临时名。"""
+    """在同一目录写一个新的普通文件，返回临时名。
+
+    写入失败时不按路径删除这个点文件：扫描会跳过点开头，留下比误删更安全。
+    """
     data = text.encode("utf-8")
     for index in range(1000):
         name = parent / f".演示临时-{os.getpid()}-{index}"
@@ -435,25 +408,44 @@ def _write_temp_text(parent: Path, text: str) -> Path:
             continue
         try:
             os.write(fd, data)
-        except OSError:
+        finally:
             os.close(fd)
-            try:
-                os.unlink(name)
-            except OSError:
-                pass
-            raise
-        os.close(fd)
         return name
     raise OSError("无法创建临时文件")
 
 
-def _refresh_regular(path: Path, text: str, expected: dict) -> None:
+def _has_dot_old_link(root: Path, dev: int, ino: int) -> bool:
+    """整理空间里是否有本次清理留下的 .演示旧名-* 指向这个 inode。
+
+    扫描会跳过点开头的名字，所以这种多出来的名字不算被别的程序共享。
+    """
+    for path in _find_moved(root, {"dev": dev, "ino": ino}):
+        if path.name.startswith(".演示旧名-"):
+            return True
+    return False
+
+
+def _nlink_allowed(root: Path, dev: int, ino: int, nlink: int) -> bool:
+    """这个 inode 的链接数是否可以安全写回。
+
+    只有一条名字（写回后旧 inode 只剩临时点文件），或者多出来的那一条
+    正是本次清理留下的 .演示旧名-*（nlink 正好为 2），才允许保留路径上的
+    新 inode。其它情况一律换回去。
+    """
+    if nlink == 1:
+        return True
+    return nlink == 2 and _has_dot_old_link(root, dev, ino)
+
+
+def _refresh_regular(path: Path, text: str, expected: dict,
+                     root: Path) -> None:
     """用新 inode 刷新目标路径，不改写目标原来指向的 inode。
 
-    打开并 fstat 目标，确认还是清单里的文件、nlink 仍为 1。内容写到同目录的
-    新文件，再用 RENAME_SWAP 与目标路径原子交换。交换后核对被换下来的 inode
-    必须还是清单里的文件且 nlink 仍为 1；路径在交换前被换成另一份文件、或
-    又多出目录外硬链接时，立刻换回去并删掉新 inode，现有文件保持不动。
+    打开并 fstat 目标，确认还是清单里的文件。内容写到同目录的新文件，再用
+    RENAME_SWAP 与目标路径原子交换。交换后核对被换下来的 inode：它只剩点
+    文件名，或另一个名字就是本次清理留下的 .演示旧名-* 且 nlink 正好为 2，
+    才算没有被别的程序共享；否则立刻换回去。全程不 unlink 点文件：留下的
+    .演示临时-*、.演示旧名-* 扫描都会跳过。
     """
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     try:
@@ -461,68 +453,56 @@ def _refresh_regular(path: Path, text: str, expected: dict) -> None:
         if (info.st_dev != expected.get("dev")
                 or info.st_ino != expected.get("ino")):
             raise PathReplaced(path.name)
-        if info.st_nlink > 1:
+        if not _nlink_allowed(root, info.st_dev, info.st_ino, info.st_nlink):
             raise LinkedInode(path.name)
     finally:
         os.close(fd)
     temp = _write_temp_text(path.parent, text)
     try:
+        now = path.lstat()
+    except OSError:
+        raise PathReplaced(path.name)
+    if (now.st_dev != expected.get("dev")
+            or now.st_ino != expected.get("ino")):
+        raise PathReplaced(path.name)
+    if not _nlink_allowed(root, now.st_dev, now.st_ino, now.st_nlink):
+        raise LinkedInode(path.name)
+    _rename_swap(temp, path)
+    # 交换后：path 是我们的新 inode，temp 是原路径换下来的 inode
+    try:
+        swapped = temp.lstat()
+    except OSError:
+        swapped = None
+    if (swapped is None
+            or swapped.st_dev != expected.get("dev")
+            or swapped.st_ino != expected.get("ino")):
         try:
-            now = path.lstat()
+            _rename_swap(path, temp)
         except OSError:
-            raise PathReplaced(path.name)
-        if (now.st_dev != expected.get("dev")
-                or now.st_ino != expected.get("ino")):
-            raise PathReplaced(path.name)
-        if now.st_nlink > 1:
-            raise LinkedInode(path.name)
-        _rename_swap(temp, path)
-        # 交换后：path 是我们的新 inode，temp 是原路径换下来的 inode
+            raise OSError("安装核对失败且无法换回")
+        raise PathReplaced(path.name)
+    if not _nlink_allowed(root, swapped.st_dev, swapped.st_ino,
+                          swapped.st_nlink):
         try:
-            swapped = temp.lstat()
+            _rename_swap(path, temp)
         except OSError:
-            swapped = None
-        if (swapped is None
-                or swapped.st_dev != expected.get("dev")
-                or swapped.st_ino != expected.get("ino")
-                or swapped.st_nlink > 1):
-            try:
-                _rename_swap(path, temp)
-            except OSError:
-                raise OSError("安装核对失败且无法换回")
-            try:
-                os.unlink(temp)
-            except OSError:
-                pass
-            temp = None
-            if (swapped is not None
-                    and swapped.st_dev == expected.get("dev")
-                    and swapped.st_ino == expected.get("ino")):
-                raise LinkedInode(path.name)
-            raise PathReplaced(path.name)
-        try:
-            os.unlink(temp)
-        except OSError:
-            raise OSError("旧 inode 未能删除")
-        temp = None
-    finally:
-        if temp is not None:
-            try:
-                os.unlink(temp)
-            except OSError:
-                pass
+            raise OSError("安装核对失败且无法换回")
+        raise LinkedInode(path.name)
+    # 成功：旧 inode 留在 .演示临时-* 上，不删除；扫描会跳过点开头
 
 
 def _create_regular(path: Path, text: str) -> None:
-    """新建一份演示文件：先写新 inode，再以独占链接安装到路径。"""
-    temp = _write_temp_text(path.parent, text)
+    """新建一份演示文件：独占创建，不覆盖、不跟随链接，也不留点文件。"""
+    data = text.encode("utf-8")
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                 | os.O_NOFOLLOW, 0o666)
     try:
-        os.link(temp, path)
+        view = memoryview(data)
+        while view:
+            written = os.write(fd, view)
+            view = view[written:]
     finally:
-        try:
-            os.unlink(temp)
-        except OSError:
-            pass
+        os.close(fd)
 
 
 def _remember(ledger: dict, rel: str, path: Path) -> None:
@@ -556,7 +536,7 @@ def place_owned_files(root: Path, preserved: list[str] | None) -> list[str]:
                 notes.append(f"硬链接未覆盖：{rel}")
                 continue
             try:
-                _refresh_regular(path, text, recorded)
+                _refresh_regular(path, text, recorded, root)
             except LinkedInode:
                 notes.append(f"硬链接未覆盖：{rel}")
                 continue
@@ -589,7 +569,7 @@ def place_owned_files(root: Path, preserved: list[str] | None) -> list[str]:
                         status, reason = _move_back(root, unique[0], path, recorded)
                         if status == "moved":
                             try:
-                                _refresh_regular(path, text, recorded)
+                                _refresh_regular(path, text, recorded, root)
                             except LinkedInode:
                                 notes.append(f"硬链接未覆盖：{rel}")
                                 continue
@@ -828,6 +808,9 @@ def main(argv: list[str] | None = None) -> int:
     print(preference_note)
     extras = []
     for path in sorted(p for p in root.rglob("*") if p.is_file() and not p.is_symlink()):
+        if path.name.startswith("."):
+            # 交换收口留下的点文件，扫描会跳过，不当作要提醒的用户文件
+            continue
         rel = path.relative_to(root).as_posix()
         if rel in OWNED or rel == f".organizer/{LEDGER_NAME}":
             continue
