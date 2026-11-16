@@ -931,6 +931,182 @@ def test_dangling_outside_symlink_is_not_followed():
         f"链接仍在={os.path.islink(link)} 外部文件被创建={os.path.exists(target)}")
 
 
+def run_demo_round(root, module, move_rels=None):
+    """重置 → 确认一条空间偏好 → 用主窗口执行演示文件。
+
+    返回 (首次预览基线, 执行目标, 批次历史)。首次预览基线在执行前记录，
+    是「回到首次预览」的对照。
+    """
+    module.reset(__import__("pathlib").Path(root))
+    win = open_window(root)
+    scan_and_preview(win)
+    baseline = {item.file.rel_path: (item.target_rel_path, item.selected)
+                for item in win.current_plan.items}
+    install_space_pref_save()
+    try:
+        select_row(win, "下载/归档盒/开发说明.md")
+        win.on_override_selected()
+        process(0.1)
+    finally:
+        restore_dialogs()
+    win._generate_and_show_plan()
+    assert wait_until(
+        lambda: (not win._plan_working) and win.current_plan is not None
+        and win._plan_valid)
+    wanted = set(move_rels if move_rels is not None else module.OWNED)
+    for item in win.current_plan.items:
+        item.selected = item.file.rel_path in wanted
+    targets = {item.file.rel_path: item.target_rel_path
+               for item in win.current_plan.items}
+    confirm(win, True)
+    hist = history_lines(root)
+    close_window(win)
+    return baseline, targets, hist
+
+
+def test_empty_demo_reset_returns_to_first_preview():
+    module = load_reset_module()
+    script = os.path.join(os.path.dirname(SRC), "课程交付", "重置演示样本.py")
+    parent = tempfile.mkdtemp(prefix="stage3_empty_demo_")
+    root = os.path.join(parent, "演示样本")
+    os.makedirs(root)
+    first = subprocess.run(
+        [sys.executable, script, "--root", root],
+        capture_output=True, text=True)
+    baseline, targets, hist = run_demo_round(root, module)
+    moved_ok = (
+        len(hist) == 4 and all("moved" in line for line in hist[1:])
+        and all(os.path.isfile(os.path.join(root, targets[rel]))
+                for rel in module.OWNED)
+        and all(not os.path.exists(os.path.join(root, rel))
+                for rel in module.OWNED))
+    second = subprocess.run(
+        [sys.executable, script, "--root", root],
+        capture_output=True, text=True)
+    back_ok = (
+        second.returncode == 0
+        and second.stdout.count("已按 inode 移回演示文件") == len(module.OWNED)
+        and all(os.path.isfile(os.path.join(root, rel)) for rel in module.OWNED)
+        and all(not os.path.exists(os.path.join(root, targets[rel]))
+                for rel in module.OWNED))
+    win = open_window(root)
+    scan_and_preview(win)
+    rows = [item.file.rel_path for item in win.current_plan.items]
+    dev = item_of(win.current_plan, "下载/归档盒/开发说明.md")
+    note = item_of(win.current_plan, "下载/笔记.txt")
+    project = item_of(win.current_plan, "项目/AIGC/项目说明.md")
+    after = {
+        "下载/笔记.txt": (note.target_rel_path, note.selected),
+        "项目/AIGC/项目说明.md": (project.target_rel_path, project.selected),
+    }
+    preview_ok = (
+        len(rows) == 3
+        and "待定" in dev.target_rel_path
+        and dev.selected is False
+        and not str(dev.rule_key).startswith("long_term:")
+        and all(after[rel] == baseline[rel] for rel in after))
+    prefs_cleared = len(P.list_space_preferences(root)) == 0
+    history_kept = os.path.isfile(os.path.join(root, ".organizer", "history.db"))
+    ok = (
+        first.returncode == 0
+        and "本空间没有已保存的偏好" in first.stdout
+        and moved_ok and back_ok and preview_ok
+        and prefs_cleared and history_kept)
+    rec("S18", "空演示目录执行后再重置，按 inode 移回并回到首次预览",
+        ok,
+        f"首次重置退出码={first.returncode}\n{first.stdout}"
+        f"执行历史={hist}\n执行目标={targets}\n"
+        f"再次重置退出码={second.returncode}\n{second.stdout}"
+        f"再扫描={rows}\n开发说明={dev.target_rel_path} "
+        f"selected={dev.selected} 依据={dev.rule_key}\n"
+        f"笔记={note.target_rel_path} 项目={project.target_rel_path}\n"
+        f"首次基线={baseline}\n偏好行={len(P.list_space_preferences(root))} "
+        f"history.db={history_kept}")
+    close_window(win)
+
+
+def test_reset_keeps_user_materials_around_moved_demo():
+    module = load_reset_module()
+    script = os.path.join(os.path.dirname(SRC), "课程交付", "重置演示样本.py")
+    parent = tempfile.mkdtemp(prefix="stage3_demo_with_user_")
+    root = os.path.join(parent, "演示样本")
+    os.makedirs(root)
+    owned_user = write(root, "_已整理/用户自有.md", "用户自己放在已整理里的文件\n")
+    normal = write(root, "普通资料/说明.md", "普通资料，不参与演示\n")
+    outside_target = os.path.join(parent, "外部目标.md")
+    with open(outside_target, "w", encoding="utf-8") as handle:
+        handle.write("目录外的正文\n")
+    link = os.path.join(root, "已有链接.md")
+    os.symlink(outside_target, link)
+    dangling = os.path.join(root, "悬空链接.md")
+    os.symlink(os.path.join(parent, "尚不存在.md"), dangling)
+    before = {path: sha256(path) for path in (owned_user, normal, outside_target)}
+    baseline, targets, hist = run_demo_round(root, module)
+    second = subprocess.run(
+        [sys.executable, script, "--root", root],
+        capture_output=True, text=True)
+    after = {path: sha256(path) for path in (owned_user, normal, outside_target)}
+    demo_back = (
+        all(os.path.isfile(os.path.join(root, rel)) for rel in module.OWNED)
+        and all(not os.path.exists(os.path.join(root, targets[rel]))
+                for rel in module.OWNED))
+    win = open_window(root)
+    scan_and_preview(win)
+    rows = [item.file.rel_path for item in win.current_plan.items]
+    ok = (
+        second.returncode == 0
+        and after == before
+        and os.path.islink(link) and os.path.islink(dangling)
+        and demo_back
+        and sorted(rows) == sorted(list(module.OWNED) + ["普通资料/说明.md"])
+        and all(os.path.isfile(os.path.join(root, rel)) for rel in module.OWNED))
+    rec("S19", "用户文件与符号链接在重置前后 SHA 不变，演示文件不重复",
+        ok,
+        f"重置退出码={second.returncode}\n{second.stdout}"
+        f"用户材料前={before}\n用户材料后={after}\n"
+        f"链接仍在={os.path.islink(link)} 悬空链接仍在={os.path.islink(dangling)}\n"
+        f"再扫描={rows}\n执行目标={targets}")
+    close_window(win)
+
+
+def test_undo_after_reset_keeps_restored_files():
+    module = load_reset_module()
+    script = os.path.join(os.path.dirname(SRC), "课程交付", "重置演示样本.py")
+    parent = tempfile.mkdtemp(prefix="stage3_undo_after_reset_")
+    root = os.path.join(parent, "演示样本")
+    os.makedirs(root)
+    owned_user = write(root, "_已整理/用户自有.md", "用户文件\n")
+    normal = write(root, "普通资料/说明.md", "不参与演示\n")
+    before_user = {path: sha256(path) for path in (owned_user, normal)}
+    baseline, targets, hist = run_demo_round(root, module)
+    reset_proc = subprocess.run(
+        [sys.executable, script, "--root", root],
+        capture_output=True, text=True)
+    demo_before = {rel: sha256(os.path.join(root, rel)) for rel in module.OWNED}
+    win = open_window(root)
+    scan_and_preview(win)
+    with yes_answer():
+        win.on_undo()
+    assert wait_until(lambda: not win._working, 30)
+    process(0.1)
+    after_hist = history_lines(root)
+    demo_after = {rel: sha256(os.path.join(root, rel)) for rel in module.OWNED}
+    after_user = {path: sha256(path) for path in (owned_user, normal)}
+    ok = (
+        reset_proc.returncode == 0
+        and demo_after == demo_before
+        and all(demo_after.values())
+        and after_user == before_user
+        and any(line.startswith("batch=1") for line in after_hist)
+        and os.path.isfile(os.path.join(root, ".organizer", "history.db")))
+    rec("S20", "重置之后从主窗口撤销，已恢复的演示文件和用户文件都不变",
+        ok,
+        f"重置退出码={reset_proc.returncode}\n"
+        f"撤销后历史={after_hist}\n演示前={demo_before}\n演示后={demo_after}\n"
+        f"用户前={before_user}\n用户后={after_user}")
+    close_window(win)
+
+
 def test_ledger_tmp_symlink_stays_outside():
     script = os.path.join(os.path.dirname(SRC), "课程交付", "重置演示样本.py")
     parent = tempfile.mkdtemp(prefix="stage3_ledger_link_")
@@ -970,6 +1146,9 @@ def main():
     test_later_preference_on_ordinary_space_stays()
     test_dangling_outside_symlink_is_not_followed()
     test_ledger_tmp_symlink_stays_outside()
+    test_empty_demo_reset_returns_to_first_preview()
+    test_reset_keeps_user_materials_around_moved_demo()
+    test_undo_after_reset_keeps_restored_files()
     test_two_rounds_and_execute()
     test_stale_and_conflict()
     test_cancel_interrupt_undo_conflict()

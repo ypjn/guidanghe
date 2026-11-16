@@ -12,9 +12,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sqlite3
+import stat
 import sys
 import tempfile
 from pathlib import Path
@@ -88,6 +90,109 @@ def _walk(root: Path, rel: str, create_dirs: bool) -> Path:
 def _identity(path: Path) -> dict:
     st = path.lstat()
     return {"dev": st.st_dev, "ino": st.st_ino}
+
+
+def _sha256_file(path: Path) -> str | None:
+    digest = hashlib.sha256()
+    try:
+        with open(path, "rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError:
+        return None
+    return digest.hexdigest()
+
+
+def _identity_matches(recorded: object, current: dict) -> bool:
+    if not isinstance(recorded, dict):
+        return False
+    return (recorded.get("dev") == current["dev"]
+            and recorded.get("ino") == current["ino"])
+
+
+def _same_volume(root: Path, recorded: dict) -> bool:
+    try:
+        dev = root.lstat().st_dev
+    except OSError:
+        return False
+    return recorded.get("dev") == dev
+
+
+def _find_moved(root: Path, recorded: dict) -> list[Path]:
+    """在整理空间内按清单记录的设备号和 inode 找回被移走的演示文件。
+
+    不按文件名搜索，也不跟随符号链接；.organizer 是程序自己的库文件，跳过。
+    记录里带内容指纹时，指纹不一致的不算匹配（防 inode 复用后认错文件）。
+    """
+    found: list[Path] = []
+    dev = recorded.get("dev")
+    ino = recorded.get("ino")
+    if not isinstance(dev, int) or not isinstance(ino, int):
+        return found
+    expected = recorded.get("sha256")
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        here = Path(dirpath)
+        dirnames[:] = [name for name in sorted(dirnames)
+                       if name != ".organizer"
+                       and not (here / name).is_symlink()]
+        for name in sorted(filenames):
+            path = here / name
+            try:
+                info = path.lstat()
+            except OSError:
+                continue
+            if not stat.S_ISREG(info.st_mode):
+                continue
+            if info.st_dev != dev or info.st_ino != ino:
+                continue
+            if isinstance(expected, str) and _sha256_file(path) != expected:
+                continue
+            found.append(path)
+    return found
+
+
+def _move_back(root: Path, src: Path, dest: Path, recorded: dict) -> str | None:
+    """把同一 inode 的文件移回原路径，不覆盖、不跟随链接。
+
+    用「硬链接 + 删旧名」代替覆盖语义的重命名：目标已存在时直接失败，
+    文件系统不支持时也不会去猜别的文件。成功返回 None，失败返回说明。
+    """
+    current = dest.parent
+    while _inside(root, current) and current != root:
+        if current.is_symlink():
+            return "原路径的上级目录是符号链接"
+        current = current.parent
+    if not _inside(root, dest):
+        return "原路径越出整理空间"
+    if dest.is_symlink():
+        return "原路径是符号链接"
+    if dest.exists():
+        return "原路径已被占用"
+    try:
+        os.link(src, dest)
+    except FileExistsError:
+        return "原路径已被占用"
+    except OSError as exc:
+        return f"无法移回：{exc.strerror or exc}"
+    try:
+        info = dest.lstat()
+    except OSError:
+        return "移回后无法核对文件身份"
+    if info.st_dev != recorded.get("dev") or info.st_ino != recorded.get("ino"):
+        try:
+            os.unlink(dest)
+        except OSError:
+            pass
+        return "移回后文件身份不一致"
+    try:
+        os.unlink(src)
+    except OSError:
+        try:
+            os.unlink(dest)
+        except OSError:
+            pass
+        return "移回后无法删除旧位置"
+    return None
 
 
 def _ledger_path(root: Path) -> Path:
@@ -187,7 +292,7 @@ def place_owned_files(root: Path, preserved: list[str] | None) -> list[str]:
                 continue
             recorded = ledger.get(rel)
             current = _identity(path)
-            if recorded != current:
+            if not _identity_matches(recorded, current):
                 notes.append(f"已有文件未覆盖：{rel}")
                 continue
             try:
@@ -197,6 +302,28 @@ def place_owned_files(root: Path, preserved: list[str] | None) -> list[str]:
                 continue
             notes.append(f"已写回脚本创建的文件：{rel}")
         else:
+            recorded = ledger.get(rel)
+            blocked = ""
+            if isinstance(recorded, dict):
+                if _same_volume(root, recorded):
+                    found = _find_moved(root, recorded)
+                    if len(found) == 1:
+                        blocked = _move_back(root, found[0], path, recorded) or ""
+                        if not blocked:
+                            try:
+                                _write_regular(path, text, exclusive=False)
+                            except OSError:
+                                notes.append(f"已按 inode 移回但未写回内容：{rel}")
+                                continue
+                            notes.append(f"已按 inode 移回演示文件：{rel}")
+                            continue
+                        blocked = f"{blocked}：{rel}"
+                    elif len(found) > 1:
+                        blocked = f"找到多个同 inode 的文件，未移动：{rel}"
+                    else:
+                        blocked = f"未在本卷找到已移动的演示文件，已新建：{rel}"
+                else:
+                    blocked = f"记录的设备号与当前卷不同，未按 inode 移回：{rel}"
             try:
                 _write_regular(path, text, exclusive=True)
             except OSError:
@@ -206,7 +333,12 @@ def place_owned_files(root: Path, preserved: list[str] | None) -> list[str]:
                 notes.append(f"已有路径未覆盖：{rel}")
                 continue
             ledger[rel] = _identity(path)
+            digest = _sha256_file(path)
+            if digest:
+                ledger[rel]["sha256"] = digest
             notes.append(f"已新建演示文件：{rel}")
+            if blocked:
+                notes.append(blocked)
     try:
         _write_ledger(root, ledger, preserved)
     except Skip as exc:
