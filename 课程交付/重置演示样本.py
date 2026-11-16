@@ -44,6 +44,10 @@ class LinkedInode(Exception):
     """打开之后才发现这个 inode 多出了链接，不截断、不写入。"""
 
 
+class PathReplaced(Exception):
+    """目标路径上的文件已不是清单里的 inode，保留现有文件。"""
+
+
 def _reject_root(root: Path) -> Path:
     root = Path(root).expanduser()
     if root.is_symlink():
@@ -156,61 +160,106 @@ def _find_moved(root: Path, recorded: dict) -> list[Path]:
 
 
 def _move_back(root: Path, src: Path, dest: Path,
-               recorded: dict) -> tuple[bool, str]:
+               recorded: dict) -> tuple[str, str]:
     """把同一 inode 的文件移回原路径，不覆盖、不跟随链接。
 
     用「硬链接 + 删旧名」代替覆盖语义的重命名：目标已存在时直接失败，
-    文件系统不支持时也不会去猜别的文件。返回 (是否已放到原路径, 说明)。
-    删除旧名之前重新 lstat：旧路径已被换成另一份文件时保留它，不 unlink。
+    文件系统不支持时也不会去猜别的文件。返回 (状态, 说明)：
+    moved 表示已放到原路径；stop 表示链接后目标路径被换掉，调用方必须保留
+    该目录项且不得再新建；blocked 表示没有移回。
     """
     current = dest.parent
     while _inside(root, current) and current != root:
         if current.is_symlink():
-            return False, "原路径的上级目录是符号链接"
+            return "blocked", "原路径的上级目录是符号链接"
         current = current.parent
     if not _inside(root, dest):
-        return False, "原路径越出整理空间"
+        return "blocked", "原路径越出整理空间"
     if dest.is_symlink():
-        return False, "原路径是符号链接"
+        return "blocked", "原路径是符号链接"
     if dest.exists():
-        return False, "原路径已被占用"
+        return "blocked", "原路径已被占用"
     try:
         src_info = src.lstat()
     except OSError:
-        return False, "旧位置已无法读取"
+        return "blocked", "旧位置已无法读取"
     if (src_info.st_dev != recorded.get("dev")
             or src_info.st_ino != recorded.get("ino")):
-        return False, "旧位置的文件身份已变化"
+        return "blocked", "旧位置的文件身份已变化"
     if src_info.st_nlink > 1:
-        return False, "旧位置是多链接 inode"
+        return "blocked", "旧位置是多链接 inode"
     try:
         os.link(src, dest)
     except FileExistsError:
-        return False, "原路径已被占用"
+        return "blocked", "原路径已被占用"
     except OSError as exc:
-        return False, f"无法移回：{exc.strerror or exc}"
+        return "blocked", f"无法移回：{exc.strerror or exc}"
     try:
         info = dest.lstat()
     except OSError:
-        return False, "移回后无法核对文件身份"
+        return "blocked", "移回后无法核对文件身份"
     if info.st_dev != recorded.get("dev") or info.st_ino != recorded.get("ino"):
-        try:
-            os.unlink(dest)
-        except OSError:
-            pass
-        return False, "移回后文件身份不一致"
+        # 身份对不上说明目标路径已被换成另一份文件。保留它，不 unlink。
+        return "stop", "移回后身份不一致，未删除"
+    dropped, reason = _drop_old_name(src, recorded)
+    if not dropped:
+        return "moved", reason
+    return "moved", ""
+
+
+def _drop_old_name(src: Path, recorded: dict) -> tuple[bool, str]:
+    """只删除清单里的那个旧目录项。
+
+    先用 O_RDONLY|O_NOFOLLOW 打开旧路径并按描述符核对 inode，再 rename 到
+    同目录临时名，对临时名再核对一次。对不上就把临时名 rename 回旧路径，
+    到此停止，不 unlink。返回 (旧目录项是否已处理, 说明)。
+    """
     try:
-        now = src.lstat()
-    except OSError:
+        fd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW)
+    except FileNotFoundError:
         return True, ""
-    if (now.st_dev != recorded.get("dev")
-            or now.st_ino != recorded.get("ino")):
-        return True, "旧路径已换成另一份文件，未删除"
-    try:
-        os.unlink(src)
     except OSError:
-        return True, "旧路径未能删除，两份都在"
-    return True, ""
+        return False, "旧路径无法打开，未删除"
+    try:
+        info = os.fstat(fd)
+        if (info.st_dev != recorded.get("dev")
+                or info.st_ino != recorded.get("ino")):
+            return False, "旧路径已换成另一份文件，未删除"
+        temp = None
+        for index in range(1000):
+            candidate = src.parent / f".演示旧名-{os.getpid()}-{index}"
+            try:
+                candidate.lstat()
+            except FileNotFoundError:
+                temp = candidate
+                break
+            except OSError:
+                continue
+        if temp is None:
+            return False, "旧路径未能删除，两份都在"
+        try:
+            os.rename(src, temp)
+        except OSError:
+            return False, "旧路径未能删除，两份都在"
+        try:
+            now = temp.lstat()
+        except OSError:
+            return False, "旧路径未能删除，两份都在"
+        if (now.st_dev != recorded.get("dev")
+                or now.st_ino != recorded.get("ino")):
+            if not os.path.lexists(src):
+                try:
+                    os.rename(temp, src)
+                except OSError:
+                    return False, "旧路径已换成另一份文件，未删除"
+            return False, "旧路径已换成另一份文件，未删除"
+        try:
+            os.unlink(temp)
+        except OSError:
+            return False, "旧路径未能删除，两份都在"
+        return True, ""
+    finally:
+        os.close(fd)
 
 
 def _ledger_path(root: Path) -> Path:
@@ -281,20 +330,84 @@ def _write_ledger(root: Path, files: dict, preserved: list[str] | None) -> None:
     _atomic_write(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
 
 
-def _write_regular(path: Path, text: str, exclusive: bool) -> None:
-    flags = os.O_WRONLY | os.O_NOFOLLOW
-    if exclusive:
-        flags |= os.O_CREAT | os.O_EXCL
-    fd = os.open(path, flags)
+def _write_temp_text(parent: Path, text: str) -> Path:
+    """在同一目录写一个新的普通文件，返回临时名。"""
+    data = text.encode("utf-8")
+    for index in range(1000):
+        name = parent / f".演示临时-{os.getpid()}-{index}"
+        try:
+            fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                         | os.O_NOFOLLOW, 0o666)
+        except FileExistsError:
+            continue
+        try:
+            os.write(fd, data)
+        except OSError:
+            os.close(fd)
+            try:
+                os.unlink(name)
+            except OSError:
+                pass
+            raise
+        os.close(fd)
+        return name
+    raise OSError("无法创建临时文件")
+
+
+def _refresh_regular(path: Path, text: str, expected: dict) -> None:
+    """用新 inode 刷新目标路径，不改写目标原来指向的 inode。
+
+    打开并 fstat 目标，确认还是清单里的文件、nlink 仍为 1。内容写到同目录的
+    新文件，安装前再看一次路径；路径被换掉或多出链接就保留现有文件。
+    """
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
     try:
-        # 调用方上一次看 nlink 到这次打开之间可能又多出一个链接（例如刚做完
-        # os.link）。截断和写入会改到共享这个 inode 的所有名字，包括空间外的。
-        if os.fstat(fd).st_nlink > 1:
+        info = os.fstat(fd)
+        if (info.st_dev != expected.get("dev")
+                or info.st_ino != expected.get("ino")):
+            raise PathReplaced(path.name)
+        if info.st_nlink > 1:
             raise LinkedInode(path.name)
-        os.ftruncate(fd, 0)
-        os.write(fd, text.encode("utf-8"))
     finally:
         os.close(fd)
+    temp = _write_temp_text(path.parent, text)
+    try:
+        try:
+            now = path.lstat()
+        except OSError:
+            raise PathReplaced(path.name)
+        if (now.st_dev != expected.get("dev")
+                or now.st_ino != expected.get("ino")):
+            raise PathReplaced(path.name)
+        if now.st_nlink > 1:
+            raise LinkedInode(path.name)
+        os.rename(temp, path)
+        temp = None
+    finally:
+        if temp is not None:
+            try:
+                os.unlink(temp)
+            except OSError:
+                pass
+
+
+def _create_regular(path: Path, text: str) -> None:
+    """新建一份演示文件：先写新 inode，再以独占链接安装到路径。"""
+    temp = _write_temp_text(path.parent, text)
+    try:
+        os.link(temp, path)
+    finally:
+        try:
+            os.unlink(temp)
+        except OSError:
+            pass
+
+
+def _remember(ledger: dict, rel: str, path: Path) -> None:
+    ledger[rel] = _identity(path)
+    digest = _sha256_file(path)
+    if digest:
+        ledger[rel]["sha256"] = digest
 
 
 def place_owned_files(root: Path, preserved: list[str] | None) -> list[str]:
@@ -321,13 +434,17 @@ def place_owned_files(root: Path, preserved: list[str] | None) -> list[str]:
                 notes.append(f"硬链接未覆盖：{rel}")
                 continue
             try:
-                _write_regular(path, text, exclusive=False)
+                _refresh_regular(path, text, recorded)
             except LinkedInode:
                 notes.append(f"硬链接未覆盖：{rel}")
+                continue
+            except PathReplaced:
+                notes.append(f"路径已被换成另一份文件，未覆盖：{rel}")
                 continue
             except OSError:
                 notes.append(f"已有文件未覆盖：{rel}")
                 continue
+            _remember(ledger, rel, path)
             notes.append(f"已写回脚本创建的文件：{rel}")
         else:
             recorded = ledger.get(rel)
@@ -347,18 +464,25 @@ def place_owned_files(root: Path, preserved: list[str] | None) -> list[str]:
                         else:
                             unique.append(candidate)
                     if len(unique) == 1 and not shared:
-                        moved, reason = _move_back(root, unique[0], path, recorded)
-                        if moved:
+                        status, reason = _move_back(root, unique[0], path, recorded)
+                        if status == "moved":
                             try:
-                                _write_regular(path, text, exclusive=False)
+                                _refresh_regular(path, text, recorded)
                             except LinkedInode:
                                 notes.append(f"硬链接未覆盖：{rel}")
+                                continue
+                            except PathReplaced:
+                                notes.append(f"路径已被换成另一份文件，未覆盖：{rel}")
                                 continue
                             except OSError:
                                 notes.append(f"已按 inode 移回但未写回内容：{rel}")
                                 continue
+                            _remember(ledger, rel, path)
                             suffix = f"（{reason}）" if reason else ""
                             notes.append(f"已按 inode 移回演示文件{suffix}：{rel}")
+                            continue
+                        if status == "stop":
+                            notes.append(f"{reason}：{rel}")
                             continue
                         blocked = f"{reason}：{rel}"
                     elif shared:
@@ -370,20 +494,14 @@ def place_owned_files(root: Path, preserved: list[str] | None) -> list[str]:
                 else:
                     blocked = f"记录的设备号与当前卷不同，未按 inode 移回：{rel}"
             try:
-                _write_regular(path, text, exclusive=True)
-            except LinkedInode:
-                notes.append(f"硬链接未覆盖：{rel}")
-                continue
+                _create_regular(path, text)
             except OSError:
                 notes.append(f"已有文件未覆盖：{rel}")
                 continue
             if path.is_symlink() or not path.is_file():
                 notes.append(f"已有路径未覆盖：{rel}")
                 continue
-            ledger[rel] = _identity(path)
-            digest = _sha256_file(path)
-            if digest:
-                ledger[rel]["sha256"] = digest
+            _remember(ledger, rel, path)
             notes.append(f"已新建演示文件：{rel}")
             if blocked:
                 notes.append(blocked)

@@ -1,0 +1,46 @@
+命令（修复前，父提交 d028f3f）：
+QT_QPA_PLATFORM=offscreen ARCHIVEBOX_APP_DIR=… ARCHIVEBOX_SCHEME_DIR=… ARCHIVEBOX_RECENT_FILE=… \
+/Users/ypjn/aigc/归档盒源码/.venv/bin/python -c "…S26 / S27 / S28 / S29"
+BASE d028f3ff4f19978feeac10dcd94bdad48ad31fd7  DATE 2026-11-16
+
+[FAIL] S26 打开之前路径被换成另一份文件时，保留该文件，不按旧 inode 写入
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '已写回脚本创建的文件：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+路径sha=039c9f4fd98b0173f9c0baa4068b472de928725db54d39167fdebe14eb338a1f 内容=b'\xe9\xab\x98\xe7\xad\x89\xe6\x95\xb0\xe5\xad\xa6 \xe6\x9e\x81\xe9\x99\x90 \xe5\xaf\xbc\xe6\x95\xb0\n'
+[FAIL] S27 链接后目标路径被换掉时，保留换入的文件，不再新建或 unlink
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '已新建演示文件：下载/笔记.txt', '移回后文件身份不一致：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+目标sha=039c9f4fd98b0173f9c0baa4068b472de928725db54d39167fdebe14eb338a1f 内容=b'\xe9\xab\x98\xe7\xad\x89\xe6\x95\xb0\xe5\xad\xa6 \xe6\x9e\x81\xe9\x99\x90 \xe5\xaf\xbc\xe6\x95\xb0\n'
+旧位置仍在=True
+[FAIL] S28 fstat 结果过期时不截断不写入，安装前再看一次路径
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '已写回脚本创建的文件：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+目录外sha=039c9f4fd98b0173f9c0baa4068b472de928725db54d39167fdebe14eb338a1f 内容=b'\xe9\xab\x98\xe7\xad\x89\xe6\x95\xb0\xe5\xad\xa6 \xe6\x9e\x81\xe9\x99\x90 \xe5\xaf\xbc\xe6\x95\xb0\n'
+原路径sha=039c9f4fd98b0173f9c0baa4068b472de928725db54d39167fdebe14eb338a1f
+[FAIL] S29 去掉旧目录项前被替换时，先移到临时名再核对，对不上就还原
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '已按 inode 移回演示文件：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+旧路径sha=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 内容=None
+原路径内容='高等数学 极限 导数\n'
+
+命令（修复后，同一台机、同一脚本、同一注入）：
+BASE d028f3ff4f19978feeac10dcd94bdad48ad31fd7（工作区含本轮修改）  DATE 2026-11-16
+
+[PASS] S26 打开之前路径被换成另一份文件时，保留该文件，不按旧 inode 写入
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '路径已被换成另一份文件，未覆盖：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+路径sha=290f919280e6aa4456f285c9d5d579b4a15344739da5f0bebb1a6b52c6eb3051 内容=b'new document saved by another program\n'
+[PASS] S27 链接后目标路径被换掉时，保留换入的文件，不再新建或 unlink
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '移回后身份不一致，未删除：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+目标sha=290f919280e6aa4456f285c9d5d579b4a15344739da5f0bebb1a6b52c6eb3051 内容=b'new document saved by another program\n'
+旧位置仍在=True
+[PASS] S28 fstat 结果过期时不截断不写入，安装前再看一次路径
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '硬链接未覆盖：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+目录外sha=290f919280e6aa4456f285c9d5d579b4a15344739da5f0bebb1a6b52c6eb3051 内容=b'new document saved by another program\n'
+原路径sha=290f919280e6aa4456f285c9d5d579b4a15344739da5f0bebb1a6b52c6eb3051
+[PASS] S29 去掉旧目录项前被替换时，先移到临时名再核对，对不上就还原
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '已按 inode 移回演示文件（旧路径已换成另一份文件，未删除）：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+旧路径sha=53ea9c12a0bbd59b3553d95327580d2ed92f7461df67519986cffe550dd487d9 内容=b'\xe5\x8f\xa6\xe4\xb8\x80\xe5\xba\x94\xe7\x94\xa8\xe5\x88\x9a\xe4\xbf\x9d\xe5\xad\x98\xe7\x9a\x84\xe7\x94\xa8\xe6\x88\xb7\xe6\x96\x87\xe4\xbb\xb6\n'
+原路径内容='高等数学 极限 导数\n'
+
+说明：
+- S26 注入点：对「下载/笔记.txt」且不带 O_CREAT 的那次 os.open，在真正打开之前用另一份普通文件替换该路径。
+- S27 注入点：os.link(src, dest) 成功之后立刻用另一份普通文件替换 dest。
+- S28 注入点：对目标 inode 的 os.fstat，真实取到结果后加一个目录外硬链接并写入用户字节，再把过期结果返回脚本。
+- S29 注入点：实际去掉旧目录项的那次调用（实现改成 rename 后，替换做进那次 rename；旧实现的 os.unlink 入口也保留探测）。
+- 修复前四处都返回成功并改掉或删掉了用户文件；修复后用户文件内容与 SHA-256 不变，说明写明「未覆盖」或「未删除」，不再报「已写回脚本创建的文件」或「已按 inode 移回」。

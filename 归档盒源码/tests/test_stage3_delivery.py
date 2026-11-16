@@ -135,6 +135,26 @@ def read_text(path):
         return None
 
 
+def read_bytes(path):
+    try:
+        with open(path, "rb") as handle:
+            return handle.read()
+    except OSError:
+        return None
+
+
+def replace_file_with(path, data):
+    """用另一份普通文件替换路径（新 inode），模拟另一个程序保存文件。"""
+    parent = os.path.dirname(path)
+    fd, name = tempfile.mkstemp(prefix=".user-", dir=parent)
+    try:
+        os.write(fd, data)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    os.replace(name, path)
+
+
 def snapshot(root, rels):
     out = {}
     for rel in rels:
@@ -1327,6 +1347,195 @@ def test_writeback_refuses_link_added_before_open():
         f"原路径内容={read_text(inside)!r} nlink={nlink}")
 
 
+USER_BYTES = b"new document saved by another program\n"
+USER_SHA = "290f919280e6aa4456f285c9d5d579b4a15344739da5f0bebb1a6b52c6eb3051"
+OTHER_BYTES = "另一应用刚保存的用户文件\n".encode("utf-8")
+OTHER_SHA = "53ea9c12a0bbd59b3553d95327580d2ed92f7461df67519986cffe550dd487d9"
+
+
+def test_writeback_keeps_replaced_path():
+    """复现 1：打开之前路径被换成另一份普通文件。"""
+    module = load_reset_module()
+    parent = tempfile.mkdtemp(prefix="stage3_writeback_replaced_")
+    root = os.path.join(parent, "演示样本")
+    module.reset(__import__("pathlib").Path(root))
+    inside = os.path.join(root, "下载", "笔记.txt")
+    real_open = os.open
+    state = {"n": 0}
+
+    def fake_open(path, flags, *args, **kwargs):
+        if (os.path.abspath(str(path)) == os.path.abspath(inside)
+                and not (flags & os.O_CREAT) and state["n"] == 0):
+            state["n"] += 1
+            # 真正 open 之前，另一个程序把这一路径换成自己刚保存的文件
+            replace_file_with(inside, USER_BYTES)
+        return real_open(path, flags, *args, **kwargs)
+
+    os.open = fake_open
+    try:
+        notes = module.place_owned_files(__import__("pathlib").Path(root), None)
+    finally:
+        os.open = real_open
+    data = read_bytes(inside)
+    ok = (
+        state["n"] == 1
+        and data == USER_BYTES
+        and hashlib.sha256(data or b"").hexdigest() == USER_SHA
+        and any("未覆盖" in line and "笔记.txt" in line for line in notes)
+        and not any("已写回脚本创建的文件" in line and "笔记.txt" in line
+                    for line in notes)
+        and not any("已新建演示文件" in line and "笔记.txt" in line
+                    for line in notes))
+    rec("S26", "打开之前路径被换成另一份文件时，保留该文件，不按旧 inode 写入",
+        ok,
+        f"注入={state['n']} 说明={notes}\n"
+        f"路径sha={hashlib.sha256(data or b'').hexdigest()} 内容={data!r}")
+
+
+def test_move_back_keeps_replacement_after_link():
+    """复现 2：link(src, dest) 成功之后，dest 被换成另一份普通文件。"""
+    module = load_reset_module()
+    parent = tempfile.mkdtemp(prefix="stage3_moveback_replaced_")
+    root = os.path.join(parent, "演示样本")
+    module.reset(__import__("pathlib").Path(root))
+    inside = os.path.join(root, "下载", "笔记.txt")
+    moved = os.path.join(root, "_已整理", "课程", "未识别学期",
+                         "高等数学", "文档", "笔记.txt")
+    os.makedirs(os.path.dirname(moved), exist_ok=True)
+    os.rename(inside, moved)
+    real_link = os.link
+    state = {"n": 0}
+
+    def fake_link(a, b, *args, **kwargs):
+        real_link(a, b, *args, **kwargs)
+        if os.path.abspath(str(a)) == os.path.abspath(moved) and state["n"] == 0:
+            state["n"] += 1
+            # 链接成功后、核对并删旧名之前，另一个程序替换了目标路径
+            replace_file_with(str(b), USER_BYTES)
+
+    os.link = fake_link
+    try:
+        notes = module.place_owned_files(__import__("pathlib").Path(root), None)
+    finally:
+        os.link = real_link
+    data = read_bytes(inside)
+    ok = (
+        state["n"] == 1
+        and data == USER_BYTES
+        and hashlib.sha256(data or b"").hexdigest() == USER_SHA
+        and any("移回后身份不一致" in line and "未删除" in line
+                and "笔记.txt" in line for line in notes)
+        and not any("已新建演示文件" in line and "笔记.txt" in line
+                    for line in notes)
+        and not any("已按 inode 移回" in line and "笔记.txt" in line
+                    for line in notes))
+    rec("S27", "链接后目标路径被换掉时，保留换入的文件，不再新建或 unlink",
+        ok,
+        f"注入={state['n']} 说明={notes}\n"
+        f"目标sha={hashlib.sha256(data or b'').hexdigest()} 内容={data!r}\n"
+        f"旧位置仍在={os.path.exists(moved)}")
+
+
+def test_writeback_ignores_stale_fstat():
+    """复现 3：fstat 返回过期结果，之后又多出目录外硬链接。"""
+    module = load_reset_module()
+    parent = tempfile.mkdtemp(prefix="stage3_stale_fstat_")
+    root = os.path.join(parent, "演示样本")
+    module.reset(__import__("pathlib").Path(root))
+    inside = os.path.join(root, "下载", "笔记.txt")
+    outside = os.path.join(parent, "目录外个人笔记-c.txt")
+    target = os.stat(inside)
+    real_fstat = os.fstat
+    real_link = os.link
+    state = {"n": 0}
+
+    def fake_fstat(fd):
+        info = real_fstat(fd)
+        if (state["n"] == 0 and info.st_dev == target.st_dev
+                and info.st_ino == target.st_ino):
+            state["n"] += 1
+            # fstat 已经取到结果（nlink 仍是 1），之后才多出一个目录外链接
+            real_link(inside, outside)
+            with open(outside, "wb") as handle:
+                handle.write(USER_BYTES)
+            return info
+        return info
+
+    os.fstat = fake_fstat
+    try:
+        notes = module.place_owned_files(__import__("pathlib").Path(root), None)
+    finally:
+        os.fstat = real_fstat
+    outside_data = read_bytes(outside)
+    inside_data = read_bytes(inside)
+    ok = (
+        state["n"] == 1
+        and outside_data == USER_BYTES
+        and hashlib.sha256(outside_data or b"").hexdigest() == USER_SHA
+        and inside_data == USER_BYTES
+        and any("硬链接未覆盖" in line and "笔记.txt" in line for line in notes)
+        and not any("已写回脚本创建的文件" in line and "笔记.txt" in line
+                    for line in notes))
+    rec("S28", "fstat 结果过期时不截断不写入，安装前再看一次路径",
+        ok,
+        f"注入={state['n']} 说明={notes}\n"
+        f"目录外sha={hashlib.sha256(outside_data or b'').hexdigest()} "
+        f"内容={outside_data!r}\n"
+        f"原路径sha={hashlib.sha256(inside_data or b'').hexdigest()}")
+
+
+def test_cleanup_keeps_replacement_before_removal():
+    """复现 4：最后一次身份检查之后、去掉旧目录项之前被替换。"""
+    module = load_reset_module()
+    parent = tempfile.mkdtemp(prefix="stage3_cleanup_replaced_")
+    root = os.path.join(parent, "演示样本")
+    module.reset(__import__("pathlib").Path(root))
+    inside = os.path.join(root, "下载", "笔记.txt")
+    moved = os.path.join(root, "_已整理", "课程", "未识别学期",
+                         "高等数学", "文档", "笔记.txt")
+    os.makedirs(os.path.dirname(moved), exist_ok=True)
+    os.rename(inside, moved)
+    real_unlink = os.unlink
+    real_rename = os.rename
+    state = {"n": 0}
+
+    def swap_in_user_file():
+        state["n"] += 1
+        replace_file_with(moved, OTHER_BYTES)
+
+    def fake_unlink(path, *args, **kwargs):
+        if (os.path.abspath(str(path)) == os.path.abspath(moved)
+                and state["n"] == 0):
+            swap_in_user_file()
+        return real_unlink(path, *args, **kwargs)
+
+    def fake_rename(src, dst, *args, **kwargs):
+        if (os.path.abspath(str(src)) == os.path.abspath(moved)
+                and state["n"] == 0):
+            swap_in_user_file()
+        return real_rename(src, dst, *args, **kwargs)
+
+    os.unlink = fake_unlink
+    os.rename = fake_rename
+    try:
+        notes = module.place_owned_files(__import__("pathlib").Path(root), None)
+    finally:
+        os.unlink = real_unlink
+        os.rename = real_rename
+    data = read_bytes(moved)
+    ok = (
+        state["n"] == 1
+        and data == OTHER_BYTES
+        and hashlib.sha256(data or b"").hexdigest() == OTHER_SHA
+        and any("未删除" in line and "笔记.txt" in line for line in notes)
+        and read_text(inside) == module.OWNED["下载/笔记.txt"])
+    rec("S29", "去掉旧目录项前被替换时，先移到临时名再核对，对不上就还原",
+        ok,
+        f"注入={state['n']} 说明={notes}\n"
+        f"旧路径sha={hashlib.sha256(data or b'').hexdigest()} 内容={data!r}\n"
+        f"原路径内容={read_text(inside)!r}")
+
+
 def test_reset_keeps_replacement_at_old_path():
     module = load_reset_module()
     root = root_dir("replace-source")
@@ -1464,6 +1673,10 @@ def main():
     test_reset_never_rewrites_outside_hardlink()
     test_writeback_refuses_link_added_after_move()
     test_writeback_refuses_link_added_before_open()
+    test_writeback_keeps_replaced_path()
+    test_move_back_keeps_replacement_after_link()
+    test_writeback_ignores_stale_fstat()
+    test_cleanup_keeps_replacement_before_removal()
     test_reset_keeps_replacement_at_old_path()
     test_demo_phase2_refuses_existing_paths()
     test_two_rounds_and_execute()
