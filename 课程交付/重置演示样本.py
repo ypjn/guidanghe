@@ -40,6 +40,10 @@ class Skip(Exception):
         self.reason = reason
 
 
+class LinkedInode(Exception):
+    """打开之后才发现这个 inode 多出了链接，不截断、不写入。"""
+
+
 def _reject_root(root: Path) -> Path:
     root = Path(root).expanduser()
     if root.is_symlink():
@@ -283,6 +287,10 @@ def _write_regular(path: Path, text: str, exclusive: bool) -> None:
         flags |= os.O_CREAT | os.O_EXCL
     fd = os.open(path, flags)
     try:
+        # 调用方上一次看 nlink 到这次打开之间可能又多出一个链接（例如刚做完
+        # os.link）。截断和写入会改到共享这个 inode 的所有名字，包括空间外的。
+        if os.fstat(fd).st_nlink > 1:
+            raise LinkedInode(path.name)
         os.ftruncate(fd, 0)
         os.write(fd, text.encode("utf-8"))
     finally:
@@ -314,6 +322,9 @@ def place_owned_files(root: Path, preserved: list[str] | None) -> list[str]:
                 continue
             try:
                 _write_regular(path, text, exclusive=False)
+            except LinkedInode:
+                notes.append(f"硬链接未覆盖：{rel}")
+                continue
             except OSError:
                 notes.append(f"已有文件未覆盖：{rel}")
                 continue
@@ -340,6 +351,9 @@ def place_owned_files(root: Path, preserved: list[str] | None) -> list[str]:
                         if moved:
                             try:
                                 _write_regular(path, text, exclusive=False)
+                            except LinkedInode:
+                                notes.append(f"硬链接未覆盖：{rel}")
+                                continue
                             except OSError:
                                 notes.append(f"已按 inode 移回但未写回内容：{rel}")
                                 continue
@@ -357,6 +371,9 @@ def place_owned_files(root: Path, preserved: list[str] | None) -> list[str]:
                     blocked = f"记录的设备号与当前卷不同，未按 inode 移回：{rel}"
             try:
                 _write_regular(path, text, exclusive=True)
+            except LinkedInode:
+                notes.append(f"硬链接未覆盖：{rel}")
+                continue
             except OSError:
                 notes.append(f"已有文件未覆盖：{rel}")
                 continue

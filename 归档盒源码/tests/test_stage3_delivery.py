@@ -1220,6 +1220,113 @@ def test_reset_never_rewrites_outside_hardlink():
         f"原路径nlink={os.stat(inside_b).st_nlink}")
 
 
+def test_writeback_refuses_link_added_after_move():
+    """复现 1：按 inode 链接成功后、写回之前，目录外多出一个硬链接。
+
+    检查通过之后才截断的窗口：nlink 在 _move_back 里还是 1，真正的
+    ftruncate/write 在 _write_regular 里。中间多出的链接不能被改写。
+    """
+    module = load_reset_module()
+    parent = tempfile.mkdtemp(prefix="stage3_writeback_after_link_")
+    root = os.path.join(parent, "演示样本")
+    module.reset(__import__("pathlib").Path(root))
+    inside = os.path.join(root, "下载", "笔记.txt")
+    moved = os.path.join(root, "_已整理", "课程", "未识别学期",
+                         "高等数学", "文档", "笔记.txt")
+    os.makedirs(os.path.dirname(moved), exist_ok=True)
+    os.rename(inside, moved)
+    outside = os.path.join(parent, "目录外个人笔记-a.txt")
+    personal = "个人内容，不能被重置改写\n"
+    real_link = os.link
+    state = {"n": 0}
+
+    def fake_link(a, b, *args, **kwargs):
+        real_link(a, b, *args, **kwargs)
+        if os.path.abspath(str(a)) == os.path.abspath(moved) and state["n"] == 0:
+            state["n"] += 1
+            # 链接成功后、写回之前，另一个程序把新名字再硬链接到空间外
+            real_link(str(b), outside)
+            with open(outside, "w", encoding="utf-8") as handle:
+                handle.write(personal)
+
+    os.link = fake_link
+    try:
+        notes = module.place_owned_files(__import__("pathlib").Path(root), None)
+    finally:
+        os.link = real_link
+    personal_sha = hashlib.sha256(personal.encode("utf-8")).hexdigest()
+    outside_ok = (
+        sha256(outside) == personal_sha
+        and read_text(outside) == personal
+        and os.path.isfile(outside))
+    inside_ok = (not os.path.exists(inside)
+                 or read_text(inside) == personal)
+    note_ok = (
+        any(line.startswith("硬链接未覆盖") and "笔记.txt" in line
+            for line in notes)
+        and not any("已按 inode 移回" in line and "笔记.txt" in line
+                    for line in notes))
+    rec("S24", "检查通过后才多出的目录外硬链接，写回前再查 nlink，不截断",
+        state["n"] == 1 and outside_ok and inside_ok and note_ok,
+        f"注入={state['n']} 说明={notes}\n"
+        f"目录外sha不变={sha256(outside) == personal_sha} "
+        f"目录外内容={read_text(outside)!r}\n"
+        f"原路径内容={read_text(inside)!r} 存在={os.path.exists(inside)}")
+
+
+def test_writeback_refuses_link_added_before_open():
+    """复现 2：文件还在原路径、nlink 为 1，open 之前被硬链接到目录外。
+
+    nlink 的第一次检查在调用 _write_regular 之前。真正打开、
+    截断、写入之间又多出一个链接时，也不能改动目录外的字节。
+    """
+    module = load_reset_module()
+    parent = tempfile.mkdtemp(prefix="stage3_writeback_before_open_")
+    root = os.path.join(parent, "演示样本")
+    module.reset(__import__("pathlib").Path(root))
+    inside = os.path.join(root, "下载", "笔记.txt")
+    outside = os.path.join(parent, "目录外个人笔记-b.txt")
+    personal = "个人内容，不能被重置改写\n"
+    real_open = os.open
+    real_link = os.link
+    state = {"n": 0}
+
+    def fake_open(path, flags, *args, **kwargs):
+        target = os.path.abspath(str(path))
+        if (target == os.path.abspath(inside) and not (flags & os.O_CREAT)
+                and state["n"] == 0):
+            state["n"] += 1
+            # 真正打开（非新建）之前，另一个程序把同一 inode 链接到空间外
+            real_link(inside, outside)
+            with open(outside, "w", encoding="utf-8") as handle:
+                handle.write(personal)
+        return real_open(path, flags, *args, **kwargs)
+
+    os.open = fake_open
+    try:
+        notes = module.place_owned_files(__import__("pathlib").Path(root), None)
+    finally:
+        os.open = real_open
+    personal_sha = hashlib.sha256(personal.encode("utf-8")).hexdigest()
+    outside_ok = (
+        sha256(outside) == personal_sha
+        and read_text(outside) == personal
+        and os.path.isfile(outside))
+    inside_ok = read_text(inside) == personal
+    note_ok = (
+        any(line.startswith("硬链接未覆盖") and "笔记.txt" in line
+            for line in notes)
+        and not any("已写回脚本创建的文件" in line and "笔记.txt" in line
+                    for line in notes))
+    nlink = os.stat(inside).st_nlink if os.path.exists(inside) else None
+    rec("S25", "打开之前才多出的目录外硬链接，打开后立刻查 nlink，不写入",
+        state["n"] == 1 and outside_ok and inside_ok and note_ok,
+        f"注入={state['n']} 说明={notes}\n"
+        f"目录外sha不变={sha256(outside) == personal_sha} "
+        f"目录外内容={read_text(outside)!r}\n"
+        f"原路径内容={read_text(inside)!r} nlink={nlink}")
+
+
 def test_reset_keeps_replacement_at_old_path():
     module = load_reset_module()
     root = root_dir("replace-source")
@@ -1355,6 +1462,8 @@ def main():
     test_reset_keeps_user_materials_around_moved_demo()
     test_undo_after_reset_keeps_restored_files()
     test_reset_never_rewrites_outside_hardlink()
+    test_writeback_refuses_link_added_after_move()
+    test_writeback_refuses_link_added_before_open()
     test_reset_keeps_replacement_at_old_path()
     test_demo_phase2_refuses_existing_paths()
     test_two_rounds_and_execute()
