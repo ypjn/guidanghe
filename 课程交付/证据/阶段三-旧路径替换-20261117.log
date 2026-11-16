@@ -1,0 +1,7 @@
+命令：QT_QPA_PLATFORM=offscreen python -c "…test_reset_keeps_replacement_at_old_path()"
+BASE f28071d9b687a12319de85b32b26f12fb3e41850  DATE 2026-11-16 10:39:02
+[PASS] S22 旧路径被换成另一份文件时，不删除替换进去的文件
+说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '已按 inode 移回演示文件（旧路径已换成另一份文件，未删除）：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+旧路径内容='另一应用刚保存的用户文件\n'
+原路径内容='高等数学 极限 导数\n'
+EXIT:0

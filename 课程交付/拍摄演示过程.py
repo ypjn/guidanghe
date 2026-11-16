@@ -248,6 +248,35 @@ def install_one_off():
     return real_mo
 
 
+def create_new_file(root, rel, text):
+    """只在目标不存在时创建普通文件：O_CREAT|O_EXCL|O_NOFOLLOW，不跟随链接。
+
+    父目录也不跟随符号链接。目标已存在、本身是符号链接、父路径不是真实
+    目录时抛 OSError，调用方负责报告，不覆盖已有内容。
+    """
+    current = Path(root)
+    parts = [part for part in rel.split("/") if part]
+    for part in parts[:-1]:
+        nxt = current / part
+        if nxt.is_symlink():
+            raise OSError(f"父目录是符号链接：{rel}")
+        if nxt.exists() and not nxt.is_dir():
+            raise OSError(f"父路径不是目录：{rel}")
+        if not nxt.exists():
+            nxt.mkdir()
+        current = nxt
+    dest = current / parts[-1]
+    if dest.is_symlink() or dest.exists():
+        raise OSError(f"已存在或是符号链接：{rel}")
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0)
+    handle = os.open(dest, flags, 0o644)
+    try:
+        os.write(handle, text.encode("utf-8"))
+    finally:
+        os.close(handle)
+    return True
+
+
 def phase1(root):
     log(f"平台：{APP.platformName()}")
     log(f"整理空间：{root}")
@@ -308,10 +337,16 @@ def phase1(root):
 def phase2(root):
     log(f"平台：{APP.platformName()}")
     log(f"整理空间：{root}")
-    draft_path = os.path.join(root, DRAFT)
-    os.makedirs(os.path.dirname(draft_path), exist_ok=True)
-    with open(draft_path, "w", encoding="utf-8") as handle:
-        handle.write("第二轮同目录新文件\n")
+    for rel in (DRAFT, TEMP):
+        target = os.path.join(root, rel)
+        if os.path.islink(target) or os.path.exists(target):
+            log(f"拒绝写入：{rel} 已存在或本身是符号链接，第二阶段不覆盖")
+            return 2
+    try:
+        create_new_file(root, DRAFT, "第二轮同目录新文件\n")
+    except OSError as exc:
+        log(f"拒绝写入：{DRAFT}（{exc}），第二阶段不覆盖")
+        return 2
     log(f"放入 {DRAFT}")
     win = open_window(root)
     scan_and_preview(win)
@@ -323,9 +358,12 @@ def phase2(root):
     log(f"  偏好行数={pref_rows(root)}")
     shot(win, "02-第二轮偏好命中.png")
 
-    temp_path = os.path.join(root, TEMP)
-    with open(temp_path, "w", encoding="utf-8") as handle:
-        handle.write("只改这一次\n")
+    try:
+        create_new_file(root, TEMP, "只改这一次\n")
+    except OSError as exc:
+        log(f"拒绝写入：{TEMP}（{exc}），第二阶段不覆盖")
+        win.close()
+        return 2
     log(f"放入 {TEMP}，重新扫描")
     scan_and_preview(win)
     before_temp = item_of(win.current_plan, TEMP).target_rel_path
@@ -411,6 +449,7 @@ def phase2(root):
     shot(win, "05-撤销后主窗口.png")
     win.close()
     process(0.3)
+    return 0
 
 
 def history_lines(root):
@@ -431,16 +470,19 @@ def history_lines(root):
 
 
 def main() -> int:
+    global SHOTS
     parser = argparse.ArgumentParser()
     parser.add_argument("--phase", type=int, choices=(1, 2), required=True)
     parser.add_argument("--root", type=Path, required=True)
+    parser.add_argument("--shots", type=Path, default=SHOTS,
+                        help="截图目录，默认 课程交付/证据/截图")
     args = parser.parse_args()
+    SHOTS = args.shots
     root = str(args.root)
     if args.phase == 1:
         phase1(root)
-    else:
-        phase2(root)
-    return 0
+        return 0
+    return phase2(root)
 
 
 if __name__ == "__main__":

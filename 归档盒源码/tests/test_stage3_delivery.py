@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import json
 import os
 import subprocess
 import sys
@@ -124,6 +125,14 @@ def sha256(path):
         for chunk in iter(lambda: f.read(1024 * 1024), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def read_text(path):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return handle.read()
+    except OSError:
+        return None
 
 
 def snapshot(root, rels):
@@ -1139,6 +1148,202 @@ def test_ledger_tmp_symlink_stays_outside():
         f"配置sha不变={sha256(config_external) == config_sha}")
 
 
+def _strip_ledger_sha(root):
+    """把清单改成 657ceef 的旧格式：文件身份只有设备号和 inode。"""
+    path = os.path.join(root, ".organizer", "演示样本清单.json")
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+    for info in (data.get("files") or {}).values():
+        if isinstance(info, dict):
+            info.pop("sha256", None)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+
+
+def test_reset_never_rewrites_outside_hardlink():
+    module = load_reset_module()
+    script = os.path.join(os.path.dirname(SRC), "课程交付", "重置演示样本.py")
+    parent = tempfile.mkdtemp(prefix="stage3_hardlink_")
+    personal = "个人内容，不能被重置改写\n"
+    note_text = module.OWNED["下载/笔记.txt"]
+
+    root_a = os.path.join(parent, "旧清单")
+    module.reset(__import__("pathlib").Path(root_a))
+    _strip_ledger_sha(root_a)
+    inside_a = os.path.join(root_a, "下载", "笔记.txt")
+    moved_a = os.path.join(root_a, "_已整理", "课程", "未识别学期",
+                           "高等数学", "文档", "笔记.txt")
+    os.makedirs(os.path.dirname(moved_a), exist_ok=True)
+    os.rename(inside_a, moved_a)
+    outside_a = os.path.join(parent, "目录外个人笔记-a.txt")
+    os.link(moved_a, outside_a)
+    with open(outside_a, "w", encoding="utf-8") as handle:
+        handle.write(personal)
+    personal_sha = sha256(outside_a)
+    proc_a = subprocess.run([sys.executable, script, "--root", root_a],
+                            capture_output=True, text=True)
+    a_ok = (
+        proc_a.returncode == 0
+        and sha256(outside_a) == personal_sha
+        and open(outside_a, encoding="utf-8").read() == personal
+        and sha256(moved_a) == personal_sha
+        and os.path.isfile(inside_a)
+        and open(inside_a, encoding="utf-8").read() == note_text
+        and os.stat(inside_a).st_ino != os.stat(outside_a).st_ino
+        and "已按 inode 移回" not in proc_a.stdout)
+
+    root_b = os.path.join(parent, "新清单")
+    module.reset(__import__("pathlib").Path(root_b))
+    inside_b = os.path.join(root_b, "下载", "笔记.txt")
+    outside_b = os.path.join(parent, "目录外个人笔记-b.txt")
+    os.link(inside_b, outside_b)
+    with open(outside_b, "w", encoding="utf-8") as handle:
+        handle.write(personal)
+    personal_b_sha = sha256(outside_b)
+    proc_b = subprocess.run([sys.executable, script, "--root", root_b],
+                            capture_output=True, text=True)
+    b_ok = (
+        proc_b.returncode == 0
+        and sha256(outside_b) == personal_b_sha
+        and open(outside_b, encoding="utf-8").read() == personal
+        and sha256(inside_b) == personal_b_sha
+        and os.stat(inside_b).st_nlink > 1
+        and "硬链接" in proc_b.stdout)
+
+    rec("S21", "目录外硬链接的 inode 不被截断或覆盖，原路径改成新 inode",
+        a_ok and b_ok,
+        f"旧清单退出码={proc_a.returncode}\n{proc_a.stdout}"
+        f"目录外sha不变={sha256(outside_a) == personal_sha} "
+        f"原路径是新 inode={os.stat(inside_a).st_ino != os.stat(outside_a).st_ino}\n"
+        f"新清单退出码={proc_b.returncode}\n{proc_b.stdout}"
+        f"目录外sha不变={sha256(outside_b) == personal_b_sha} "
+        f"原路径nlink={os.stat(inside_b).st_nlink}")
+
+
+def test_reset_keeps_replacement_at_old_path():
+    module = load_reset_module()
+    root = root_dir("replace-source")
+    module.reset(__import__("pathlib").Path(root))
+    src = os.path.join(root, "下载", "笔记.txt")
+    old = os.path.join(root, "_已整理", "课程", "未识别学期",
+                       "高等数学", "文档", "笔记.txt")
+    os.makedirs(os.path.dirname(old), exist_ok=True)
+    os.rename(src, old)
+    replacement = "另一应用刚保存的用户文件\n"
+    real_link = os.link
+
+    def fake_link(a, b, *args, **kwargs):
+        real_link(a, b, *args, **kwargs)
+        if os.path.abspath(str(a)) == os.path.abspath(old):
+            # 链接成功后、删除旧名之前，另一个程序把旧路径换成新文件
+            os.unlink(str(a))
+            with open(str(a), "w", encoding="utf-8") as handle:
+                handle.write(replacement)
+
+    os.link = fake_link
+    try:
+        notes = module.place_owned_files(__import__("pathlib").Path(root), None)
+    finally:
+        os.link = real_link
+    ok = (
+        read_text(old) == replacement
+        and read_text(src) == module.OWNED["下载/笔记.txt"]
+        and any("未删除" in line and "另一份文件" in line for line in notes)
+        and os.path.isfile(os.path.join(root, "下载", "归档盒", "开发说明.md"))
+        and os.path.isfile(os.path.join(root, "项目", "AIGC", "项目说明.md")))
+    rec("S22", "旧路径被换成另一份文件时，不删除替换进去的文件",
+        ok, f"说明={notes}\n旧路径内容={read_text(old)!r}\n"
+            f"原路径内容={read_text(src)!r}")
+
+
+def test_demo_phase2_refuses_existing_paths():
+    script = os.path.join(os.path.dirname(SRC), "课程交付", "拍摄演示过程.py")
+    parent = tempfile.mkdtemp(prefix="stage3_phase2_")
+    draft_text = "用户自己的接口草稿\n"
+    temp_text = "用户自己的临时稿\n"
+
+    root_a = os.path.join(parent, "已有文件")
+    os.makedirs(os.path.join(root_a, "下载", "归档盒"))
+    draft_a = os.path.join(root_a, "下载", "归档盒", "接口草稿.md")
+    temp_a = os.path.join(root_a, "下载", "临时稿.md")
+    with open(draft_a, "w", encoding="utf-8") as handle:
+        handle.write(draft_text)
+    with open(temp_a, "w", encoding="utf-8") as handle:
+        handle.write(temp_text)
+    before_a = {draft_a: sha256(draft_a), temp_a: sha256(temp_a)}
+    proc_a = subprocess.run(
+        [sys.executable, script, "--phase", "2", "--root", root_a,
+         "--shots", tempfile.mkdtemp(prefix="stage3_shots_a_")],
+        capture_output=True, text=True,
+        env={**os.environ, "QT_QPA_PLATFORM": "offscreen"})
+    after_a = {path: sha256(path) for path in before_a}
+    a_ok = (
+        proc_a.returncode != 0
+        and "Traceback" not in proc_a.stdout + proc_a.stderr
+        and "下载/归档盒/接口草稿.md" in proc_a.stdout + proc_a.stderr
+        and after_a == before_a)
+
+    root_b = os.path.join(parent, "链接")
+    os.makedirs(os.path.join(root_b, "下载", "归档盒"))
+    outside = os.path.join(parent, "目录外个人文档.md")
+    with open(outside, "w", encoding="utf-8") as handle:
+        handle.write("目录外个人文档\n")
+    outside_sha = sha256(outside)
+    os.symlink(outside, os.path.join(root_b, "下载", "归档盒", "接口草稿.md"))
+    os.symlink(os.path.join(parent, "尚不存在.md"),
+               os.path.join(root_b, "下载", "临时稿.md"))
+    proc_b = subprocess.run(
+        [sys.executable, script, "--phase", "2", "--root", root_b,
+         "--shots", tempfile.mkdtemp(prefix="stage3_shots_b_")],
+        capture_output=True, text=True,
+        env={**os.environ, "QT_QPA_PLATFORM": "offscreen"})
+    b_ok = (
+        proc_b.returncode != 0
+        and "Traceback" not in proc_b.stdout + proc_b.stderr
+        and sha256(outside) == outside_sha
+        and os.path.islink(os.path.join(root_b, "下载", "归档盒", "接口草稿.md"))
+        and os.path.islink(os.path.join(root_b, "下载", "临时稿.md"))
+        and not os.path.exists(os.path.join(parent, "尚不存在.md")))
+
+    root_c = os.path.join(parent, "新建")
+    os.makedirs(root_c)
+    link_parent = os.path.join(parent, "父目录链接")
+    os.makedirs(os.path.join(link_parent, "真实目录"))
+    os.symlink(os.path.join(link_parent, "真实目录"),
+               os.path.join(root_c, "外链"))
+    probe = (
+        "import importlib.util, sys\n"
+        "spec = importlib.util.spec_from_file_location('demo', sys.argv[1])\n"
+        "m = importlib.util.module_from_spec(spec)\n"
+        "spec.loader.exec_module(m)\n"
+        "m.create_new_file(sys.argv[2], '下载/归档盒/接口草稿.md', '新稿件\\n')\n"
+        "print('CREATED')\n"
+        "try:\n"
+        "    m.create_new_file(sys.argv[2], '外链/躲出去.md', 'x\\n')\n"
+        "except OSError as exc:\n"
+        "    print('REFUSED', exc)\n")
+    proc_c = subprocess.run(
+        [sys.executable, "-c", probe, script, root_c],
+        capture_output=True, text=True,
+        env={**os.environ, "QT_QPA_PLATFORM": "offscreen"})
+    created = "CREATED" in proc_c.stdout
+    refused = "REFUSED" in proc_c.stdout and proc_c.returncode == 0
+    c_ok = (
+        created
+        and os.path.isfile(os.path.join(root_c, "下载", "归档盒", "接口草稿.md"))
+        and not os.path.islink(os.path.join(root_c, "下载", "归档盒", "接口草稿.md"))
+        and refused
+        and not os.path.exists(os.path.join(link_parent, "真实目录", "躲出去.md")))
+    rec("S23", "第二阶段拒绝覆盖已有文件和符号链接，只新建普通文件",
+        a_ok and b_ok and c_ok,
+        f"已有文件退出码={proc_a.returncode}\n{proc_a.stdout}{proc_a.stderr}"
+        f"sha不变={after_a == before_a}\n"
+        f"链接退出码={proc_b.returncode}\n{proc_b.stdout}{proc_b.stderr}"
+        f"目录外sha不变={sha256(outside) == outside_sha}\n"
+        f"新建探测退出码={proc_c.returncode}\n{proc_c.stdout}{proc_c.stderr}"
+        f"新建={created} 父目录链接被拒={refused}")
+
+
 def main():
     test_reset_keeps_unrelated_files()
     test_reset_returns_to_first_preview()
@@ -1149,6 +1354,9 @@ def main():
     test_empty_demo_reset_returns_to_first_preview()
     test_reset_keeps_user_materials_around_moved_demo()
     test_undo_after_reset_keeps_restored_files()
+    test_reset_never_rewrites_outside_hardlink()
+    test_reset_keeps_replacement_at_old_path()
+    test_demo_phase2_refuses_existing_paths()
     test_two_rounds_and_execute()
     test_stale_and_conflict()
     test_cancel_interrupt_undo_conflict()

@@ -1,0 +1,18 @@
+命令：QT_QPA_PLATFORM=offscreen python -c "…test_demo_phase2_refuses_existing_paths()"
+BASE f28071d9b687a12319de85b32b26f12fb3e41850  DATE 2026-11-16 10:39:03
+[PASS] S23 第二阶段拒绝覆盖已有文件和符号链接，只新建普通文件
+已有文件退出码=2
+平台：offscreen
+整理空间：/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_phase2_2grukjcj/已有文件
+拒绝写入：下载/归档盒/接口草稿.md 已存在或本身是符号链接，第二阶段不覆盖
+sha不变=True
+链接退出码=2
+平台：offscreen
+整理空间：/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_phase2_2grukjcj/链接
+拒绝写入：下载/归档盒/接口草稿.md 已存在或本身是符号链接，第二阶段不覆盖
+目录外sha不变=True
+新建探测退出码=0
+CREATED
+REFUSED 父目录是符号链接：外链/躲出去.md
+新建=True 父目录链接被拒=True
+EXIT:0

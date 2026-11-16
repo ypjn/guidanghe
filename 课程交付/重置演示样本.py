@@ -151,48 +151,62 @@ def _find_moved(root: Path, recorded: dict) -> list[Path]:
     return found
 
 
-def _move_back(root: Path, src: Path, dest: Path, recorded: dict) -> str | None:
+def _move_back(root: Path, src: Path, dest: Path,
+               recorded: dict) -> tuple[bool, str]:
     """把同一 inode 的文件移回原路径，不覆盖、不跟随链接。
 
     用「硬链接 + 删旧名」代替覆盖语义的重命名：目标已存在时直接失败，
-    文件系统不支持时也不会去猜别的文件。成功返回 None，失败返回说明。
+    文件系统不支持时也不会去猜别的文件。返回 (是否已放到原路径, 说明)。
+    删除旧名之前重新 lstat：旧路径已被换成另一份文件时保留它，不 unlink。
     """
     current = dest.parent
     while _inside(root, current) and current != root:
         if current.is_symlink():
-            return "原路径的上级目录是符号链接"
+            return False, "原路径的上级目录是符号链接"
         current = current.parent
     if not _inside(root, dest):
-        return "原路径越出整理空间"
+        return False, "原路径越出整理空间"
     if dest.is_symlink():
-        return "原路径是符号链接"
+        return False, "原路径是符号链接"
     if dest.exists():
-        return "原路径已被占用"
+        return False, "原路径已被占用"
+    try:
+        src_info = src.lstat()
+    except OSError:
+        return False, "旧位置已无法读取"
+    if (src_info.st_dev != recorded.get("dev")
+            or src_info.st_ino != recorded.get("ino")):
+        return False, "旧位置的文件身份已变化"
+    if src_info.st_nlink > 1:
+        return False, "旧位置是多链接 inode"
     try:
         os.link(src, dest)
     except FileExistsError:
-        return "原路径已被占用"
+        return False, "原路径已被占用"
     except OSError as exc:
-        return f"无法移回：{exc.strerror or exc}"
+        return False, f"无法移回：{exc.strerror or exc}"
     try:
         info = dest.lstat()
     except OSError:
-        return "移回后无法核对文件身份"
+        return False, "移回后无法核对文件身份"
     if info.st_dev != recorded.get("dev") or info.st_ino != recorded.get("ino"):
         try:
             os.unlink(dest)
         except OSError:
             pass
-        return "移回后文件身份不一致"
+        return False, "移回后文件身份不一致"
+    try:
+        now = src.lstat()
+    except OSError:
+        return True, ""
+    if (now.st_dev != recorded.get("dev")
+            or now.st_ino != recorded.get("ino")):
+        return True, "旧路径已换成另一份文件，未删除"
     try:
         os.unlink(src)
     except OSError:
-        try:
-            os.unlink(dest)
-        except OSError:
-            pass
-        return "移回后无法删除旧位置"
-    return None
+        return True, "旧路径未能删除，两份都在"
+    return True, ""
 
 
 def _ledger_path(root: Path) -> Path:
@@ -295,6 +309,9 @@ def place_owned_files(root: Path, preserved: list[str] | None) -> list[str]:
             if not _identity_matches(recorded, current):
                 notes.append(f"已有文件未覆盖：{rel}")
                 continue
+            if path.lstat().st_nlink > 1:
+                notes.append(f"硬链接未覆盖：{rel}")
+                continue
             try:
                 _write_regular(path, text, exclusive=False)
             except OSError:
@@ -307,18 +324,32 @@ def place_owned_files(root: Path, preserved: list[str] | None) -> list[str]:
             if isinstance(recorded, dict):
                 if _same_volume(root, recorded):
                     found = _find_moved(root, recorded)
-                    if len(found) == 1:
-                        blocked = _move_back(root, found[0], path, recorded) or ""
-                        if not blocked:
+                    unique = []
+                    shared = 0
+                    for candidate in found:
+                        try:
+                            info = candidate.lstat()
+                        except OSError:
+                            continue
+                        if info.st_nlink > 1:
+                            shared += 1
+                        else:
+                            unique.append(candidate)
+                    if len(unique) == 1 and not shared:
+                        moved, reason = _move_back(root, unique[0], path, recorded)
+                        if moved:
                             try:
                                 _write_regular(path, text, exclusive=False)
                             except OSError:
                                 notes.append(f"已按 inode 移回但未写回内容：{rel}")
                                 continue
-                            notes.append(f"已按 inode 移回演示文件：{rel}")
+                            suffix = f"（{reason}）" if reason else ""
+                            notes.append(f"已按 inode 移回演示文件{suffix}：{rel}")
                             continue
-                        blocked = f"{blocked}：{rel}"
-                    elif len(found) > 1:
+                        blocked = f"{reason}：{rel}"
+                    elif shared:
+                        blocked = f"同 inode 的文件带硬链接，未移动，已新建：{rel}"
+                    elif len(unique) > 1:
                         blocked = f"找到多个同 inode 的文件，未移动：{rel}"
                     else:
                         blocked = f"未在本卷找到已移动的演示文件，已新建：{rel}"
