@@ -1368,6 +1368,32 @@ USER_BYTES = b"new document saved by another program\n"
 USER_SHA = "290f919280e6aa4456f285c9d5d579b4a15344739da5f0bebb1a6b52c6eb3051"
 OTHER_BYTES = "另一应用刚保存的用户文件\n".encode("utf-8")
 OTHER_SHA = "53ea9c12a0bbd59b3553d95327580d2ed92f7461df67519986cffe550dd487d9"
+EXCL_BYTES = "另一应用刚保存的用户文件，不能被清理\n".encode("utf-8")
+EXCL_SHA = "e80894689fe5cbe4130a0035172f5757c2f0f04dbbdeb2ecdb0dab599558f84a"
+FIRST_SAVE_BYTES = "另一应用第一次保存的内容\n".encode("utf-8")
+FIRST_SAVE_SHA = "e3de90e45fff6932b0cd2835fac9748d8a6f8272a2f89fc76ca4d6fa209320bd"
+SECOND_SAVE_BYTES = "另一应用第二次保存的内容，必须保留\n".encode("utf-8")
+SECOND_SAVE_SHA = "f4ddbd3a52749c37362cc781eb25a3a13fae761534654d7e99361bb0ab4ed630"
+
+
+def patch_atomic_rename(module, fake):
+    """把注入包在脚本真正执行「不覆盖改名」的函数上，系统调用之前触发。
+
+    修复后是 `module._rename_excl`（renamex_np + RENAME_EXCL）；父提交还没有
+    这个函数，退回 `os.rename` 才能留下修复前「用户字节被盖掉、却报成功」的
+    证据。返回恢复函数，调用方在 finally 里恢复。
+    """
+    real = getattr(module, "_rename_excl", None)
+    if real is not None:
+        module._rename_excl = fake
+        return lambda: setattr(module, "_rename_excl", real)
+    original = os.rename
+    os.rename = fake
+    return lambda: setattr(os, "rename", original)
+
+
+def existing_sha(path):
+    return sha256(path) if path and os.path.exists(path) else None
 
 
 def test_writeback_keeps_replaced_path():
@@ -1502,7 +1528,7 @@ def test_writeback_ignores_stale_fstat():
 
 
 def test_cleanup_keeps_replacement_before_removal():
-    """复现 4：最后一次身份检查之后、去掉旧目录项之前被替换。"""
+    """复现 4：最后一次身份检查之后、去掉可见旧路径之前被替换。"""
     module = load_reset_module()
     parent = tempfile.mkdtemp(prefix="stage3_cleanup_replaced_")
     root = os.path.join(parent, "演示样本")
@@ -1512,33 +1538,22 @@ def test_cleanup_keeps_replacement_before_removal():
                          "高等数学", "文档", "笔记.txt")
     os.makedirs(os.path.dirname(moved), exist_ok=True)
     os.rename(inside, moved)
-    real_unlink = os.unlink
-    real_rename = os.rename
+    real_rename = getattr(module, "_rename_excl", os.rename)
     state = {"n": 0}
-
-    def swap_in_user_file():
-        state["n"] += 1
-        replace_file_with(moved, OTHER_BYTES)
-
-    def fake_unlink(path, *args, **kwargs):
-        if (os.path.abspath(str(path)) == os.path.abspath(moved)
-                and state["n"] == 0):
-            swap_in_user_file()
-        return real_unlink(path, *args, **kwargs)
 
     def fake_rename(src, dst, *args, **kwargs):
         if (os.path.abspath(str(src)) == os.path.abspath(moved)
-                and state["n"] == 0):
-            swap_in_user_file()
+                and ".演示占位-" in str(dst) and state["n"] == 0):
+            state["n"] += 1
+            # 真正改名之前，另一个程序把可见旧路径换成自己刚保存的文件
+            replace_file_with(moved, OTHER_BYTES)
         return real_rename(src, dst, *args, **kwargs)
 
-    os.unlink = fake_unlink
-    os.rename = fake_rename
+    undo = patch_atomic_rename(module, fake_rename)
     try:
         notes = module.place_owned_files(__import__("pathlib").Path(root), None)
     finally:
-        os.unlink = real_unlink
-        os.rename = real_rename
+        undo()
     data = read_bytes(moved)
     ok = (
         state["n"] == 1
@@ -1826,6 +1841,129 @@ def test_cleanup_no_unlink_placeholder():
         f"原路径内容={read_text(inside)!r}")
 
 
+def test_cleanup_excl_keeps_occupied_placeholder_name():
+    """复现 1：选定 .演示占位-* 之后、真正改名之前，这个点文件被写成用户文件。
+
+    改名必须用 RENAME_EXCL：目标已存在就失败，可见旧路径上的占位文件与
+    点文件上的用户字节都留下，说明带「旧路径未能删除，两份都在」。
+    """
+    module = load_reset_module()
+    parent = tempfile.mkdtemp(prefix="stage3_excl_placeholder_")
+    root = os.path.join(parent, "演示样本")
+    module.reset(__import__("pathlib").Path(root))
+    inside = os.path.join(root, "下载", "笔记.txt")
+    moved = os.path.join(root, "_已整理", "课程", "未识别学期",
+                         "高等数学", "文档", "笔记.txt")
+    os.makedirs(os.path.dirname(moved), exist_ok=True)
+    os.rename(inside, moved)
+    real_rename = getattr(module, "_rename_excl", os.rename)
+    state = {"n": 0, "spare": ""}
+
+    def fake_rename(src, dst, *args, **kwargs):
+        if (os.path.abspath(str(src)) == os.path.abspath(moved)
+                and ".演示占位-" in str(dst) and state["n"] == 0):
+            state["n"] += 1
+            state["spare"] = str(dst)
+            # 选定名字之后、真正改名之前，另一个应用把用户文件写到这里
+            with open(str(dst), "wb") as handle:
+                handle.write(EXCL_BYTES)
+        return real_rename(src, dst, *args, **kwargs)
+
+    undo = patch_atomic_rename(module, fake_rename)
+    try:
+        notes = module.place_owned_files(__import__("pathlib").Path(root), None)
+    finally:
+        undo()
+    hits = files_with_bytes(root, EXCL_BYTES)
+    same_spare = (
+        len(hits) == 1
+        and os.path.abspath(hits[0]) == os.path.abspath(state["spare"]))
+    placeholder_left = os.path.exists(moved) and os.path.getsize(moved) == 0
+    ok = (
+        state["n"] == 1
+        and same_spare
+        and existing_sha(state["spare"]) == EXCL_SHA
+        and placeholder_left
+        and read_text(inside) == module.OWNED["下载/笔记.txt"]
+        and any(line == "已按 inode 移回演示文件（旧路径未能删除，两份都在）"
+                "：下载/笔记.txt" for line in notes)
+        and not any(line == "已按 inode 移回演示文件：下载/笔记.txt"
+                    for line in notes))
+    rec("S36", "选定占位名后被占用时，RENAME_EXCL 失败，用户字节与占位文件都留下",
+        ok,
+        f"注入={state['n']} 说明={notes}\n"
+        f"点文件={state['spare']} sha={existing_sha(state['spare'])}\n"
+        f"用户字节命中={hits}\n"
+        f"可见旧路径仍在={os.path.exists(moved)} "
+        f"占位大小={os.path.getsize(moved) if os.path.exists(moved) else None}\n"
+        f"原路径内容={read_text(inside)!r}")
+
+
+def test_cleanup_excl_rollback_keeps_later_save():
+    """复现 2：旧路径在改名前后连续保存两次，回退不能覆盖第二次的字节。
+
+    第一次保存在改名之前写进可见旧路径，被 RENAME_EXCL 移到 .演示占位-*；
+    调用返回后写入第二次保存。回退的 RENAME_EXCL 因目标已存在失败，两份
+    字节留在不同路径上，说明带「旧路径未能删除，两份都在」。
+    """
+    module = load_reset_module()
+    parent = tempfile.mkdtemp(prefix="stage3_excl_rollback_")
+    root = os.path.join(parent, "演示样本")
+    module.reset(__import__("pathlib").Path(root))
+    inside = os.path.join(root, "下载", "笔记.txt")
+    moved = os.path.join(root, "_已整理", "课程", "未识别学期",
+                         "高等数学", "文档", "笔记.txt")
+    os.makedirs(os.path.dirname(moved), exist_ok=True)
+    os.rename(inside, moved)
+    real_rename = getattr(module, "_rename_excl", os.rename)
+    state = {"n": 0, "spare": ""}
+
+    def fake_rename(src, dst, *args, **kwargs):
+        if (os.path.abspath(str(src)) == os.path.abspath(moved)
+                and ".演示占位-" in str(dst) and state["n"] == 0):
+            state["n"] += 1
+            state["spare"] = str(dst)
+            # 调用前：另一应用第一次保存
+            replace_file_with(moved, FIRST_SAVE_BYTES)
+            result = real_rename(src, dst, *args, **kwargs)
+            # 调用返回后：同一应用第二次保存，落在可见旧路径上
+            with open(moved, "wb") as handle:
+                handle.write(SECOND_SAVE_BYTES)
+            return result
+        return real_rename(src, dst, *args, **kwargs)
+
+    undo = patch_atomic_rename(module, fake_rename)
+    try:
+        notes = module.place_owned_files(__import__("pathlib").Path(root), None)
+    finally:
+        undo()
+    first_hits = files_with_bytes(root, FIRST_SAVE_BYTES)
+    later = read_bytes(moved)
+    first_kept = (
+        len(first_hits) == 1
+        and os.path.abspath(first_hits[0]) == os.path.abspath(state["spare"]))
+    ok = (
+        state["n"] == 1
+        and first_kept
+        and existing_sha(state["spare"]) == FIRST_SAVE_SHA
+        and later == SECOND_SAVE_BYTES
+        and hashlib.sha256(later or b"").hexdigest() == SECOND_SAVE_SHA
+        and os.path.abspath(moved) != os.path.abspath(state["spare"])
+        and read_text(inside) == module.OWNED["下载/笔记.txt"]
+        and any(line == "已按 inode 移回演示文件（旧路径未能删除，两份都在）"
+                "：下载/笔记.txt" for line in notes)
+        and not any("旧路径已换成另一份文件，未删除" in line
+                    and "笔记.txt" in line for line in notes))
+    rec("S37", "回退改名目标已存在时，RENAME_EXCL 失败，两段保存都留下",
+        ok,
+        f"注入={state['n']} 说明={notes}\n"
+        f"第一次={state['spare']} sha={existing_sha(state['spare'])}\n"
+        f"第一次命中={first_hits}\n"
+        f"可见旧路径sha={hashlib.sha256(later or b'').hexdigest()} "
+        f"内容={later!r}\n"
+        f"原路径内容={read_text(inside)!r}")
+
+
 def test_reset_keeps_replacement_at_old_path():
     module = load_reset_module()
     root = root_dir("replace-source")
@@ -1973,6 +2111,8 @@ def main():
     test_cleanup_no_unlink_old_name()
     test_refresh_no_unlink_temp()
     test_cleanup_no_unlink_placeholder()
+    test_cleanup_excl_keeps_occupied_placeholder_name()
+    test_cleanup_excl_rollback_keeps_later_save()
     test_reset_keeps_replacement_at_old_path()
     test_demo_phase2_refuses_existing_paths()
     test_two_rounds_and_execute()

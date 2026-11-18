@@ -50,6 +50,7 @@ class PathReplaced(Exception):
 
 
 _RENAME_SWAP = 0x00000002  # macOS renamex_np 的 RENAME_SWAP 标志
+_RENAME_EXCL = 0x00000004  # macOS renamex_np 的 RENAME_EXCL 标志
 
 
 def _rename_swap(from_path: Path, to_path: Path) -> None:
@@ -67,6 +68,26 @@ def _rename_swap(from_path: Path, to_path: Path) -> None:
     func.restype = ctypes.c_int
     rc = func(os.fsencode(str(from_path)), os.fsencode(str(to_path)),
               _RENAME_SWAP)
+    if rc != 0:
+        err = ctypes.get_errno()
+        raise OSError(err, os.strerror(err))
+
+
+def _rename_excl(from_path: Path, to_path: Path) -> None:
+    """目标已存在就原子失败地改名，绝不覆盖。
+
+    用 renamex_np 的 RENAME_EXCL：返回 0 才算改名成功；目标已存在时
+    返回 -1、errno 为 EEXIST，两个目录项都留下。此时不再用 os.rename
+    或别的会覆盖的调用重试。
+    """
+    libc = ctypes.CDLL(None, use_errno=True)
+    func = getattr(libc, "renamex_np", None)
+    if func is None:
+        raise OSError("当前平台不支持 renamex_np")
+    func.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+    func.restype = ctypes.c_int
+    rc = func(os.fsencode(str(from_path)), os.fsencode(str(to_path)),
+              _RENAME_EXCL)
     if rc != 0:
         err = ctypes.get_errno()
         raise OSError(err, os.strerror(err))
@@ -306,7 +327,7 @@ def _drop_old_name(src: Path, recorded: dict) -> tuple[bool, str]:
         if spare is None:
             return False, "旧路径未能删除，两份都在"
         try:
-            os.rename(src, spare)
+            _rename_excl(src, spare)
         except OSError:
             return False, "旧路径未能删除，两份都在"
         try:
@@ -316,9 +337,11 @@ def _drop_old_name(src: Path, recorded: dict) -> tuple[bool, str]:
         if (moved is None or moved.st_dev != pinfo.st_dev
                 or moved.st_ino != pinfo.st_ino):
             try:
-                os.rename(spare, src)
+                _rename_excl(spare, src)
+            except FileExistsError:
+                return False, "旧路径未能删除，两份都在"
             except OSError:
-                pass
+                return False, "旧路径已换成另一份文件，未删除"
             return False, "旧路径已换成另一份文件，未删除"
         return True, ""
     finally:

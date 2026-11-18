@@ -1,0 +1,41 @@
+阶段三 S29/S36/S37 修复前后对照
+BASE 9422e13219019f7e42060e6c2ac28e7874767115（修复前）
+DATE 2026-11-18 22:52:08
+
+===== 修复前：9422e13 =====
+[PASS] S29 去掉旧目录项前被替换时，先移到临时名再核对，对不上就还原
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '已按 inode 移回演示文件（旧路径已换成另一份文件，未删除）：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+旧路径sha=53ea9c12a0bbd59b3553d95327580d2ed92f7461df67519986cffe550dd487d9 内容=b'\xe5\x8f\xa6\xe4\xb8\x80\xe5\xba\x94\xe7\x94\xa8\xe5\x88\x9a\xe4\xbf\x9d\xe5\xad\x98\xe7\x9a\x84\xe7\x94\xa8\xe6\x88\xb7\xe6\x96\x87\xe4\xbb\xb6\n'
+原路径内容='高等数学 极限 导数\n'
+[FAIL] S36 选定占位名后被占用时，RENAME_EXCL 失败，用户字节与占位文件都留下
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '已按 inode 移回演示文件：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+点文件=/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_excl_placeholder_x5r27q6l/演示样本/_已整理/课程/未识别学期/高等数学/文档/.演示占位-96815-0 sha=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+用户字节命中=[]
+可见旧路径仍在=False 占位大小=None
+原路径内容='高等数学 极限 导数\n'
+[FAIL] S37 回退改名目标已存在时，RENAME_EXCL 失败，两段保存都留下
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '已按 inode 移回演示文件（旧路径已换成另一份文件，未删除）：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+第一次=/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_excl_rollback_g1ss9wuw/演示样本/_已整理/课程/未识别学期/高等数学/文档/.演示占位-96815-0 sha=None
+第一次命中=['/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_excl_rollback_g1ss9wuw/演示样本/_已整理/课程/未识别学期/高等数学/文档/笔记.txt']
+可见旧路径sha=e3de90e45fff6932b0cd2835fac9748d8a6f8272a2f89fc76ca4d6fa209320bd 内容=b'\xe5\x8f\xa6\xe4\xb8\x80\xe5\xba\x94\xe7\x94\xa8\xe7\xac\xac\xe4\xb8\x80\xe6\xac\xa1\xe4\xbf\x9d\xe5\xad\x98\xe7\x9a\x84\xe5\x86\x85\xe5\xae\xb9\n'
+原路径内容='高等数学 极限 导数\n'
+CHECKS [('S29', True), ('S36', False), ('S37', False)]
+
+===== 修复后：工作树 =====
+[PASS] S29 去掉旧目录项前被替换时，先移到临时名再核对，对不上就还原
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '已按 inode 移回演示文件（旧路径已换成另一份文件，未删除）：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+旧路径sha=53ea9c12a0bbd59b3553d95327580d2ed92f7461df67519986cffe550dd487d9 内容=b'\xe5\x8f\xa6\xe4\xb8\x80\xe5\xba\x94\xe7\x94\xa8\xe5\x88\x9a\xe4\xbf\x9d\xe5\xad\x98\xe7\x9a\x84\xe7\x94\xa8\xe6\x88\xb7\xe6\x96\x87\xe4\xbb\xb6\n'
+原路径内容='高等数学 极限 导数\n'
+[PASS] S36 选定占位名后被占用时，RENAME_EXCL 失败，用户字节与占位文件都留下
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '已按 inode 移回演示文件（旧路径未能删除，两份都在）：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+点文件=/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_excl_placeholder_i3oerqn8/演示样本/_已整理/课程/未识别学期/高等数学/文档/.演示占位-98808-0 sha=e80894689fe5cbe4130a0035172f5757c2f0f04dbbdeb2ecdb0dab599558f84a
+用户字节命中=['/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_excl_placeholder_i3oerqn8/演示样本/_已整理/课程/未识别学期/高等数学/文档/.演示占位-98808-0']
+可见旧路径仍在=True 占位大小=0
+原路径内容='高等数学 极限 导数\n'
+[PASS] S37 回退改名目标已存在时，RENAME_EXCL 失败，两段保存都留下
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '已按 inode 移回演示文件（旧路径未能删除，两份都在）：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+第一次=/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_excl_rollback_yujxkihm/演示样本/_已整理/课程/未识别学期/高等数学/文档/.演示占位-98808-0 sha=e3de90e45fff6932b0cd2835fac9748d8a6f8272a2f89fc76ca4d6fa209320bd
+第一次命中=['/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_excl_rollback_yujxkihm/演示样本/_已整理/课程/未识别学期/高等数学/文档/.演示占位-98808-0']
+可见旧路径sha=f4ddbd3a52749c37362cc781eb25a3a13fae761534654d7e99361bb0ab4ed630 内容=b'\xe5\x8f\xa6\xe4\xb8\x80\xe5\xba\x94\xe7\x94\xa8\xe7\xac\xac\xe4\xba\x8c\xe6\xac\xa1\xe4\xbf\x9d\xe5\xad\x98\xe7\x9a\x84\xe5\x86\x85\xe5\xae\xb9\xef\xbc\x8c\xe5\xbf\x85\xe9\xa1\xbb\xe4\xbf\x9d\xe7\x95\x99\n'
+原路径内容='高等数学 极限 导数\n'
+CHECKS [('S29', True), ('S36', True), ('S37', True)]
