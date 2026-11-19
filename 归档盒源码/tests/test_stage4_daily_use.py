@@ -28,7 +28,7 @@ if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
 from PySide6.QtWidgets import QApplication, QMessageBox, QAbstractItemView  # noqa: E402
-from PySide6.QtGui import QAccessible  # noqa: E402
+from PySide6.QtGui import QAccessible, QAccessibleActionInterface  # noqa: E402
 
 import main as main_mod  # noqa: E402
 import scan_cache  # noqa: E402
@@ -580,8 +580,37 @@ def test_reveal_stays_inside_space():
         f"符号链接={symlink!r}\n空间外内容={outside_bytes!r}")
 
 
+def _ax_row_pick(dlg, name):
+    """在对话框辅助功能子树里找到指定名称的行选择按钮接口。"""
+    iface = QAccessible.queryAccessibleInterface(dlg)
+    if iface is None:
+        return None
+    for i in range(iface.childCount()):
+        ch = iface.child(i)
+        try:
+            if ch.text(QAccessible.Text.Name) == name:
+                return ch
+        except Exception:
+            continue
+    return None
+
+
+def _ax_press(iface):
+    """按辅助功能实际的 Press 动作触发按钮，返回是否触发成功。"""
+    if iface is None:
+        return False
+    ai = iface.actionInterface()
+    if ai is None:
+        return False
+    press = QAccessibleActionInterface.pressAction()
+    if press not in ai.actionNames():
+        return False
+    ai.doAction(press)
+    return True
+
+
 def test_history_selection_accessibility():
-    """S411：历史明细用 current row，不再进入 selected-cell 辅助功能崩溃路径。"""
+    """S411：辅助功能能按下「选择第 N 行明细」，进程不崩溃，定位目标/原路径。"""
     root = fresh("history_accessibility")
     source = write(root, "下载/笔记.txt", "高等数学 极限 导数\n")
     source_sha = sha256(source)
@@ -596,7 +625,7 @@ def test_history_selection_accessibility():
     window = main_mod.MainWindow()
     window._open_recent_space(root)
     window.on_history()
-    process(0.2)
+    process(0.3)
     dlg = window._history_dialog
     rows = dlg.item_table.rowCount() if dlg is not None else 0
     no_selection = (dlg is not None
@@ -604,28 +633,42 @@ def test_history_selection_accessibility():
                     == QAbstractItemView.NoSelection)
     wrappers_kept = bool(dlg is not None and dlg._item_wrappers)
 
-    if dlg is not None and rows:
-        dlg._select_item_row(0)
-        # 模拟辅助功能读取表格接口；NoSelection 下 selected children 为空。
+    ax_names = []
+    ax_pressed = False
+    button_ready = False
+    located_target = False
+    counts = None
+    if dlg is not None:
         iface = QAccessible.queryAccessibleInterface(dlg.item_table)
-        counts = None
         if iface is not None:
             counts = (iface.role().name, iface.childCount())
+        pick_iface = _ax_row_pick(dlg, "选择第 1 行明细")
+        tree = QAccessible.queryAccessibleInterface(dlg)
+        if tree is not None:
+            for i in range(tree.childCount()):
+                ch = tree.child(i)
+                try:
+                    nm = ch.text(QAccessible.Text.Name)
+                except Exception:
+                    continue
+                if nm.startswith("选择第 ") and nm.endswith(" 行明细"):
+                    ax_names.append(nm)
+        if _ax_press(pick_iface):
+            wait_until(lambda: dlg.item_table.currentRow() == 0, timeout=3)
+            ax_pressed = dlg.item_table.currentRow() == 0
         button_ready = dlg.btn_reveal.isEnabled()
-        captured = []
-        original_reveal = main_mod._reveal_in_file_manager
-        main_mod._reveal_in_file_manager = (
-            lambda path: (captured.append(path), "")[1])
-        try:
-            dlg._on_reveal()
-        finally:
-            main_mod._reveal_in_file_manager = original_reveal
-        located_target = bool(captured and os.path.abspath(captured[-1])
-                              == os.path.abspath(target)
-                              and sha256(captured[-1]) == sha256(target))
-    else:
-        counts = None
-        button_ready = located_target = False
+        if ax_pressed:
+            captured = []
+            original_reveal = main_mod._reveal_in_file_manager
+            main_mod._reveal_in_file_manager = (
+                lambda path: (captured.append(path), "")[1])
+            try:
+                dlg._on_reveal()
+            finally:
+                main_mod._reveal_in_file_manager = original_reveal
+            located_target = bool(captured and os.path.abspath(captured[-1])
+                                  == os.path.abspath(target)
+                                  and sha256(captured[-1]) == sha256(target))
 
     if dlg is not None:
         dlg.accept()
@@ -635,35 +678,42 @@ def test_history_selection_accessibility():
                         and not os.path.exists(target)
                         and os.path.exists(source), timeout=20)
     window.on_history()
-    process(0.2)
+    process(0.3)
     dlg2 = window._history_dialog
     located_source = False
+    ax_pressed_after_undo = False
     if dlg2 is not None and dlg2.item_table.rowCount():
-        dlg2._select_item_row(0)
-        captured2 = []
-        original_reveal = main_mod._reveal_in_file_manager
-        main_mod._reveal_in_file_manager = (
-            lambda path: (captured2.append(path), "")[1])
-        try:
-            dlg2._on_reveal()
-        finally:
-            main_mod._reveal_in_file_manager = original_reveal
-        located_source = bool(captured2 and os.path.abspath(captured2[-1])
-                              == os.path.abspath(source)
-                              and sha256(source) == source_sha)
+        pick2 = _ax_row_pick(dlg2, "选择第 1 行明细")
+        if _ax_press(pick2):
+            wait_until(lambda: dlg2.item_table.currentRow() == 0, timeout=3)
+            ax_pressed_after_undo = dlg2.item_table.currentRow() == 0
+        if ax_pressed_after_undo:
+            captured2 = []
+            original_reveal = main_mod._reveal_in_file_manager
+            main_mod._reveal_in_file_manager = (
+                lambda path: (captured2.append(path), "")[1])
+            try:
+                dlg2._on_reveal()
+            finally:
+                main_mod._reveal_in_file_manager = original_reveal
+            located_source = bool(captured2 and os.path.abspath(captured2[-1])
+                                  == os.path.abspath(source)
+                                  and sha256(source) == source_sha)
         dlg2.accept()
     window._closing = True
     window.hide()
     window.deleteLater()
     process(0.05)
 
-    rec("S411", "历史明细选中不进入辅助功能崩溃路径；整理后定位目标、撤销后定位原路径",
-        no_selection and wrappers_kept and button_ready and located_target
-        and undone and located_source,
+    rec("S411", "辅助功能可按下「选择第 N 行明细」；进程存活，定位目标/原路径",
+        no_selection and wrappers_kept and button_ready and ax_pressed
+        and located_target and undone and ax_pressed_after_undo
+        and located_source,
         f"明细行={rows} NoSelection={no_selection} 保留 item wrapper={wrappers_kept}\n"
-        f"辅助接口计数={counts} 定位按钮可点={button_ready}\n"
+        f"辅助按钮={ax_names} 辅助接口计数={counts}\n"
+        f"整理后辅助按下={ax_pressed} 定位按钮可点={button_ready}\n"
         f"整理后定位目标={located_target} 撤销={undone} "
-        f"撤销后定位原路径={located_source}")
+        f"撤销后辅助按下={ax_pressed_after_undo} 撤销后定位原路径={located_source}")
 
 
 def test_history_reveal_current_path():

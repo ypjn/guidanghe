@@ -1107,6 +1107,10 @@ class HistoryDialog(QDialog):
         self.item_table.verticalHeader().setVisible(False)
         self._item_wrappers = []
         self._batch_wrappers = []
+        # 行选择按钮不能放在单元格里：QAccessibleTable 只把虚拟单元格暴露给
+        # VoiceOver，setCellWidget 的按钮在辅助功能树里不可见。改为把按钮
+        # 挂到对话框上，按第 0 列单元格的位置覆盖显示，辅助功能可直接按下。
+        self._row_pickers = []
         # S3 / guib F-13：状态/原因列不能太窄，长文本用 tooltip
         self.item_table.setColumnWidth(0, 46)
         self.item_table.setColumnWidth(3, 70)
@@ -1124,6 +1128,10 @@ class HistoryDialog(QDialog):
         self.item_table.itemActivated.connect(
             lambda item: self._select_item_row(item.row()))
         self.item_table.doubleClicked.connect(self._on_reveal)
+        self.item_table.verticalScrollBar().valueChanged.connect(
+            lambda _=None: self._layout_row_pickers())
+        self.item_table.horizontalScrollBar().valueChanged.connect(
+            lambda _=None: self._layout_row_pickers())
         lay.addWidget(self.item_table, 1)
 
         page_row = QHBoxLayout()
@@ -1166,6 +1174,7 @@ class HistoryDialog(QDialog):
         self._page = 0
         self.batch_table.setRowCount(0)
         self.item_table.setRowCount(0)
+        self._clear_row_pickers()
         self.page_label.setText("")
         self._refresh_buttons()
 
@@ -1254,6 +1263,7 @@ class HistoryDialog(QDialog):
         else:
             self._selected_batch_id = None
             self.item_table.setRowCount(0)
+            self._clear_row_pickers()
             self.page_label.setText("")
             self.batch_config_label.hide()
             # S3 / guib F-14：空历史要有明确说明
@@ -1336,6 +1346,7 @@ class HistoryDialog(QDialog):
         self._page = min(self._page, pages - 1)
         start = self._page * HISTORY_PAGE_SIZE
         chunk = items[start:start + HISTORY_PAGE_SIZE]
+        self._clear_row_pickers()
         self.item_table.setRowCount(len(chunk))
         self._item_wrappers = []
         self.item_table.setCurrentCell(-1, -1)
@@ -1397,15 +1408,21 @@ class HistoryDialog(QDialog):
                     if tip:
                         it.setToolTip(tip)
                 self.item_table.setItem(r, col, it)
-            # 辅助功能可直接激活的行选择按钮：不依赖 QTableWidget 的
-            # selected-cell 接口，避免 QTBUG-149612 的父表接口被删除。
-            pick = QPushButton(str(r + 1))
+            # 辅助功能可直接激活的行选择按钮：挂在对话框上而不是单元格里，
+            # 这样 VoiceOver 的辅助功能树能看到并按下「选择第 N 行明细」；
+            # 同时不依赖 QTableWidget 的 selected-cell 接口，避免
+            # QTBUG-149612 的父表接口被删除导致崩溃。
+            pick = QPushButton(str(r + 1), self)
             pick.setFlat(True)
+            pick.hide()
             pick.setCursor(Qt.PointingHandCursor)
+            pick.setFocusPolicy(Qt.StrongFocus)
             pick.setAccessibleName(f"选择第 {r + 1} 行明细")
             pick.setToolTip("选择这一行，再用「在文件管理器中显示」定位")
             pick.clicked.connect(lambda _=False, row=r: self._select_item_row(row))
-            self.item_table.setCellWidget(r, 0, pick)
+            self._row_pickers.append(pick)
+        self.item_table.viewport().update()
+        QTimer.singleShot(0, self._layout_row_pickers)
         self.page_label.setText(
             f"第 {self._page + 1}/{pages} 页 · 共 {len(items)} 项"
             if items else "无匹配项")
@@ -1413,6 +1430,42 @@ class HistoryDialog(QDialog):
         self.btn_next.setEnabled(self._page < pages - 1)
         self._refresh_buttons()
         self._on_item_selection_changed()
+
+    def _clear_row_pickers(self):
+        for btn in getattr(self, "_row_pickers", []):
+            btn.hide()
+            btn.deleteLater()
+        self._row_pickers = []
+
+    def _layout_row_pickers(self):
+        """把行选择按钮覆盖到第 0 列单元格上，并随滚动/缩放重新定位。"""
+        pickers = getattr(self, "_row_pickers", None)
+        if not pickers:
+            return
+        vp = self.item_table.viewport()
+        vp_rect = vp.rect()
+        for r, btn in enumerate(pickers):
+            item = self.item_table.item(r, 0)
+            if item is None:
+                btn.hide()
+                continue
+            rect = self.item_table.visualItemRect(item)
+            if rect.isEmpty() or rect.right() < 0 or rect.left() >= vp_rect.width():
+                btn.hide()
+                continue
+            top_left = vp.mapTo(self, rect.topLeft())
+            btn.setGeometry(top_left.x(), top_left.y(),
+                            rect.width(), rect.height())
+            btn.show()
+            btn.raise_()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._layout_row_pickers()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        QTimer.singleShot(0, self._layout_row_pickers)
 
     def _turn_page(self, delta: int):
         self._page = max(0, self._page + delta)
