@@ -91,3 +91,13 @@ a731f6fe790c8faed3e1704d69a183b8ce249c0b32c047ff3f40b75aa3e2994d  打包/归档�
 == 第 2 轮解压后启动 ==
 从 /usr/bin/unzip 解压出的归档盒.app 启动：offscreen 存活 8 秒；cocoa 窗口标题 归档盒 V1.7，尺寸 1280×808。
 ZIP UTF-8 标志与解压细节见 阶段四-ZIP与解压-20261119.log。
+
+== 第 3 轮最终成品校验和（重新构建） ==
+d83a10ce996b968453b1e3164dadfefbb9fbea12257361c1bb3b09ac26d634ed  打包/归档盒-macOS-免安装.zip
+315a9a1a51e7eed162b4665e0173c10147914aa5b46cf7cb2c7c9c0fd00edbe7  打包/归档盒-macOS-免安装/归档盒.app/Contents/MacOS/archivebox
+e62eab3fde241bd7df000d0ab629d8053a98c7b4dd11cb0c9a1270de184167e8  打包/归档盒-Windows-免安装.zip
+56b32d0311c858c8f90f6d893a8a0ccfb7716e127fc35793c35d5061b303f832  打包/归档盒-Windows-免安装/归档盒.exe
+
+== 第 3 轮解压后启动 ==
+新解压副本 codesign --verify --deep --strict 退出码 0；cocoa 窗口标题 归档盒 V1.7，1280×808。
+旧包 89dd7ed5… / 68ba0f9f… 只作为被替换送审包保留。

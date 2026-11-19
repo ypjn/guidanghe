@@ -1,0 +1,17 @@
+== 最终 Mac ZIP ==
+d83a10ce996b968453b1e3164dadfefbb9fbea12257361c1bb3b09ac26d634ed  /private/tmp/stage4-daily-use-20261119/打包/归档盒-macOS-免安装.zip
+
+== 解压对照构建目录 ==
+links build/extracted 453/453; directory symlinks 72/72; broken 0; link mismatches 0; regular files 926/926; file differences 0; UTF8 missing 0; __MACOSX 0
+
+== codesign --verify --deep --strict（新解压副本） ==
+codesign_exit=0
+
+== 解压应用启动 ==
+cocoa 窗口标题 归档盒 V1.7, 1280x808；offscreen 启动存活 8 秒 (timeout 124)
+
+== 最终 Windows ZIP ==
+e62eab3fde241bd7df000d0ab629d8053a98c7b4dd11cb0c9a1270de184167e8  /private/tmp/stage4-daily-use-20261119/打包/归档盒-Windows-免安装.zip
+entries 4904; utf8_missing 0; __MACOSX 0; 顶层 归档盒-Windows-免安装
+归档盒.exe SHA-256 56b32d03…; 使用说明.txt SHA-256 4f596cdc…
+原生 Windows 运行：未测

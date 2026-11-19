@@ -1,0 +1,24 @@
+阶段四第 3 轮 TRAE 交付回复正文（聊天没有导出功能；实现提交 `8700af6054c45735ca0de93ee37924c38c1c4108`）
+
+从 `c4b90943e2bc1a10391fbbf9d5c6989ec21f2a85` 继续，在同一分支 `stage4/daily-use` 一次修完两项；未并入 main，未改写历史，未强制推送。
+
+1. Mac ZIP 目录符号链接
+   - 接入 `preserve-directory-symlinks.patch`：`打包/zip_unicode.py` 的 `os.walk` 把 `dirnames` 里的目录符号链接也作为链接写入 ZIP，目标等于构建目录 `readlink`，并从 `dirnames` 移除，避免顺着链接重复打包。
+   - 最终 Mac ZIP `d83a10ce996b968453b1e3164dadfefbb9fbea12257361c1bb3b09ac26d634ed`：符号链接 453/453，其中目录链接 72/72；链接目标不一致 0；解压后断链 0；普通文件 926/926 一致；非 ASCII 缺 UTF-8 标志 0；`__MACOSX` 0。
+   - 新解压副本 `codesign --verify --deep --strict` 退出码 0；解压应用启动，cocoa 窗口标题 `归档盒 V1.7`。
+   - Windows ZIP `e62eab3fde241bd7df000d0ab629d8053a98c7b4dd11cb0c9a1270de184167e8`，4904 条，UTF-8 缺 0，无 `__MACOSX`；`归档盒.exe` `56b32d03…`、`使用说明.txt` `4f596cdc…`。
+   - 旧包 `89dd7ed5…`（Mac）、`68ba0f9f…`（Windows）只作为被替换送审包保留在 `阶段四-目录链接与签名-20261119.log`。
+   - 证据：`阶段四-目录链接与签名-20261119.log`。
+
+2. 历史明细辅助功能崩溃
+   - 根因：Qt 6.12.0 macOS 辅助功能回归 QTBUG-149612。选中真实单元格替换占位符时删除父表接口，AppKit 读取 `accessibilitySelectedChildren` 时 SIGSEGV；6.12.2 修复版暂不可得。
+   - 应用层修复：历史明细表 `NoSelection`，用 current row 表示选中行；连接 `currentCellChanged`/`cellClicked`/`itemActivated`；每行第 0 列放可聚焦、可激活的「选择第 N 行明细」按钮；保留 `QTableWidgetItem` 引用避免包装失效。
+   - 「在文件管理器中显示」改用 current row：整理后定位目标，撤销后定位原路径；绝对路径、`../`、空间外符号链接仍返回空，不调用系统文件管理器。
+   - 回归 S411 通过：明细行 1、`NoSelection=True`、保留 wrapper、QAccessible 接口查询后进程存活、定位按钮可点、整理后目标与撤销后原路径均正确。
+   - 本机终端 `AXIsProcessTrusted=False`，脚本无法驱动 VoiceOver 真机 AX 选中；真机复验留给 Cursor。未写成已通过。
+   - 证据：`阶段四-历史明细辅助功能-20261119.log`。
+
+回归（`阶段四回归-20261119-第3轮.log`，全部退出码 0）：
+阶段三九套 6/6、13/13、46/46、115/115、16/16、19/19、18/18、65/65、37/37；阶段四 11/11（S401–S411）；历史套件 36/36。
+
+未验证：Windows 原生、Linux、真实 DeepSeek、真实跨卷/外接盘断连、打包应用内真实 VoiceOver 选中。

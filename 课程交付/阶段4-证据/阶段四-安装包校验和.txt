@@ -1,15 +1,15 @@
-# 归档盒 V1.7 · 阶段四安装包校验和（第 2 轮）
+# 归档盒 V1.7 · 阶段四安装包校验和（第 3 轮）
 
 构建时间：2026-11-19（Asia/Shanghai）
-源码：stage4/daily-use，父提交 `3e0c1e996077b06fa3984590f360a8ed74a5add0`；本轮实现提交哈希由推送后回传消息给出。
+源码：stage4/daily-use，父提交 `c4b90943e2bc1a10391fbbf9d5c6989ec21f2a85`；本轮实现提交 `8700af6054c45735ca0de93ee37924c38c1c4108`。
 签名/公证：本次未做公证与公开发布；Mac 包为本地签名。
 
 | 成品 | 路径 | SHA-256 |
 |---|---|---|
-| macOS 免安装包 | `打包/归档盒-macOS-免安装.zip` | `89dd7ed5552d368fc8740bcfef426fbb94f1ddcd5c1f5216a70ff46834aeb5dc` |
-| macOS 应用可执行文件 | `打包/归档盒-macOS-免安装/归档盒.app/Contents/MacOS/archivebox` | `a731f6fe790c8faed3e1704d69a183b8ce249c0b32c047ff3f40b75aa3e2994d` |
-| Windows 免安装包 | `打包/归档盒-Windows-免安装.zip` | `68ba0f9f1008f65ef1ce2cf58ae3cadc16be1ade73c79615a8065d5d0238b62b` |
-| Windows 启动器 | `打包/归档盒-Windows-免安装/归档盒.exe` | `1203dd57caa01c699cb1c989f220d01728839183cec382ad531aede6cae00af4` |
+| macOS 免安装包 | `打包/归档盒-macOS-免安装.zip` | `d83a10ce996b968453b1e3164dadfefbb9fbea12257361c1bb3b09ac26d634ed` |
+| macOS 应用可执行文件 | `打包/归档盒-macOS-免安装/归档盒.app/Contents/MacOS/archivebox` | `315a9a1a51e7eed162b4665e0173c10147914aa5b46cf7cb2c7c9c0fd00edbe7` |
+| Windows 免安装包 | `打包/归档盒-Windows-免安装.zip` | `e62eab3fde241bd7df000d0ab629d8053a98c7b4dd11cb0c9a1270de184167e8` |
+| Windows 启动器 | `打包/归档盒-Windows-免安装/归档盒.exe` | `56b32d0311c858c8f90f6d893a8a0ccfb7716e127fc35793c35d5061b303f832` |
 | Windows 使用说明 | `打包/归档盒-Windows-免安装/使用说明.txt` | `4f596cdcfea81825880167c0cba9783691e465844a277fddc131149690b17827` |
 
 Mac 包 Info.plist：`CFBundleShortVersionString = 1.7.0`，`CFBundleIdentifier = local.ypjn.archivebox`。
@@ -17,7 +17,8 @@ Windows 包 `使用说明.txt` 与窗口标题均为 V1.7。
 
 说明：
 
-- 新 ZIP 用 `打包/zip_unicode.py` 创建，所有非 ASCII 路径带 UTF-8 标志；Mac 包无 `__MACOSX/`。
-- Mac 包已从 `/usr/bin/unzip` 解压出的 `.app` 启动，窗口标题 `归档盒 V1.7`；首窗截图见 `截图/01-打包应用首次启动.png`。
+- 新 Mac ZIP 含 453 个符号链接，其中 72 个目录符号链接；解压后断链 0，链接目标与构建目录一致，普通文件 926/926 一致。
+- 新 ZIP 所有非 ASCII 路径带 UTF-8 标志，Mac 包无 `__MACOSX/`。
+- `codesign --verify --deep --strict` 对新解压副本退出码 0；解压应用启动标题 `归档盒 V1.7`。
 - Windows 包在 Mac 上交叉组装，尚未在 Windows 原生系统运行；验证步骤见 `Windows验证步骤.md`。
-- 旧包 `c09eb702…`（Mac）与 `c593ec2b…`（Windows）已被替换，只在 `阶段四-ZIP与解压-20261119.log` 保留身份说明。
+- 旧包 `89dd7ed5…`（Mac）与 `68ba0f9f…`（Windows）已被替换，只在 `阶段四-目录链接与签名-20261119.log` 保留身份说明。

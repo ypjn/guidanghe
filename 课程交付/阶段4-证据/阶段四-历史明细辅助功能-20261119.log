@@ -1,0 +1,12 @@
+== 历史明细辅助功能回归 ==
+qt.qpa.fonts: Populating font family aliases took 118 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost.
+This plugin does not support raise()
+This plugin does not support raise()
+[PASS] S411 历史明细选中不进入辅助功能崩溃路径；整理后定位目标、撤销后定位原路径
+明细行=1 NoSelection=True 保留 item wrapper=True
+辅助接口计数=('Table', 16) 定位按钮可点=True
+整理后定位目标=True 撤销=True 撤销后定位原路径=True
+EXIT:0
+
+说明：本机终端未获 macOS 辅助功能授权（AXIsProcessTrusted=False），无法由脚本驱动 VoiceOver 的真机 AX 选中；
+改用 QAccessible 表格接口查询 + NoSelection/current row + 可激活行按钮回归，确认不进入 selected-cell 替换路径。
