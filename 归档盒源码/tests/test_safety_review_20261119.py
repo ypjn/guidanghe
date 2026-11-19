@@ -367,13 +367,92 @@ def t04_recover_states():
             and os.path.isfile(os.path.join(root3, moved_action.source_rel)))
     st3.close()
 
-    ok_ = a_ok and b_ok and c_ok and d_ok
+    # e) paused 但文件仍在原处、指纹一致：改为 planned+verified，
+    #    不再占用核对入口；同批已移动的另一份仍可撤销
+    root4 = fresh("t04_paused_at_source")
+    mk(root4, "已移动.txt", "移动内容")
+    mk(root4, "留在原处.txt", "原处内容")
+    plan4 = plan_for(root4)
+    st4 = Storage(root4)
+    bid4 = st4.create_batch(plan4, "测试")
+    st4.create_actions_bulk(bid4, plan4.items,
+                            [i.source_sha256 for i in plan4.items])
+    acts4 = st4.get_actions(bid4)
+    moved_act = acts4[0]
+    stayed_act = acts4[1]
+    target4 = os.path.join(root4, moved_act.target_rel)
+    os.makedirs(os.path.dirname(target4), exist_ok=True)
+    os.replace(os.path.join(root4, moved_act.source_rel), target4)
+    st4.conn.execute(
+        "UPDATE actions SET status='moved' WHERE batch_id=? AND action_index=?",
+        (bid4, moved_act.action_index))
+    st4.conn.execute(
+        "UPDATE actions SET status='paused', verified=0 "
+        "WHERE batch_id=? AND action_index=?",
+        (bid4, stayed_act.action_index))
+    st4.update_batch_status(bid4, "executing")
+
+    rr4 = executor.recover_batch(st4, bid4)
+    after4 = {a.action_index: a for a in st4.get_actions(bid4)}
+    stayed_after = after4[stayed_act.action_index]
+    e_ok = (stayed_after.status == "planned" and stayed_after.verified
+            and rr4.paused == 0
+            and rr4.batch_status_after == "partial"
+            and not st4.batch_needs_verification(bid4)
+            and st4.batch_is_undoable(bid4))
+    needs_after4 = st4.batch_needs_verification(bid4)
+    ur4 = executor.undo_latest_batch(st4, batch_id=bid4)
+    batch4 = st4.get_batch(bid4)
+    e_ok = (e_ok and ur4.restored == 1 and ur4.is_complete
+            and batch4.status == "undone"
+            and os.path.isfile(os.path.join(root4, moved_act.source_rel))
+            and not os.path.exists(target4))
+    st4.close()
+
+    # f) 指纹不符、或源与目标同时存在：继续暂停，仍占用核对入口
+    root5 = fresh("t04_paused_unclear")
+    mk(root5, "不符.txt", "原始内容")
+    mk(root5, "双份.txt", "同样的内容")
+    plan5 = plan_for(root5)
+    st5 = Storage(root5)
+    bid5 = st5.create_batch(plan5, "测试")
+    st5.create_actions_bulk(bid5, plan5.items,
+                            [i.source_sha256 for i in plan5.items])
+    acts5 = st5.get_actions(bid5)
+    mismatch_act, both_act = acts5[0], acts5[1]
+    target5a = os.path.join(root5, mismatch_act.target_rel)
+    os.makedirs(os.path.dirname(target5a), exist_ok=True)
+    os.replace(os.path.join(root5, mismatch_act.source_rel), target5a)
+    with open(target5a, "w", encoding="utf-8") as f:
+        f.write("被改过的内容")
+    target5b = os.path.join(root5, both_act.target_rel)
+    os.makedirs(os.path.dirname(target5b), exist_ok=True)
+    shutil.copy2(os.path.join(root5, both_act.source_rel), target5b)
+    st5.conn.execute(
+        "UPDATE actions SET status='paused', verified=0 WHERE batch_id=?",
+        (bid5,))
+    st5.update_batch_status(bid5, "executing")
+    executor.recover_batch(st5, bid5)
+    after5 = {a.action_index: a for a in st5.get_actions(bid5)}
+    f_ok = (after5[mismatch_act.action_index].status == "paused"
+            and after5[both_act.action_index].status == "paused"
+            and st5.batch_needs_verification(bid5))
+    st5.close()
+
+    ok_ = a_ok and b_ok and c_ok and d_ok and e_ok and f_ok
     ok("04", "取消核对保持待核对；paused 重新核对；moved+planned 可撤销", ok_,
        f"取消核对：was_cancelled={rr.was_cancelled} 状态={status_cancel}\n"
        f"完整核对：状态={rr2.batch_status_after} 全部 planned 已核对={b_ok}\n"
-       f"paused 重核：状态={a2.status} 补记={rr3.recovered_moved} 批次={rr3.batch_status_after}\n"
+       f"paused 重核（目标在）：状态={a2.status} 补记={rr3.recovered_moved} "
+       f"批次={rr3.batch_status_after}\n"
        f"混合撤销：恢复={ur.restored} complete={ur.is_complete} "
-       f"批次={batch3.status}")
+       f"批次={batch3.status}\n"
+       f"paused 重核（原处在+指纹一致）：状态={stayed_after.status} "
+       f"verified={stayed_after.verified} 批次={rr4.batch_status_after} "
+       f"需核对={needs_after4}\n"
+       f"同批已移动可撤销：恢复={ur4.restored} complete={ur4.is_complete} "
+       f"批次={batch4.status}\n"
+       f"指纹不符/双份继续暂停={f_ok}")
 
 
 # ==================== 05 写库失败必须停止并待核对 ====================

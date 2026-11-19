@@ -721,6 +721,9 @@ def _recover_batch_locked(storage: Storage, result: RecoverResult,
                                 STATUS_PAUSED, STATUS_RESTORING)]
     total_to_check = len(to_check)
     checked = 0
+    # 之前因“状态不明确”暂停、这次核对为“仍在原处且内容一致”的条目数。
+    # 它们不再算暂停，也不让批次仅因此停留在 recovered_partial。
+    reclassified_paused = 0
 
     for action in to_check:
         if cancel_event is not None and cancel_event.is_set():
@@ -780,11 +783,31 @@ def _recover_batch_locked(storage: Storage, result: RecoverResult,
 
         if src_exists and not tgt_exists:
             # 情况 A：还没执行（或 paused 后已恢复原状）→ 按磁盘事实留在原处
-            case_desc = f"A:src在+target不在 → 确认{action.status}（已核对）"
-            result.still_planned += 1
-            storage.update_action(batch_id, action.action_index,
-                                  action.status, error=action.error,
-                                  verified=True)
+            if action.status == STATUS_PAUSED:
+                if src_sha_matches:
+                    # 之前暂停只是因为状态不明确；现在源文件在原处且内容一致，
+                    # 应视为“已核对且尚未移动”，不再占用核对入口。
+                    case_desc = "A:src在+target不在+内容一致 → paused改为planned（已核对）"
+                    result.still_planned += 1
+                    reclassified_paused += 1
+                    storage.update_action(
+                        batch_id, action.action_index, STATUS_PLANNED,
+                        error="[恢复] 已核对仍在原处，按未执行处理",
+                        verified=True)
+                else:
+                    # 源文件还在，但内容指纹与记录对不上：继续暂停
+                    case_desc = "A:src在+target不在+内容不符 → 保持paused"
+                    storage.update_action(
+                        batch_id, action.action_index, STATUS_PAUSED,
+                        error="[恢复] 源文件仍在原处，但内容指纹与记录不一致",
+                        verified=False)
+                    result.paused += 1
+            else:
+                case_desc = f"A:src在+target不在 → 确认{action.status}（已核对）"
+                result.still_planned += 1
+                storage.update_action(batch_id, action.action_index,
+                                      action.status, error=action.error,
+                                      verified=True)
 
         elif not src_exists and tgt_exists and can_confirm_moved:
             # 情况 B：移动成功但状态没写 → 补记 moved
@@ -856,12 +879,18 @@ def _recover_batch_locked(storage: Storage, result: RecoverResult,
     paused = sum(1 for a in actions_now if a.status == STATUS_PAUSED)
     planned_still = sum(1 for a in actions_now if a.status == STATUS_PLANNED)
     undone = sum(1 for a in actions_now if a.status == STATUS_UNDONE)
+    # 原本就未执行（真正被中断）的 planned，和“暂停后核对为仍在原处”的分开看
+    genuine_planned = max(0, planned_still - reclassified_paused)
 
     if paused > 0:
         final_status = BATCH_RECOVERED_PARTIAL
     elif planned_still > 0 and moved > 0:
-        # 有已移动的，也有还没执行的 —— 恢复后状态不完整
-        final_status = BATCH_RECOVERED_PARTIAL
+        if genuine_planned > 0:
+            # 有已移动的，也有真正还没执行的 —— 恢复后状态不完整
+            final_status = BATCH_RECOVERED_PARTIAL
+        else:
+            # 剩余 planned 都是暂停核对后解释清楚的项，不是“仍未确定”
+            final_status = BATCH_PARTIAL
     elif planned_still > 0 and moved == 0 and not (failed or skipped):
         # 每一项都核对过、且确实没有任何文件被移动 → 才允许干净取消
         final_status = BATCH_CANCELLED_CLEAN
