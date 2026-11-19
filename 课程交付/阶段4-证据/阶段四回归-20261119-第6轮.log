@@ -1,0 +1,1156 @@
+PY Python 3.14.8
+PySide6 6.12.0
+SRC /private/tmp/stage4-daily-use-20261119/归档盒源码
+BASE 6293e701b913835adbacfd8e15f12c955d2c4618
+DATE 2026-11-19 19:11:56
+===== tests/test_stage1_fixes_20261115.py =====
+qt.qpa.fonts: Populating font family aliases took 51 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost.
+PASS 扫描后歧义面板可用
+PASS 跳过不被重选 + 执行撤销闭环
+PASS 候选目标路径完整保留
+PASS 正文不越界且错误无绝对路径
+PASS 拖回已跳过文件仍保持原位
+PASS 混合拖入后跳过文件仍跳过
+合计 6 项：通过 6 / 未通过 0
+EXIT:0
+===== tests/test_stage1_smart_organize.py =====
+qt.qpa.fonts: Populating font family aliases took 54 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost.
+PASS 正文提取与未支持格式
+PASS 同名文件靠正文区分（关网）
+PASS 课程目录与项目目录路径依据
+PASS 长期目录规则不是正文依据
+PASS 依据来源与实际证据一致
+PASS 无效 AI 响应不推翻本地分类
+PASS 歧义改选后必须重新确认
+PASS 跳过后源路径与 SHA 不变
+PASS 非法目标与无效模型响应
+PASS 取消后迟到结果被丢弃
+PASS PlanWorker 接入正文
+PASS 执行前后与撤销后的路径和 SHA
+PASS 联网默认关闭与授权说明
+合计 13 项：通过 13 / 未通过 0
+EXIT:0
+===== tests/test_move_boundary.py =====
+[PASS] B1-源文件仍在原处
+[PASS] B1-空间外没有该文件
+[PASS] B1-动作不是 moved
+[PASS] B1-批次不报完整成功
+[PASS] B1-空间外未新建子目录
+[PASS] B2a-落盘函数返回失败
+[PASS] B2a-标记为冲突
+[PASS] B2a-目标内容未被覆盖
+[PASS] B2a-源文件仍在
+[PASS] B2b-目标内容未被覆盖（执行流）
+[PASS] B2b-源文件仍在（执行流）
+[PASS] B2b-动作不是 moved（执行流）
+[PASS] B2c-前置执行成功
+[PASS] B2c-文件已移入目标
+[PASS] B2c-原路径新文件未被覆盖
+[PASS] B2c-目标里的原文件仍在
+[PASS] B2c-该项记为冲突而非已恢复
+[PASS] B2d-原路径文件未被覆盖（撤销流）
+[PASS] B2d-目标里的原文件仍在（撤销流）
+[PASS] B2d-该项记为冲突（撤销流）
+[PASS] C1-占位被换后内容未被覆盖（执行）
+[PASS] C1-源文件仍在且内容不变（执行）
+[PASS] C1-动作非 moved（执行）
+[PASS] C1u-前置执行成功
+[PASS] C1u-原路径被换后内容未被覆盖（撤销）
+[PASS] C1u-目标里原文件仍在（撤销）
+[PASS] C1u-非已恢复（撤销）
+[PASS] C2a-空间外文件未被删除
+[PASS] C2a-空间外文件内容不变
+[PASS] C2a-动作非 moved
+[PASS] C2a-空间内目标无该文件
+[PASS] C2b-前置执行成功
+[PASS] C2b-空间外文件未被删除
+[PASS] C2b-空间外文件内容不变
+[PASS] C2b-未报已恢复
+[PASS] C2c-空间外无整理出的文件
+[PASS] C2c-动作非 moved
+[PASS] C2c-源文件仍在
+[PASS] C3-源文件保留新内容
+[PASS] C3-动作非 moved
+[PASS] C3-目标未留下旧内容
+[PASS] C3-无临时文件残留
+[PASS] C4-255字节文件名整理成功
+[PASS] C4-目标存在
+[PASS] C4-目标内容与源一致
+[PASS] C4-源文件已移走
+
+合计：通过 46 / 未通过 0
+EXIT:0
+===== tests/test_recheck_round2_20261114.py =====
+[PASS] R1-短写后源文件字节完整
+[PASS] R1-短写后目标不存在
+[PASS] R1-历史不是 moved
+[PASS] R1-无临时文件残留
+[PASS] R2a-指纹读不出时源文件字节完整
+[PASS] R2a-指纹读不出时目标不存在
+[PASS] R2a-历史不是 moved
+[PASS] R2a-无临时文件残留
+[PASS] R2b-源保留复制后的新内容
+[PASS] R2b-目标未留下旧副本
+[PASS] R2b-历史不是 moved
+[PASS] R2b-无临时文件残留
+[PASS] R3-空间外未出现源内容
+[PASS] R3-源文件字节完整
+[PASS] R3-历史不是 moved
+[PASS] R3-预置链接未被删除（不是本次创建的 inode）
+[PASS] R4-注入生效
+[PASS] R4-空间外原有 .abtmp 字节未被覆盖
+[PASS] R4-源文件字节完整
+[PASS] R4-历史不是 moved
+[PASS] R5-注入生效（整理）
+[PASS] R5-原内容仍有完整副本（源）
+[PASS] R5-被替换的目标未被覆盖
+[PASS] R5-历史不是 moved
+[PASS] R6-前置整理成功
+[PASS] R6-注入生效（撤销）
+[PASS] R6-原内容仍有完整副本（整理目录）
+[PASS] R6-被替换的原路径未被覆盖
+[PASS] R6-历史不是 undone
+[PASS] R6-未报已恢复
+[PASS] R7-0o600 整理成功
+[PASS] R7-0o600 整理后权限保留
+[PASS] R7-0o600 整理后 mtime 保留
+[PASS] R7-0o600 撤销成功
+[PASS] R7-0o600 撤销后权限保留
+[PASS] R7-0o600 撤销后 mtime 保留
+[PASS] R7-0o751 整理成功
+[PASS] R7-0o751 整理后权限保留
+[PASS] R7-0o751 整理后 mtime 保留
+[PASS] R7-0o751 撤销成功
+[PASS] R7-0o751 撤销后权限保留
+[PASS] R7-0o751 撤销后 mtime 保留
+[PASS] R8-注入生效（整理）
+[PASS] R8-原字节仍有一份完整副本
+[PASS] R8-被换上的文件仍是新内容
+[PASS] R8-动作不是 moved
+[PASS] R8-临时副本不残留
+[PASS] R9-前置整理成功
+[PASS] R9-前置目标内容正确
+[PASS] R9-注入生效（撤销）
+[PASS] R9-原字节仍有一份完整副本
+[PASS] R9-被换上的原路径仍是新内容
+[PASS] R9-历史不是 undone
+[PASS] R10-注入生效（整理）
+[PASS] R10-原字节仍有一份完整副本
+[PASS] R10-被换上的文件仍是新内容
+[PASS] R10-动作不是 moved
+[PASS] R10u-前置整理成功
+[PASS] R10u-前置目标内容正确
+[PASS] R10u-注入生效（撤销）
+[PASS] R10u-原字节仍有一份完整副本
+[PASS] R10u-被换上的原路径仍是新内容
+[PASS] R10u-历史不是 undone
+[PASS] R11-注入生效（整理）
+[PASS] R11-原字节仍有一份完整副本
+[PASS] R11-被换上的文件仍是新内容
+[PASS] R11-动作不是 moved
+[PASS] R11u-前置整理成功
+[PASS] R11u-前置目标内容正确
+[PASS] R11u-注入生效（撤销）
+[PASS] R11u-原字节仍有一份完整副本
+[PASS] R11u-被换上的原路径仍是新内容
+[PASS] R11u-历史不是 undone
+[PASS] R10-同卷移动不写第二个 inode
+[PASS] R10-目标字节完整
+[PASS] R10-历史 moved
+[PASS] R11-注入生效
+[PASS] R11-被换入的文件字节仍在
+[PASS] R11-原字节仍有一份完整副本
+[PASS] R11-历史不是 moved
+[PASS] R12-注入生效
+[PASS] R12-历史为失败
+[PASS] R12-错误里写明临时副本路径
+[PASS] R12-按错误里的路径能读到完整原件
+[PASS] R13-128MiB 正常移动峰值内存增量 <= 80MiB
+[PASS] R14-注入生效（整理）
+[PASS] R14-未调用重命名、目标不存在
+[PASS] R14-换入文件原样留在源目录项
+[PASS] R14-历史为 failed
+[PASS] R14-重开后 temp_rel 指向的字节等于原字节
+[PASS] R14-错误里写明另存路径
+[PASS] R15-前置整理成功
+[PASS] R15-注入生效（撤销）
+[PASS] R15-换入文件原样留在整理目录
+[PASS] R15-原路径未被重建
+[PASS] R15-历史为 conflict
+[PASS] R15-重开后 temp_rel 指向的字节等于原字节
+[PASS] R16-注入生效（建目标 ENOSPC）
+[PASS] R16-历史为 failed
+[PASS] R16-temp_rel 未清空且字节完整
+[PASS] R16-源文件保持原字节
+[PASS] R16-目标未创建
+[PASS] R16-错误里写明临时副本路径
+[PASS] R17-注入生效（写目标 ENOSPC）
+[PASS] R17-历史为 failed
+[PASS] R17-temp_rel 未清空且字节完整
+[PASS] R17-源文件保持原字节
+[PASS] R17-只回滚本次创建的目标
+[PASS] R17-错误里写明临时副本路径
+[PASS] R18-注入生效（删源 EACCES）
+[PASS] R18-历史为 failed
+[PASS] R18-temp_rel 未清空且字节完整
+[PASS] R18-源文件保持原字节
+[PASS] R18-只回滚本次创建的目标
+[PASS] R18-错误里写明临时副本路径
+
+合计：通过 115 / 未通过 0
+EXIT:0
+===== tests/test_v15_long_term_rules.py =====
+qt.qpa.fonts: Populating font family aliases took 49 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost.
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+[PASS] T01  临时修正只在当前计划生效，不写配置、重扫后消失
+        计划内生效=True；配置无长期规则=True；重扫恢复自动=True；配置来源=default
+[PASS] T02  由手动修正生成长期规则 → 保存 → 重新生成后自动命中
+        写入配置=True；来源=custom；规则数=1
+        rule_key=long_term:lt-01f0154fe721
+        方向=项目 内部=作业
+        目标=_已整理/项目/数据大创/作业/a.pdf
+[PASS] T03  长期规则覆盖已命中「学期内目录」映射的文件
+        原依据=semester_dir:大二上/数据结构
+        原目标=_已整理/课程/大二上/数据结构/文档/作业/a.pdf
+        新依据=long_term:lt-63a070359ba1
+        新目标=_已整理/项目/数据大创/作业/a.pdf
+        保留内部路径=作业
+[PASS] T04  精确路径匹配只改变目标文件，同目录其他文件不受影响
+        a 依据=long_term:lt-t04 方向=项目
+        b 依据=semester_dir:大二上/数据结构 方向=课程
+[PASS] T05  目录范围：仅本级 / 含子目录 / 路径边界不误匹配
+        本级目录直接子文件命中=long_term:lt-afa0bb78efbc
+        仅本级模式下子目录文件=semester_dir:大二上/数据结构
+        含子目录模式下子目录文件=long_term:lt-a9b6fb0f3c99
+        相似目录（数据结构实验）=semester_dir:大二上/数据结构实验
+[PASS] T06  文件名关键词命中，且限定目录之外的同名关键词不命中
+        目录内+关键词=long_term:lt-t06
+        目录内但无关键词=semester_dir:大二上/数据结构
+        目录外但有关键词=semester_dir:大二上/C++程序设计
+[PASS] T07  重叠规则按顺序取第一条；排序/启停/删除实际改变计划；标识稳定
+        A在前=long_term:lt-a
+        B在前=long_term:lt-b
+        禁用A=long_term:lt-b
+        删除A=long_term:lt-b
+        rule_id 不随行号变化=True
+[PASS] T08  试运行与正式计划的命中数/目标变化/依据完全一致
+        试运行命中=3 变化=3 冲突=0
+        正式计划实际变化=3
+        样本依据一致=True 不一致项=[]
+[PASS] T09  保存→重启→规则恢复；不同根目录互不串用
+        root1 来源=custom 规则数=1 名称=root1 专属
+        root2 来源=default 规则数=0
+        root1 命中=long_term:lt-34f7f532eec7；root2 命中=semester_dir:大二上/数据结构
+[PASS] T10  取消/非法配置/保存失败不破坏既有配置
+        空名称错误数=1；路径逃逸错误数=1
+        非法保存被拒绝=True；原文件字节不变=True
+[PASS] T11  同名目标自动分配唯一名，执行后两份副本都保留
+        计划目标文件名=['dup (1).txt', 'dup.txt']
+        同一目标目录=True
+        实际文件=['dup (1).txt', 'dup.txt']
+        内容=['same-name-a', 'same-name-b']
+[PASS] T12  真实整理→重开→历史保留长期规则标识/依据→撤销恢复内容
+        移动=2/2
+        全部记录 rule_key=long_term:lt-t12 → True
+        依据含规则名 → True
+        批次配置快照含该规则 → True
+        撤销后源文件与 SHA 恢复 → True (2/2)
+[PASS] T13  先单文件修正，再做规则试运行，最后关闭窗口，生命周期正常
+        临时修正已应用=True
+        试运行命中=2 错误=''
+        关闭后无后台计划任务=True
+[PASS] T14  历史明细显示「长期规则」并带规则依据；CSV/JSON 导出含规则标识与依据
+        分类来源列=['长期规则', '长期规则']
+        悬浮提示='命中长期修正规则\n规则标识：long_term:lt-t14\n命中依据：长期规则「数据结构归项目」：来源目录「大二上/数据结构」（含子目录） → 项目/历史展示'
+        批次注意列='⚑ 长期规则×2'
+        JSON 字段=True（rule_key=long_term:lt-t14）
+        CSV 表头含规则列=True
+[PASS] T15  试运行在后台线程执行：界面不阻塞、运行中可关闭、迟到结果丢弃、线程回收
+        调用返回耗时=0.000s（应 <0.25s）
+        0.35s 内事件心跳=57 次（应 >30）
+        中途仍在运行=True
+        关闭返回耗时=0.000s（应 <0.2s）
+        关闭后迟到结果被忽略=True
+        线程已回收=True（registry 剩余=0）
+[PASS] T16  试运行缓存与当前输入一致：改内部路径/匹配/目标后必须先重新试运行
+        各次试运行成功=[True, True, True, True, True, True]
+        改内部路径值后缓存失效=True；保存被拒=True
+        切换内部路径方式后保存被拒=True
+        改关键词后保存被拒=True；改目标类别后保存被拒=True
+        未重试运行保存被拒=True
+        重新试运行后保存新值=True
+        未改动时保存与试运行标识/字段一致=True
+
+合计 16 项：通过 16 / 未通过 0 / 未测 0；退出码 0
+结果已保存: /private/tmp/stage4-daily-use-20261119/归档盒源码/tests/results_v15_long_term_rules.json
+EXIT:0
+===== tests/test_v16_scheme_preview.py =====
+qt.qpa.fonts: Populating font family aliases took 50 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost.
+[PASS] S01 方案导出后可在另一根目录导入并实际命中长期规则
+        源目录命中=1；另一目录来源=custom；命中=1
+        另一目录命中标识=long_term:lt-s01
+[PASS] S02 替换/合并：现有优先、同标识冲突、同名冲突、映射冲突均确定可解释
+        合并默认=[('lt-same', 'a'), ('lt-new', 'c')]
+        采用导入=[('lt-same', 'b'), ('lt-new', 'c')]
+        映射冲突=True 保留学期=大一上
+        同名默认/采用=lt-a/lt-b
+[PASS] S03 损坏/未知格式/版本不兼容/非法路径方案均被明确拒绝
+        拒绝结果={'损坏 JSON': True, '未知格式': True, '格式版本过高': True, '配置版本不兼容': True, '非法路径': True}
+[PASS] S04 应用失败保留原配置；成功后旧计划立即失效
+        失败抛错=True；失败后规则数=0；成功后计划失效=True；成功后规则数=1
+[PASS] S05 恢复上一次配置：自定义/内置默认可恢复，损坏备份被跳过且保留
+        恢复自定义=True；恢复默认=True；损坏备份已跳过=True；损坏文件保留=True
+        提示=已恢复上一次应用的配置。
+        恢复前的当前配置已备份为 config-backup-20261119-191200-345246.json；本次使用的备份 config-backup-20261119-191200-337393.json 已保留。
+        已跳过 1 份损坏/无效的备份（文件均保留）：config-backup-99999999-999999-000000.json
+[PASS] S06 配置备份按根目录隔离
+        根1备份=1；根2备份=0
+[PASS] S07 方案库：内置只读、保存/复制/改名/导入导出/删除
+        内置=[('内置默认方案', True), ('空白方案', True)]
+        保存=sc-9800c13eae27 复制=sc-82096258597f 改名=改名后
+        导出存在=True 导入新标识=True 删除=True
+[PASS] S08 修改方案库模板不改变已应用到目录的配置
+        应用前=['lt-s08']；改库后=['lt-s08']
+[PASS] P01 搜索与筛选只改变视图，不改变计划内容与勾选
+        计划未变=True；搜索后可见=2/3；清空后全部可见=True
+[PASS] P02 可见批量勾选不改变隐藏条目，计数包含隐藏已勾选项
+        隐藏前后勾选=[True, True]→[True, True]；计数=计划 3｜可见 1｜已勾选 2｜隐藏但仍勾选 2
+[PASS] P03 执行确认按全部勾选项统计并提示隐藏勾选项
+        总勾选=2；隐藏已勾选=1；提示=True
+[PASS] P04 目标树与计划逐项一致，且不创建真实目录
+        叶子=2 计划=2；根目录未变化=True
+[PASS] P05 筛选后按根目录+源相对路径定位同名文件，不误改其他同名项
+        可见行=[1]；定位=大二上/数据结构/作业/同名.pdf；篡改后被拒绝=True
+[PASS] P06 切换根目录后旧筛选/视图状态不污染新计划
+        搜索文本='' 可见标记=[] 计划=None
+[PASS] P07 手动修正改变方向后，筛选项刷新且仍有效的筛选条件保留
+        出现「项目」选项=True；保留「课程」筛选=True；切到项目后可见行=[0]
+[PASS] S09 方案中心可导出当前配置，并按替换/影响确认流程应用方案
+        内置行>=2=True；导出文件=True；应用回调规则数=1
+[PASS] S10 方案标识非法时拒绝写入，导入的越界标识被替换为安全标识
+        直接保存被拒=True；方案库外文件=True；导入路径在库内=True；标识安全=True（sc-6aa904bed331）
+[PASS] S11 备份失败时停止应用，原配置与当前状态保持不变
+        应用被拒绝=True；配置来源=default；规则数=0
+[PASS] X01 组合演练：导出→另一目录导入→执行→历史→撤销
+        命中=1 移动=1 历史规则标识=True
+        目标文件=['b.pdf'] 撤销完成=True 源恢复=True
+
+合计 19 项：通过 19 / 未通过 0；退出码 0
+EXIT:0
+===== tests/test_v13_config.py =====
+qt.qpa.fonts: Populating font family aliases took 50 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost.
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+[PASS] C01 默认配置保持 V1.1/V1.2 的推荐模式路径结果
+        路径一致=True；显式默认配置一致=True；未创建配置文件=True
+        Code/proj/x.py -> _已整理/项目/proj/x.py
+        大一下/已完成期末/高数/f.pdf -> _已整理/课程/大一下/高等数学/文档/高数/f.pdf
+        大二上/数据结构/作业/a.pdf -> _已整理/课程/大二上/数据结构/文档/作业/a.pdf
+        大二上/附件-通知/n.pdf -> _已整理/校园事务/通知/文档/n.pdf
+        散落.txt -> _已整理/待定/散落.txt
+[PASS] C02 合成场景（非真人反馈）：仅通过配置新增学期与课程映射，推荐模式结果改变并保留内部目录层级
+        原目标=_已整理/待定/自定义学期/report.pdf
+        新目标=_已整理/课程/2026秋-自定义学期/机器人基础/文档/实验一/report.pdf
+        依据=学期「2026秋-自定义学期」/「机器人基础」→ 课程/机器人基础
+        学期=2026秋-自定义学期 内部路径=实验一
+[PASS] C03 修改方向/类别/关键词规则后，命中依据与目标正确
+        顶层方向：竞赛 _已整理/竞赛/proj/a.py (顶层目录「Code」→ 竞赛/proj)
+        类别：数据结构（实验班） _已整理/课程/大二上/数据结构（实验班）/文档/x.pdf
+        关键词：项目/机器人实验 (keyword_unmatched:1:report)
+[PASS] C04 启用、停用、顺序调整真实生效
+        类别映射启用=数据结构A；停用后=数据结构（学期「大二上」/「数据结构」（目录锚定））
+        关键词顺序：默认=离散数学；高数置前=高等数学；全部停用=已完成期末（未细分）
+[PASS] C05 取消编辑不改变已生效规则和配置文件
+        内存生效配置未变=True；文件未变=True；result_config=None
+[PASS] C06 界面保存成功后旧计划立即失效，重新生成使用新配置
+        扫描/首计划=True/True；保存文件=True；旧计划失效=True；重新生成=True
+        旧目标=_已整理/待定/自定义学期/report.pdf
+        新目标=_已整理/课程/2026秋-自定义/机器人基础/文档/实验一/report.pdf
+[PASS] C07 重启恢复配置，不同根目录互相隔离
+        root1 首载含标记一=True；root2 含标记二=True；重启 root1 含标记一=True
+[PASS] C08 保存失败、损坏、不兼容版本、非法字段均有明确处理且保留原文件
+        保存失败=「保存分类配置失败，原配置未改动。」 旧文件保留=True
+        损坏=「分类配置文件无法读取或不是有效 JSON：/tmp/_v13_config_verify/c08/.organizer/classification_config.json」 原文件保留=True
+        版本=「分类配置版本不兼容：文件 version=99，当前程序支持 version=(1, 2)。」
+        根不匹配=「分类配置不属于当前根目录，已拒绝加载（不同目录的配置不能串用）。」
+        非法字段错误数=2；保存被拒=True
+[PASS] C09 路径逃逸与非法目标名称被拒绝（不写盘）
+        ../逃逸: 学期映射第 9 条 来源目录名：不能包含路径分隔符（当前：'../逃逸'）
+        /绝对路径: 学期映射第 9 条 来源目录名：不能包含路径分隔符（当前：'/绝对路径'）
+        a/b: 学期映射第 9 条 来源目录名：不能包含路径分隔符（当前：'a/b'）
+        ..: 学期映射第 9 条 来源目录名：不能是 . 或 ..（路径逃逸）
+        ~/家目录: 学期映射第 9 条 来源目录名：不能包含路径分隔符（当前：'~/家目录'）
+        C:\x: 学期映射第 9 条 来源目录名：不能包含路径分隔符（当前：'C:\\x'）
+        关键词目标 ../目标: 关键词规则第 13 条 目标类别：不能包含路径分隔符（当前：'../目标'）
+[PASS] C10 试运行零文件操作副作用，不计算 SHA-256，并与正式计划共用分类逻辑
+        文件清单不变=True；SHA 调用=0；与正式计划一致=True；配置变化项=1；UI 后台试运行=True
+        试运行不读取文件内容：未计算 SHA-256，内容重复信息未核验。
+[PASS] C11 后台任务使用独立配置快照，迟到结果不能覆盖新配置状态
+        线程启动=True；保存后旧计划已失效=True；迟到结果被忽略=True；快照独立=True
+[PASS] C12 保护目录不受新规则影响（配置不能解除保护）
+        计划文件=['公开/高数作业.pdf']；保护跳过=1
+[PASS] C13 自定义配置生成的计划：整理→重开→撤销，路径与内容恢复一致
+        移动=3；目标示例=['_已整理/待定/散落.txt', '_已整理/课程/2026秋/机器人基础/文档/实验一/report.pdf']；批次配置快照=True；撤销=完整撤销：恢复 3 项；清单恢复一致=True
+[PASS] C14 旧历史（无 config_json）与旧配置格式按兼容策略处理
+        迁移列=True；旧批次可读=True；新旧批次共存=True；旧批次可撤销=True；旧文件恢复=True；无配置时默认且不建文件=True；同版本多余字段容忍=True
+[PASS] C15 类别留空目录命中关键词规则时，配置方向与目标类别都真正生效（合成场景，非真人反馈）
+        正式计划与试运行一致=True；目录映射方向=课程、关键词规则方向=项目
+        实际方向=项目；目标=_已整理/项目/机器人实验/robot.pdf
+        依据=学期「大一下」/「已完成期末」+关键词「robot」→ 项目/机器人实验
+        默认关键词路径保持兼容=True
+        试运行新目标=_已整理/项目/机器人实验/robot.pdf
+[PASS] C16 原始 JSON 类型错误在类型转换前被拒绝；合法 false/空数组正常
+        enabled 字符串：保留原文件=True；错误=True；分类配置字段类型不正确：/tmp/_v13_config_verify/c16_types/.organizer/classification_config.json
+        学期标签数字：保留原文件=True；错误=True；分类配置字段类型不正确：/tmp/_v13_config_verify/c16_types/.organizer/classification_config.json
+        version 布尔值：保留原文件=True；错误=True；分类配置字段类型不正确：/tmp/_v13_config_verify/c16_types/.organizer/classification_config.json
+        关键词元素数字：保留原文件=True；错误=True；分类配置字段类型不正确：/tmp/_v13_config_verify/c16_types/.organizer/classification_config.json
+        规则数组写成对象：保留原文件=True；错误=True；分类配置字段类型不正确：/tmp/_v13_config_verify/c16_types/.organizer/classification_config.json
+        缺少必填字段：保留原文件=True；错误=True；分类配置字段类型不正确：/tmp/_v13_config_verify/c16_types/.organizer/classification_config.json
+        主窗口记录错误并阻止生成计划=True；合法 false/空数组正常=True
+[PASS] C17 关闭等待期间不发布试运行结果；迟到/过期/错误根目录结果被忽略
+        成功信号已排队且线程仍在=True；关闭等待=True；结果未发布/控件未恢复=True；线程仍受管理=True
+        放行后线程结束=True；窗口自动关闭且数据库关闭=True；登记与引用已回收=True
+        已关闭/旧seq/错误root被忽略=True；正常结果仍接受=True；正常失败仍提示=True
+[PASS] C18 取消编辑不在界面线程同步等待；迟到结果被忽略，线程结束后回收
+        线程真实进入阻塞点=True；reject 耗时=0.000s（<1s=True）；Qt 心跳=True
+        取消后线程仍运行且受主窗口登记=True；迟到进度/结果/失败被忽略=True
+        随后关闭主窗口：等待中=True；线程结束后自动关闭且数据库关闭=True；引用回收=True
+
+======================================================================
+合计 18 项：通过 18 / 未通过 0 / 未测 0
+退出码: 0
+======================================================================
+结果已保存: /private/tmp/stage4-daily-use-20261119/归档盒源码/tests/results_v13_config.json
+EXIT:0
+===== tests/test_stage2_preferences.py =====
+qt.qpa.fonts: Populating font family aliases took 54 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost.
+[PASS] T01 未保存偏好时样本 A 不会进入「项目/归档盒」 — target=_已整理/待定/下载/归档盒/开发说明.md
+[PASS] T02 从界面修正入口保存空间偏好，字段与确认信息落库 — rows=1 scope=space enabled=True match=下载/归档盒 target=项目 / 归档盒
+[PASS] T03 保存对话框同时展示匹配条件、适用范围、目标 — <b>规则预览：</b>开发文档按项目归档 | <b>匹配条件：</b>来源目录 = 下载/归档盒（含子目录） | <b>适用范围：</b>当前整理空间「space」 | <b>目标：</b>→ 项目 / （无学期） / 归档盒
+[PASS] T04 空间偏好同步写入该空间 JSON 长期规则镜像 — json_ids=['lt-05b4771233a6']
+[PASS] T05 关闭重开后样本 B 命中偏好；对照空间 / 生效空间目标不同 — control=_已整理/待定/下载/归档盒/接口草稿.md | space=_已整理/项目/归档盒/接口草稿.md | 依据=长期偏好「开发文档按项目归档」(lt-05b4771233a6)：来源目录「下载/归档盒」（含子目录） → 项目/归档盒
+[PASS] T06 预览依据同时包含偏好名称与 preference_id — 长期偏好「开发文档按项目归档」(lt-05b4771233a6)：来源目录「下载/归档盒」（含子目录） → 项目/归档盒
+[PASS] T07 「仅改本次」立即生效且不写偏好库 — target=_已整理/课程/2026秋-大二上/高等数学/文档/临时稿.md rows 1->1
+[PASS] T08 重新生成预览后本次临时修正消失，已保存偏好仍生效 — target=_已整理/项目/归档盒/临时稿.md
+[PASS] T09 对照空间「仅改本次」重启后回到无偏好结果 — one_off=_已整理/课程/2026秋-大二上/高等数学/文档/说明.md auto_again=_已整理/待定/下载/归档盒/说明.md auto=_已整理/待定/下载/归档盒/说明.md rows=0
+[PASS] T10 取消 / 直接关闭保存对话框都不增加偏好行 — rows=1/1/1
+[PASS] T11 AI 回退候选不写偏好库 — rows=0->0 target=_已整理/课程/未识别学期/高等数学/文档/未知.md
+[PASS] T12 配置页修改目标后新预览使用新目标 — target=_已整理/项目/课程设计/接口草稿.md
+[PASS] T13 停用后新预览不再命中；偏好行保留但 enabled=false — enabled=False target=_已整理/待定/下载/归档盒/接口草稿.md
+[PASS] T14 重启后仍停用且不新增偏好行 — rows=1 enabled=False
+[PASS] T20 「仅改本次」覆盖已保存偏好并在依据里说明 — target=_已整理/课程/2026秋-大二上/高等数学/文档/接口草稿.md 依据=手动修正：方向「课程」 / 学期「2026秋-大二上」 / 类别「高等数学」；已覆盖本次预览采用的长期偏好「开发文档按项目归档」(lt-05b4771233a6)：来源目录「下载/归档盒」（含子目录） → 项目/课程设计
+[PASS] T15 旧 JSON 只迁一次；停用规则迁入后仍停用 — rows=1 enabled=False kind=migrated_json marker=True
+[PASS] T16 JSON 改回 enabled=true 不会重新启用或重复插入 — rows=1 enabled=False target=_已整理/待定/下载/归档盒/旧稿.md
+[PASS] T17 另一整理空间相同相对路径不命中空间偏好 — control=_已整理/待定/下载/归档盒/接口草稿.md space2=_已整理/待定/下载/归档盒/接口草稿.md
+[PASS] T18 只有点选「全局」才写入全局库，且不写任何空间 JSON — global_ids=['lt-45963f4d5ba4'] json_ids=[]
+[PASS] T19 已启用全局偏好在第二空间生效，依据含 preference_id — target=_已整理/项目/全局归档/说明.md 依据=长期偏好「全局说明归档」(lt-45963f4d5ba4)：来源目录「下载/其它」（含子目录） → 项目/全局归档
+[PASS] T21 同等级同匹配/不同目标生成歧义且默认不勾选 — selected=False candidates=3 ids=['lt-a', 'lt-b']
+[PASS] T22 歧义改选后勾选且不新写偏好 — selected=True target=_已整理/项目/课程设计/冲突.md rows 2->2
+[PASS] T23 已有 long_term: 历史行在打开偏好库后保持不变 — rule_key=long_term:lt-history source=长期规则
+[PASS] T24 撤销 long_term 批次后路径与 SHA-256 恢复 — restored=1 conflicts=0 sha_ok=True
+[PASS] T25 取消执行确认框后源文件路径与 SHA-256 不变 — exists=True sha_ok=True
+[PASS] T26 明确命中偏好且无歧义时预览默认勾选 — rule_key=long_term:lt-selected target=_已整理/项目/归档盒/一样.md ambiguity=False selected=True
+[PASS] T27 直接点「恢复自动分类」仍回到这条偏好 — target=_已整理/项目/归档盒/恢复.md rule_key=long_term:lt-revert selected=True manual=False
+[PASS] T28 「仅改本次」改到高等数学且不新增偏好 — target=_已整理/课程/2026秋-大二上/高等数学/文档/恢复.md rows=1
+[PASS] T29 改到高等数学后再恢复自动，回到偏好目标与 long_term 依据 — target=_已整理/项目/归档盒/恢复.md rule_key=long_term:lt-revert 依据=长期偏好「恢复到偏好」(lt-revert)：来源目录「下载/归档盒」（含子目录） → 项目/归档盒
+[PASS] T30.1 内部路径「保留」恢复后不丢失 — before=_已整理/项目/归档盒/归档盒/保留.md after=_已整理/项目/归档盒/归档盒/保留.md
+[PASS] T30.2 内部路径「替换」恢复后不丢失 — before=_已整理/项目/归档盒/专题/替换.md after=_已整理/项目/归档盒/专题/替换.md
+[PASS] T31 取消确认两个都不动；确认后只移动勾选文件 — both_selected=True uncheck=True moved=True cancel=True
+[PASS] T32 撤销后勾选文件路径与 SHA-256 恢复，未勾选文件始终原位 — restored=1 conflicts=0 sha_ok=True
+[PASS] T33 全局库损坏时已停用空间规则不从 JSON 镜像复活 — target=_已整理/待定/下载/归档盒/停用.md selected=False rule_key=fallback
+[PASS] T34 保存报错后空间库与 JSON 都保持旧目标 — raised=True db=归档盒 json=归档盒
+[PASS] T35 旧窗口保存不会删掉另一窗口刚写入的全局偏好 — global_ids=['lt-global-first', 'lt-global-second']
+[PASS] T36 应用含新长期规则的方案后正式预览使用新目标 — db=新方案目标 target=_已整理/项目/新方案目标/方案.md
+[PASS] T37 「按类型」「按课程再按类型」不被长期偏好改到项目目录 — by_type=_已整理/文档 course_then_type=_已整理/未分类课程/文档
+[PASS] T38 同级偏好冲突仍保留 AIGC 正文去向 — selected=False body_kept=True ids=['lt-body-a', 'lt-body-b'] 候选=['正文', '正文关键词「aigc」', '长期偏好「冲突 A」(lt-body-a)：来源目录「下载」（含子目录）', '长期偏好「冲突 B」(lt-body-b)：来源目录「下载」（含子目录）']
+[PASS] T39 单条保存失败不写 JSON，重开仍按库里的旧目标 — raised=True json=归档盒 target=_已整理/项目/归档盒/样本.md rule_key=long_term:lt-old selected=True
+[PASS] T39.2 没有旧规则时，失败的保存也不得让预览采用 JSON 新规则 — raised=True json_ids=[] target=_已整理/待定/下载/归档盒/新样本.md rule_key=fallback
+[PASS] T40 空间库打不开时只用全局偏好，不回退 JSON 空间规则 — target=_已整理/项目/全局目标/样本.md rule_key=long_term:lt-global selected=True note=本空间偏好库不可用：file is not a database
+[PASS] T41 旧窗口不覆盖另一窗口对同一条偏好的修改 — unchanged={'lt-global': '全局目标', 'lt-global-first': 'A', 'lt-shared': '另一窗口新目标', 'lt-shared-new': '新增目标', 'lt-global-second': 'B'} conflict={'lt-global': '全局目标', 'lt-global-first': 'A', 'lt-shared': '另一窗口新目标', 'lt-shared-new': '新增目标', 'lt-global-second': 'B'} raised=True
+[PASS] T42 恢复备份同步失败时 JSON 回到恢复前，且不提示已恢复 — raised=True json=新方案目标 db=新方案目标 status='请先选择文件夹，再重新扫描。'
+[PASS] T42.2 恢复成功时 JSON 与库一起回到备份目标 — message='已恢复上一次应用的配置。\n恢复前的当前配置已备份为 config-backup-20261119-191215-365049.json；本次使用的备份 config-backup-20261119-191215-230481.json 已保留。' json=归档盒 db=归档盒 target=_已整理/项目/归档盒/恢复.md
+[PASS] T43 全局库提交失败后空间库/全局库/JSON 都回到保存前 — space=归档盒 global=全局旧目标 json=归档盒 target=_已整理/项目/归档盒/样本.md rule_key=long_term:lt-space selected=True msg=偏好库写入失败，已整体回滚：database is locked
+
+已生效的规则和偏好保持不变，配置文件与偏好库都没有被改写。
+[PASS] T44 配置页一项不改保存时保留 reason 且不误报并发冲突 — unchanged=True reason1=由手动修正生成 json1=由手动修正生成 concurrent=True cat2=另一窗口新目标 reason2=由手动修正生成 errors=[]
+[PASS] T45 改作用范围会搬迁原行；原行被别处改过时整次取消 — global=True preview=_已整理/项目/归档盒/迁移.md space=True conflict=True errors=['偏好「迁移规则3」(lt-move3) 已在其他窗口被修改，本次保存已取消。请重新打开配置页后再修改。\n\n已生效的规则和偏好保持不变，配置文件与偏好库都没有被改写。']
+[PASS] T46 配置 JSON 损坏时仍可从配置页保存修好 — had_error=True accepted=True cfg_ok=True errors=[]
+[PASS] T46.2 偏好库失败时把损坏的原文件字节放回，不留半份新配置 — raw_same=True still_corrupt=True msg=偏好库写入失败，已整体回滚：database is locked
+
+已生效的规则和偏好保持不变，配置文件与偏好库都没有被改写。
+[PASS] T47 恢复失败删掉本次新备份，修好库后重试恢复原目标 — json1=当前目标 db1=当前目标 backups=1->1 status1='请先选择文件夹，再重新扫描。' json2=归档盒 db2=归档盒 target=_已整理/项目/归档盒/重试.md message='已恢复上一次应用的配置。'
+[PASS] T48 单条偏好命中时保留高等数学与 AIGC 正文候选且不勾选 — selected=True candidates=[('归档盒', 'lt-body-single'), ('高等数学', None), ('AIGC（生成式人工智能）', None)] auto=keyword_unmatched:356:高等数学 selectable=True
+[PASS] T49 失败回滚保留另一窗口已保存的空间目标与 JSON — space=B 已保存的空间目标 json=B 已保存的空间目标 global=全局旧目标 target=_已整理/项目/B 已保存的空间目标/样本.md rule_key=long_term:lt-space selected=True b_ok=True b_error=None msg=偏好库写入失败；空间偏好库与 JSON 镜像保留了其他窗口的较新内容（lt-space）；全局偏好库已恢复：database is locked
+
+已生效的规则和偏好保持不变，配置文件与偏好库都没有被
+[PASS] T50 写入前重读发现较新保存时整次取消并保留 B 的目标 — global=B 已确认的新目标 b_ok=True target=_已整理/项目/B 已确认的新目标/样本.md selected=True msg=偏好「全局共享」(lt-g) 已在其他窗口被修改，本次保存已取消。请重新打开配置页后再修改。
+
+已生效的规则和偏好保持不变，配置文件与偏好库都没有被改写。
+[PASS] T51 目标库不可用时改范围整次失败，范围与预览保持保存前 — space=原目标 json=原目标 target=_已整理/项目/原目标/样本.md selected=True msg=全局偏好库不可用，无法把偏好「范围规则」(lt-u) 保存为「全局（所有整理空间）」；本次保存已取消，范围和目标保持保存前。
+
+已生效的规则和偏好保持不变，配置 reverse=True
+[PASS] T52.2 全局提交失败时普通分类映射也恢复，保留 B 的空间偏好 — target=_已整理/待定/独立归档源/普通笔记.md selected=False B=B 已保存的空间目标
+[PASS] T52 多规则失败补偿时 JSON 与空间库逐条一致，恢复备份后不复活被取消目标 — space1=B 已保存的空间目标 space2=空间二旧目标 json1=B 已保存的空间目标 json2=空间二旧目标 global=全局旧目标 preview2=_已整理/项目/空间二旧目标/另一份.md dry=_已整理/项目/空间二旧目标/另一份.md restored=_已整理/项目/空间二旧目标/另一份.md b_ok=True msg=偏好库写入失败；空间偏好库与 JSON 镜像保留了其他窗口的较新内容（lt-space-1），其余本次改动的规则已恢复为保存前（lt-space-2）；全局偏好库已恢复：database is locked
+
+已生效的规则和偏好保持不变，配
+[PASS] T53 全局改当前空间失败后空间 JSON 不残留全局规则 — space=['lt-space-1'] global=['lt-global'] json={'lt-space-1': 'B 已保存的空间目标'} export_lt_global=False preview=_已整理/项目/全局旧目标/另一份.md rule=long_term:lt-global restored_space=['lt-space-1'] disabled=True b_ok=True msg=偏好库写入失败；空间偏好库与 JSON 镜像保留了其他窗口的较新内容（lt-space-1），其余本次改动的规则已恢复为保存前（lt-global）；全局偏好库已恢复：database is locked
+
+已生效的规则
+[PASS] T53.2 空间改全局失败后原行回到空间库与 JSON，不留在全局库 — space={'lt-move': '保存前目标', 'lt-space-2': 'B 的新目标'} global=['lt-global'] json={'lt-move': '保存前目标', 'lt-space-2': 'B 的新目标'} preview=_已整理/项目/保存前目标/迁移.md restored=_已整理/项目/保存前目标/迁移.md b_ok=True msg=偏好库写入失败；空间偏好库与 JSON 镜像保留了其他窗口的较新内容（lt-space-2），其余本次改动的规则已恢复为保存前（lt-move）；全局偏好库已恢复：database is locked
+
+已生效的规则和偏
+[PASS] T53.3 无其他窗口时全局改当前空间失败仍整份回到保存前 — space=[] json=[] global={'lt-global': 'global'} msg=偏好库写入失败，已整体回滚：database is locked
+
+已生效的规则和偏好保持不变，配置文件与偏好库都没有被改写。
+[PASS] T55 A 失败保存期间的备份不含未提交偏好，恢复后不复活 — backup={'lt-space-a': '空间保存前目标'} space=[] global=全局保存前目标 before=(_已整理/待定/下载/归档盒/样本.md,fallback,False) after=(_已整理/项目/空间保存前目标/样本.md,long_term:lt-space-a,True) restored_cat=空间保存前目标 b_ok=True b_error=None msg=偏好库写入失败；空间偏好库与 JSON 镜像保留了其他窗口的较新内容（lt-space-a）；全局偏好库已恢复：database is locked
+
+已生效的规则和偏好保持不变，
+[PASS] T56 B 先保存再应用方案，备份仍不含 A 失败的偏好 — live={'lt-space-a': '空间保存前目标', 'lt-space-b': 'B 自己确认的目标'} backup={'lt-space-a': '空间保存前目标', 'lt-space-b': 'B 自己确认的目标'} space=[] after=(_已整理/项目/空间保存前目标/样本.md,long_term:lt-space-a,True) restored={'lt-space-a': '空间保存前目标', 'lt-space-b': 'B 自己确认的目标'} b_ok=True b_error=None msg=偏好库写入失败；空间偏好库与 JSON 镜像保留了其他窗口的较新内容（lt-space-a）；全局偏好库已恢复：database is locked
+
+已生效的规则和偏好保持不变，
+[PASS] T57 单条保存遇镜像写入故障时库与 JSON 都回到调用前 — raised=偏好库写入失败，已回滚：验收注入：配置 JSON 写入失败 space={} json={} after=(_已整理/待定/下载/归档盒/样本.md,fallback,False)
+[PASS] T57.2 单条删除遇镜像写入故障时库与 JSON 都回到调用前 — raised=偏好库删除失败，已回滚：验收注入：配置 JSON 写入失败 before={'lt-retain': '已保存的目标'} after={'lt-retain': '已保存的目标'} json_before={'lt-retain': '已保存的目标'} json_after={'lt-retain': '已保存的目标'}
+[PASS] T54 两次成功确认都进入空间库、JSON 和恢复后的预览 — SQLite=['lt-window-a', 'lt-window-b'] JSON=['lt-window-a', 'lt-window-b'] restored=_已整理/项目/B 确认的目标/普通笔记.md
+
+合计 65 项：通过 65 / 未通过 0
+EXIT:0
+===== tests/test_stage3_delivery.py =====
+qt.qpa.fonts: Populating font family aliases took 49 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost.
+[PASS] S12 重置不覆盖已有文件和目录外符号链接，只写回脚本自己创建的文件
+root退出码=0
+整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_root_rmp2q6hn/普通资料
+范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_root_rmp2q6hn/范围外-不要放进样本.md
+范围外对照已存在，未覆盖
+已新建演示文件：下载/归档盒/开发说明.md
+已新建演示文件：下载/笔记.txt
+已新建演示文件：项目/AIGC/项目说明.md
+本空间没有已保存的偏好
+保留的非演示文件：
+  作业/保留.md
+默认路径退出码=0
+整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_default_jo0toott/演示样本
+范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_default_jo0toott/范围外-不要放进样本.md
+已新建范围外对照
+已新建演示文件：下载/归档盒/开发说明.md
+已新建演示文件：下载/笔记.txt
+已新建演示文件：项目/AIGC/项目说明.md
+本空间没有已保存的偏好
+保留的非演示文件：
+  普通资料/保留.md
+已有文件退出码=0
+整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_user_juoftqsb/普通资料
+范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_user_juoftqsb/范围外-不要放进样本.md
+已新建范围外对照
+已新建演示文件：下载/归档盒/开发说明.md
+已有文件未覆盖：下载/笔记.txt
+已新建演示文件：项目/AIGC/项目说明.md
+本空间没有已保存的偏好
+符号链接退出码=0
+整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_user_juoftqsb/链接样本
+范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_reset_user_juoftqsb/范围外-不要放进样本.md
+范围外对照已存在，未覆盖
+已新建演示文件：下载/归档盒/开发说明.md
+符号链接未跟随：下载/笔记.txt
+已新建演示文件：项目/AIGC/项目说明.md
+本空间没有已保存的偏好
+保留sha不变=True 范围外sha不变=True 用户笔记sha不变=True 链接目标sha不变=True 演示样本内其他文件sha不变=True
+[PASS] S13 同一目录再次重置后，开发说明回到待定且未勾选
+第一次=_已整理/待定/下载/归档盒/开发说明.md fallback selected=False
+重置后=_已整理/待定/下载/归档盒/开发说明.md fallback selected=False
+偏好行=0
+[PASS] S14 从未做过演示的整理空间，重置不删除已有偏好
+重置前=_已整理/项目/归档盒/自己的资料.md long_term:lt-6a807206152b selected=True
+整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_delivery_mdguajya/existing-space
+范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_delivery_mdguajya/范围外-不要放进样本.md
+范围外对照已存在，未覆盖
+已新建演示文件：下载/归档盒/开发说明.md
+已新建演示文件：下载/笔记.txt
+已新建演示文件：项目/AIGC/项目说明.md
+已保留进入演示前的偏好
+保留的非演示文件：
+  .organizer/classification_config.json
+  .organizer/history.db
+  .organizer/preferences.db
+  .organizer/scan_cache.json
+  下载/归档盒/自己的资料.md
+重置后=_已整理/项目/归档盒/自己的资料.md long_term:lt-6a807206152b selected=True
+偏好=['lt-6a807206152b'] sha不变=True
+[PASS] S16 普通空间在重置之后新确认的偏好，再次重置仍保留
+第一次重置：整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_delivery_mdguajya/ordinary-later
+范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_delivery_mdguajya/范围外-不要放进样本.md
+范围外对照已存在，未覆盖
+已新建演示文件：下载/归档盒/开发说明.md
+已新建演示文件：下载/笔记.txt
+已新建演示文件：项目/AIGC/项目说明.md
+已保留进入演示前的偏好
+保留的非演示文件：
+  .organizer/classification_config.json
+  .organizer/history.db
+  .organizer/preferences.db
+  .organizer/scan_cache.json
+  下载/归档盒/自己的资料.md
+第二次重置：整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_delivery_mdguajya/ordinary-later
+范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_delivery_mdguajya/范围外-不要放进样本.md
+范围外对照已存在，未覆盖
+已写回脚本创建的文件：下载/归档盒/开发说明.md
+已写回脚本创建的文件：下载/笔记.txt
+已写回脚本创建的文件：项目/AIGC/项目说明.md
+已保留该整理空间后来确认的偏好
+保留的非演示文件：
+  .organizer/classification_config.json
+  .organizer/history.db
+  .organizer/preferences.db
+  .organizer/scan_cache.json
+  下载/归档盒/自己的资料.md
+  后来新加的资料/实验记录.md
+重置前=_已整理/项目/新增资料/实验记录.md long_term:lt-b37a5f1d45c0 selected=True
+重置后=_已整理/项目/新增资料/实验记录.md long_term:lt-b37a5f1d45c0 selected=True
+偏好前=['lt-4512cf0660dd', 'lt-b37a5f1d45c0'] 偏好后=['lt-4512cf0660dd', 'lt-b37a5f1d45c0'] sha不变=True
+[PASS] S17 范围外对照是悬空符号链接时，不在目录外创建文件
+退出码=0
+整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_dangling_1jk6uc72/样本
+范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_dangling_1jk6uc72/范围外-不要放进样本.md
+范围外对照是符号链接，未跟随
+已新建演示文件：下载/归档盒/开发说明.md
+已新建演示文件：下载/笔记.txt
+已新建演示文件：项目/AIGC/项目说明.md
+本空间没有已保存的偏好
+链接仍在=True 外部文件被创建=False
+[PASS] S15 清单临时文件是符号链接时，不改写目录外文件
+退出码=0
+整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_ledger_link_lrlgn2r6/样本
+范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_ledger_link_lrlgn2r6/范围外-不要放进样本.md
+已新建范围外对照
+已新建演示文件：下载/归档盒/开发说明.md
+已新建演示文件：下载/笔记.txt
+已新建演示文件：项目/AIGC/项目说明.md
+本空间没有已保存的偏好
+外部sha不变=True 配置sha不变=True
+[PASS] S18 空演示目录执行后再重置，按 inode 移回并回到首次预览
+首次重置退出码=0
+整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_empty_demo_ge5r6gpk/演示样本
+范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_empty_demo_ge5r6gpk/范围外-不要放进样本.md
+已新建范围外对照
+已新建演示文件：下载/归档盒/开发说明.md
+已新建演示文件：下载/笔记.txt
+已新建演示文件：项目/AIGC/项目说明.md
+本空间没有已保存的偏好
+执行历史=['batch=1 status=done n=3', '  moved 下载/归档盒/开发说明.md -> _已整理/项目/归档盒/开发说明.md sha=80a72d1c0a23587f0f98aeb93b1171cb9c102d7b9caf70613cdfd8495fd2e4e3', '  moved 下载/笔记.txt -> _已整理/课程/未识别学期/高等数学/文档/笔记.txt sha=039c9f4fd98b0173f9c0baa4068b472de928725db54d39167fdebe14eb338a1f', '  moved 项目/AIGC/项目说明.md -> _已整理/项目/AIGC/项目说明.md sha=0447593bad769466354af67543702a8ad86342f9700de47e4ab2b8964a9d842b']
+执行目标={'下载/归档盒/开发说明.md': '_已整理/项目/归档盒/开发说明.md', '下载/笔记.txt': '_已整理/课程/未识别学期/高等数学/文档/笔记.txt', '项目/AIGC/项目说明.md': '_已整理/项目/AIGC/项目说明.md'}
+再次重置退出码=0
+整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_empty_demo_ge5r6gpk/演示样本
+范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_empty_demo_ge5r6gpk/范围外-不要放进样本.md
+范围外对照已存在，未覆盖
+已按 inode 移回演示文件：下载/归档盒/开发说明.md
+已按 inode 移回演示文件：下载/笔记.txt
+已按 inode 移回演示文件：项目/AIGC/项目说明.md
+已清除演示期间新增的偏好，下次扫描从首次预览开始
+保留的非演示文件：
+  .organizer/classification_config.json
+  .organizer/history.db
+  .organizer/scan_cache.json
+再扫描=['下载/归档盒/开发说明.md', '下载/笔记.txt', '项目/AIGC/项目说明.md']
+开发说明=_已整理/待定/下载/归档盒/开发说明.md selected=False 依据=fallback
+笔记=_已整理/课程/未识别学期/高等数学/文档/笔记.txt 项目=_已整理/项目/AIGC/项目说明.md
+首次基线={'下载/归档盒/开发说明.md': ('_已整理/待定/下载/归档盒/开发说明.md', False), '下载/笔记.txt': ('_已整理/课程/未识别学期/高等数学/文档/笔记.txt', True), '项目/AIGC/项目说明.md': ('_已整理/项目/AIGC/项目说明.md', True)}
+偏好行=0 history.db=True
+[PASS] S19 用户文件与符号链接在重置前后 SHA 不变，演示文件不重复
+重置退出码=0
+整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_demo_with_user_arp5ty7v/演示样本
+范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_demo_with_user_arp5ty7v/范围外-不要放进样本.md
+范围外对照已存在，未覆盖
+已按 inode 移回演示文件：下载/归档盒/开发说明.md
+已按 inode 移回演示文件：下载/笔记.txt
+已按 inode 移回演示文件：项目/AIGC/项目说明.md
+已清除演示期间新增的偏好，下次扫描从首次预览开始
+保留的非演示文件：
+  .organizer/classification_config.json
+  .organizer/history.db
+  .organizer/scan_cache.json
+  _已整理/用户自有.md
+  普通资料/说明.md
+用户材料前={'/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_demo_with_user_arp5ty7v/演示样本/_已整理/用户自有.md': '82d1e355cd28f9339a187ce10b4fde9aa0592ed1dbc5ad8f1962ac8045be5e81', '/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_demo_with_user_arp5ty7v/演示样本/普通资料/说明.md': '0cea81f2e5b6fbfebbddf0f1e91b12f000105f90661a20b1c87c577966ffbeb1', '/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_demo_with_user_arp5ty7v/外部目标.md': '0165f499992e45d4534afe750983e1e892ec16c09e679b381f68b020102e315e'}
+用户材料后={'/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_demo_with_user_arp5ty7v/演示样本/_已整理/用户自有.md': '82d1e355cd28f9339a187ce10b4fde9aa0592ed1dbc5ad8f1962ac8045be5e81', '/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_demo_with_user_arp5ty7v/演示样本/普通资料/说明.md': '0cea81f2e5b6fbfebbddf0f1e91b12f000105f90661a20b1c87c577966ffbeb1', '/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_demo_with_user_arp5ty7v/外部目标.md': '0165f499992e45d4534afe750983e1e892ec16c09e679b381f68b020102e315e'}
+链接仍在=True 悬空链接仍在=True
+再扫描=['下载/归档盒/开发说明.md', '下载/笔记.txt', '普通资料/说明.md', '项目/AIGC/项目说明.md']
+执行目标={'下载/归档盒/开发说明.md': '_已整理/项目/归档盒/开发说明.md', '下载/笔记.txt': '_已整理/课程/未识别学期/高等数学/文档/笔记.txt', '普通资料/说明.md': '_已整理/待定/普通资料/说明.md', '项目/AIGC/项目说明.md': '_已整理/项目/AIGC/项目说明.md'}
+[PASS] S20 重置之后从主窗口撤销，已恢复的演示文件和用户文件都不变
+重置退出码=0
+撤销后历史=['batch=1 status=partial_failed_undone n=3', '  conflict 下载/归档盒/开发说明.md -> _已整理/项目/归档盒/开发说明.md sha=80a72d1c0a23587f0f98aeb93b1171cb9c102d7b9caf70613cdfd8495fd2e4e3', '  conflict 下载/笔记.txt -> _已整理/课程/未识别学期/高等数学/文档/笔记.txt sha=039c9f4fd98b0173f9c0baa4068b472de928725db54d39167fdebe14eb338a1f', '  conflict 项目/AIGC/项目说明.md -> _已整理/项目/AIGC/项目说明.md sha=0447593bad769466354af67543702a8ad86342f9700de47e4ab2b8964a9d842b']
+演示前={'下载/归档盒/开发说明.md': '80a72d1c0a23587f0f98aeb93b1171cb9c102d7b9caf70613cdfd8495fd2e4e3', '下载/笔记.txt': '039c9f4fd98b0173f9c0baa4068b472de928725db54d39167fdebe14eb338a1f', '项目/AIGC/项目说明.md': '0447593bad769466354af67543702a8ad86342f9700de47e4ab2b8964a9d842b'}
+演示后={'下载/归档盒/开发说明.md': '80a72d1c0a23587f0f98aeb93b1171cb9c102d7b9caf70613cdfd8495fd2e4e3', '下载/笔记.txt': '039c9f4fd98b0173f9c0baa4068b472de928725db54d39167fdebe14eb338a1f', '项目/AIGC/项目说明.md': '0447593bad769466354af67543702a8ad86342f9700de47e4ab2b8964a9d842b'}
+用户前={'/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_undo_after_reset_gp9os2xr/演示样本/_已整理/用户自有.md': '587e2403a9e13467d1964a45bd660ecaff30b9449f895687a13157a7d70e96e5', '/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_undo_after_reset_gp9os2xr/演示样本/普通资料/说明.md': '520dad5fad130c513195415f69c5705963326bca07ed03633b2e6efdeef55ad9'}
+用户后={'/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_undo_after_reset_gp9os2xr/演示样本/_已整理/用户自有.md': '587e2403a9e13467d1964a45bd660ecaff30b9449f895687a13157a7d70e96e5', '/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_undo_after_reset_gp9os2xr/演示样本/普通资料/说明.md': '520dad5fad130c513195415f69c5705963326bca07ed03633b2e6efdeef55ad9'}
+[PASS] S21 目录外硬链接的 inode 不被截断或覆盖，原路径改成新 inode
+旧清单退出码=0
+整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_hardlink_6e836awg/旧清单
+范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_hardlink_6e836awg/范围外-不要放进样本.md
+范围外对照已存在，未覆盖
+已写回脚本创建的文件：下载/归档盒/开发说明.md
+已新建演示文件：下载/笔记.txt
+同 inode 的文件带硬链接，未移动，已新建：下载/笔记.txt
+已写回脚本创建的文件：项目/AIGC/项目说明.md
+已保留进入演示前的偏好
+保留的非演示文件：
+  _已整理/课程/未识别学期/高等数学/文档/笔记.txt
+目录外sha不变=True 原路径是新 inode=True
+新清单退出码=0
+整理空间：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_hardlink_6e836awg/新清单
+范围外对照：/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_hardlink_6e836awg/范围外-不要放进样本.md
+范围外对照已存在，未覆盖
+已写回脚本创建的文件：下载/归档盒/开发说明.md
+硬链接未覆盖：下载/笔记.txt
+已写回脚本创建的文件：项目/AIGC/项目说明.md
+已保留进入演示前的偏好
+目录外sha不变=True 原路径nlink=2
+[PASS] S24 检查通过后才多出的目录外硬链接，写回前再查 nlink，不截断
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '硬链接未覆盖：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+目录外sha不变=True 目录外内容='个人内容，不能被重置改写\n'
+原路径内容='个人内容，不能被重置改写\n' 存在=True
+[PASS] S25 打开之前才多出的目录外硬链接，打开后立刻查 nlink，不写入
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '硬链接未覆盖：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+目录外sha不变=True 目录外内容='个人内容，不能被重置改写\n'
+原路径内容='个人内容，不能被重置改写\n' nlink=2
+[PASS] S26 打开之前路径被换成另一份文件时，保留该文件，不按旧 inode 写入
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '路径已被换成另一份文件，未覆盖：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+路径sha=290f919280e6aa4456f285c9d5d579b4a15344739da5f0bebb1a6b52c6eb3051 内容=b'new document saved by another program\n'
+[PASS] S27 链接后目标路径被换掉时，保留换入的文件，不再新建或 unlink
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '移回后身份不一致，未删除：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+目标sha=290f919280e6aa4456f285c9d5d579b4a15344739da5f0bebb1a6b52c6eb3051 内容=b'new document saved by another program\n'
+旧位置仍在=True
+[PASS] S28 fstat 结果过期时不截断不写入，安装前再看一次路径
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '硬链接未覆盖：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+目录外sha=290f919280e6aa4456f285c9d5d579b4a15344739da5f0bebb1a6b52c6eb3051 内容=b'new document saved by another program\n'
+原路径sha=290f919280e6aa4456f285c9d5d579b4a15344739da5f0bebb1a6b52c6eb3051
+[PASS] S29 去掉旧目录项前被替换时，先移到临时名再核对，对不上就还原
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '已按 inode 移回演示文件（旧路径已换成另一份文件，未删除）：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+旧路径sha=53ea9c12a0bbd59b3553d95327580d2ed92f7461df67519986cffe550dd487d9 内容=b'\xe5\x8f\xa6\xe4\xb8\x80\xe5\xba\x94\xe7\x94\xa8\xe5\x88\x9a\xe4\xbf\x9d\xe5\xad\x98\xe7\x9a\x84\xe7\x94\xa8\xe6\x88\xb7\xe6\x96\x87\xe4\xbb\xb6\n'
+原路径内容='高等数学 极限 导数\n'
+[PASS] S30 安装 swap 前路径被换成用户文件时，swap 后核对并换回
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '路径已被换成另一份文件，未覆盖：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+路径sha=290f919280e6aa4456f285c9d5d579b4a15344739da5f0bebb1a6b52c6eb3051 内容=b'new document saved by another program\n'
+[PASS] S31 swap 前才多出目录外硬链接时，换下后查 nlink 再换回
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '硬链接未覆盖：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+目录外sha=290f919280e6aa4456f285c9d5d579b4a15344739da5f0bebb1a6b52c6eb3051 原路径sha=290f919280e6aa4456f285c9d5d579b4a15344739da5f0bebb1a6b52c6eb3051 同 inode=True
+[PASS] S32 旧名清理 swap 前被换成用户文件时，换下核对并保留
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '已按 inode 移回演示文件（旧路径已换成另一份文件，未删除）：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+可见旧路径sha=53ea9c12a0bbd59b3553d95327580d2ed92f7461df67519986cffe550dd487d9 内容=b'\xe5\x8f\xa6\xe4\xb8\x80\xe5\xba\x94\xe7\x94\xa8\xe5\x88\x9a\xe4\xbf\x9d\xe5\xad\x98\xe7\x9a\x84\xe7\x94\xa8\xe6\x88\xb7\xe6\x96\x87\xe4\xbb\xb6\n'
+原路径内容='高等数学 极限 导数\n'
+[PASS] S33 不再 unlink .演示旧名-*，注入点不发生且不删用户字节
+注入=0 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '已按 inode 移回演示文件：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+可见旧路径仍在=False 用户字节残留=[]
+原路径内容='高等数学 极限 导数\n'
+[PASS] S34 不再 unlink .演示临时-*，注入点不发生且不删用户字节
+注入=0 首个路径= 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '已写回脚本创建的文件：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+用户字节残留=[]
+原路径内容='高等数学 极限 导数\n'
+[PASS] S35 不再 unlink .演示占位-*，注入点不发生且不删用户字节
+注入=0 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '已按 inode 移回演示文件：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+可见旧路径仍在=False 用户字节残留=[]
+原路径内容='高等数学 极限 导数\n'
+[PASS] S36 选定占位名后被占用时，RENAME_EXCL 失败，用户字节与占位文件都留下
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '已按 inode 移回演示文件（旧路径未能删除，两份都在）：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+点文件=/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_excl_placeholder_pgae25a8/演示样本/_已整理/课程/未识别学期/高等数学/文档/.演示占位-78741-0 sha=e80894689fe5cbe4130a0035172f5757c2f0f04dbbdeb2ecdb0dab599558f84a
+用户字节命中=['/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_excl_placeholder_pgae25a8/演示样本/_已整理/课程/未识别学期/高等数学/文档/.演示占位-78741-0']
+可见旧路径仍在=True 占位大小=0
+原路径内容='高等数学 极限 导数\n'
+[PASS] S37 回退改名目标已存在时，RENAME_EXCL 失败，两段保存都留下
+注入=1 说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '已按 inode 移回演示文件（旧路径未能删除，两份都在）：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+第一次=/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_excl_rollback_aayjk84e/演示样本/_已整理/课程/未识别学期/高等数学/文档/.演示占位-78741-0 sha=e3de90e45fff6932b0cd2835fac9748d8a6f8272a2f89fc76ca4d6fa209320bd
+第一次命中=['/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_excl_rollback_aayjk84e/演示样本/_已整理/课程/未识别学期/高等数学/文档/.演示占位-78741-0']
+可见旧路径sha=f4ddbd3a52749c37362cc781eb25a3a13fae761534654d7e99361bb0ab4ed630 内容=b'\xe5\x8f\xa6\xe4\xb8\x80\xe5\xba\x94\xe7\x94\xa8\xe7\xac\xac\xe4\xba\x8c\xe6\xac\xa1\xe4\xbf\x9d\xe5\xad\x98\xe7\x9a\x84\xe5\x86\x85\xe5\xae\xb9\xef\xbc\x8c\xe5\xbf\x85\xe9\xa1\xbb\xe4\xbf\x9d\xe7\x95\x99\n'
+原路径内容='高等数学 极限 导数\n'
+[PASS] S22 旧路径被换成另一份文件时，不删除替换进去的文件
+说明=['已写回脚本创建的文件：下载/归档盒/开发说明.md', '已按 inode 移回演示文件（旧路径已换成另一份文件，未删除）：下载/笔记.txt', '已写回脚本创建的文件：项目/AIGC/项目说明.md']
+旧路径内容='另一应用刚保存的用户文件\n'
+原路径内容='高等数学 极限 导数\n'
+[PASS] S23 第二阶段拒绝覆盖已有文件和符号链接，只新建普通文件
+已有文件退出码=2
+平台：offscreen
+整理空间：/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_phase2_t50sfg9l/已有文件
+拒绝写入：下载/归档盒/接口草稿.md 已存在或本身是符号链接，第二阶段不覆盖
+sha不变=True
+链接退出码=2
+平台：offscreen
+整理空间：/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage3_phase2_t50sfg9l/链接
+拒绝写入：下载/归档盒/接口草稿.md 已存在或本身是符号链接，第二阶段不覆盖
+目录外sha不变=True
+新建探测退出码=0
+CREATED
+REFUSED 父目录是符号链接：外链/躲出去.md
+新建=True 父目录链接被拒=True
+[PASS] S01 首次扫描只含空间内 3 个文件，范围外文件不动
+计划=['下载/归档盒/开发说明.md', '下载/笔记.txt', '项目/AIGC/项目说明.md']
+开发说明=_已整理/待定/下载/归档盒/开发说明.md selected=False
+笔记=_已整理/课程/未识别学期/高等数学/文档/笔记.txt
+范围外sha不变=True
+[PASS] S02 第二轮命中空间偏好；仅改本次不写偏好库
+偏好=lt-13c3e5841b0a 开发文档按项目归档
+接口草稿=_已整理/项目/归档盒/接口草稿.md
+依据=长期偏好「开发文档按项目归档」(lt-13c3e5841b0a)：来源目录「下载/归档盒」（含子目录） → 项目/归档盒
+仅改本次=_已整理/课程/2026秋-大二上/高等数学/文档/临时稿.md 偏好行=1
+[PASS] S03 取消确认不动文件；确认后只移动勾选项，历史与 SHA 一致
+取消后sha=True
+移动目标=_已整理/课程/未识别学期/高等数学/文档/笔记.txt
+batch=1 status=done n=3
+  moved 下载/归档盒/开发说明.md -> _已整理/项目/归档盒/开发说明.md sha=6feaec1e810ad6d128cc9fe44d4b1964e0c546bddaef9860b3580db654bff20d
+  moved 下载/笔记.txt -> _已整理/课程/未识别学期/高等数学/文档/笔记.txt sha=8fa3aad8167381fcdcbacbd38a2a313a7459872279f7b71456836069a1e96395
+  moved 项目/AIGC/项目说明.md -> _已整理/项目/AIGC/项目说明.md sha=b701fed55ee8e2493309cf8c166284c253ef55a1f073b19f55dc03474813e6fa
+[PASS] S04 撤销后笔记回到原路径且 SHA 不变
+存在=True sha一致=True
+batch=1 status=undone n=3
+  undone 下载/归档盒/开发说明.md -> _已整理/项目/归档盒/开发说明.md sha=6feaec1e810ad6d128cc9fe44d4b1964e0c546bddaef9860b3580db654bff20d
+  undone 下载/笔记.txt -> _已整理/课程/未识别学期/高等数学/文档/笔记.txt sha=8fa3aad8167381fcdcbacbd38a2a313a7459872279f7b71456836069a1e96395
+  undone 项目/AIGC/项目说明.md -> _已整理/项目/AIGC/项目说明.md sha=b701fed55ee8e2493309cf8c166284c253ef55a1f073b19f55dc03474813e6fa
+[PASS] S05 预览后源被改、被删或目标被占，执行跳过且不覆盖
+moved=0 skipped=3
+跳过（目标路径已被占用）：下载/丙.md → _已整理/待定/下载/丙.md | 跳过（源文件已不存在）：下载/乙.md | 跳过（源文件内容已变化）：下载/甲.md
+甲sha不变=True 占位sha不变=True
+[PASS] S06 同名不同内容在预览阶段分配唯一名，执行后两份都保留
+计划=[('下载/笔记.txt', '_已整理/课程/未识别学期/高等数学/文档/笔记.txt'), ('资料/笔记.txt', '_已整理/课程/未识别学期/高等数学/文档/笔记 (1).txt')]
+文件名=['笔记 (1).txt', '笔记.txt']
+实际=['笔记 (1).txt', '笔记.txt']
+内容=['高等数学 极限 导数\nsame-name-a', '高等数学 极限 导数\nsame-name-b']
+[PASS] S10 同名同内容也分配两个目标，两份 SHA 都保留
+移动前={'下载/作业.txt': '987b1ed3aad613321cc5e082d17a65c4b6552d943289f6c60725614b62fce7fb', '资料/作业.txt': '987b1ed3aad613321cc5e082d17a65c4b6552d943289f6c60725614b62fce7fb'}
+移动后={'_已整理/课程/未识别学期/高等数学/文档/作业.txt': '987b1ed3aad613321cc5e082d17a65c4b6552d943289f6c60725614b62fce7fb', '_已整理/课程/未识别学期/高等数学/文档/作业 (1).txt': '987b1ed3aad613321cc5e082d17a65c4b6552d943289f6c60725614b62fce7fb'}
+目标=['_已整理/课程/未识别学期/高等数学/文档/作业.txt', '_已整理/课程/未识别学期/高等数学/文档/作业 (1).txt']
+[PASS] S11 目标已有相同内容时仍跳过，源和占位文件都不改
+moved=0 errors=['跳过（目标路径已被占用）：下载/丁.md → _已整理/待定/下载/丁.md']
+源sha不变=True 占位sha不变=True
+[PASS] S07 第一项移动后取消，第二项留在原处
+moved=1 cancelled=1
+batch=1 status=cancelled n=2
+  moved 下载/一.md -> _已整理/待定/下载/一.md sha=024b7e762c7605ec6ca6fea15603583fb423831cc58a63b4b4da67146011d0db
+  cancelled 下载/二.md -> _已整理/待定/下载/二.md sha=825fca6818cb0d625ff6099d919385ee97e654ede8809d4baf8e149ae7ed6fdb
+[PASS] S08 中断后核对已移动项，重复恢复不再移动
+exit=9 first=核对批次 #1 | 补记已移动 1 | 仍未执行 1 | 批次状态 → 恢复后仍未确定
+second=核对批次 #1 | 仍未执行 1 | 批次状态 → 恢复后仍未确定
+batch=1 status=recovered_partial n=2
+  moved 下载/已完成.md -> _已整理/待定/下载/已完成.md sha=31278b56cb23246f26f59a492eae44724995ae793e55932052a4628cd606f104
+  planned 下载/未完成.md -> _已整理/待定/下载/未完成.md sha=dc347814f2a535eb0675a38707d7936638c44f71e07ecab2f6a0104c3b5c0e94
+[PASS] S09 原路径被占时撤销报冲突，占位文件和已移动文件都保留
+conflict=1 errors=[]
+占位sha不变=True 目标仍在=True
+
+合计 37 项：通过 37 / 未通过 0
+EXIT:0
+===== tests/test_stage4_daily_use.py =====
+qt.qpa.fonts: Populating font family aliases took 51 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost.
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+[PASS] S401 扫描阶段报告已发现数量与当前路径；旧扫描完成信号不写入新扫描
+文件数=650 回调=6 首=[(0, ''), (1, '目录1/文件183.txt')] 末=[(600, '目录4/文件326.txt'), (650, '')]
+worker seq 全为 7=True worker 末=[(7, 650, '')]
+旧 seq 被忽略=True 当前 seq 写入=True
+[PASS] S402 增量缓存复用未变化文件；新增/修改/删除/改名正确失效且分类一致
+首次={'cache_hits': 0, 'cache_misses': 4, 'content_reused': 0, 'content_read': 3, 'cache_note': '', 'sha_reused': 0, 'sha_computed': 4, 'cache_files': 4, 'cache_saved': True}
+第二次={'cache_hits': 4, 'cache_misses': 0, 'content_reused': 3, 'content_read': 0, 'cache_note': '', 'sha_reused': 4, 'sha_computed': 0, 'cache_files': 4, 'cache_saved': True}
+变化后={'cache_hits': 1, 'cache_misses': 3, 'content_reused': 1, 'content_read': 2, 'cache_note': '', 'sha_reused': 1, 'sha_computed': 3, 'cache_files': 4, 'cache_saved': True}
+首次与第二次计划一致=True 增量与全量一致=True 文件集合一致=True
+增量计划=[('下载/Word笔记.docx', ('_已整理/高等数学/文档/Word笔记.docx', 'course_rule:1', True)), ('下载/手册改名.pdf', ('_已整理/未分类课程/文档/手册改名.pdf', 'course_rule:unmatched', True)), ('下载/新文件.txt', ('_已整理/未分类课程/文档/新文件.txt', 'course_rule:unmatched', True)), ('课程/高等数学/笔记.txt', ('_已整理/高等数学/文档/笔记.txt', 'course_rule:1', True))]
+[PASS] S403 缓存损坏回退全量；预览后源文件变化仍被拒绝，其他项不受影响
+缓存说明='缓存损坏，已回退全量扫描' 计划缓存={'cache_hits': 0, 'cache_misses': 2, 'content_reused': 0, 'content_read': 2, 'cache_note': '缓存损坏，已回退全量扫描', 'sha_reused': 0, 'sha_computed': 2, 'cache_files': 2, 'cache_saved': True}
+moved=1 skipped=1 errors=['跳过（源文件内容已变化）：课程/高等数学/笔记.txt']
+源文件保留新内容=True 其他项未被误报=True
+[PASS] S404 docx/pptx/xlsx 正文可读；损坏、无权限、未支持各有原因且不挡其他文件
+正文={'下载/课程笔记.docx': '高等数学 课件正文', '下载/答辩.pptx': '项目 答辩 演示', '下载/成绩.xlsx': '数据结构 成绩'}
+kinds={'下载/坏文件.docx': '读取失败', '下载/成绩.xlsx': '正文', '下载/无权限.txt': '读取失败', '下载/普通.txt': '正文', '下载/答辩.pptx': '正文', '下载/课程笔记.docx': '正文', '下载/资料.pdf': '未支持'}
+errors={'下载/坏文件.docx': '无法读取正文：不是有效的 Office 压缩包或文件已损坏', '下载/无权限.txt': '无法读取正文：Permission denied', '下载/资料.pdf': '未支持：当前版本没有 PDF 解析库，未读取正文'}
+普通文本='普通正文内容'
+[PASS] S405 预览筛选只改视图；取消可见勾选不影响被筛掉的行，计数一致
+全部已选=8 可见=4 筛掉=4
+取消可见勾选后仍选=['下载/课程0.txt', '下载/课程1.txt', '下载/课程2.txt', '下载/课程3.txt']
+计数标签='计划 8｜可见 4｜已勾选 4｜隐藏但仍勾选 4'
+[PASS] S406 历史定位跟随文件当前位置；目标/原位置都不在时不返回同名文件
+目标存在时='/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_074yqwa1/reveal/_已整理/课程/高等数学/笔记.txt' 撤销后='/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_074yqwa1/reveal/下载/笔记.txt' 都不存在=''
+[PASS] S407 缓存替换前复核实际目录；空间外文件不覆盖，正常目录仍可读写
+save 失败=True 空间外 SHA 不变=True
+正常读写=True 缓存文件符号链接被拒=True 链接目标不变=True
+victim before=e7c7c70601b3a341efef02e30247c2ba71ad82da54d47c504188209e081f9174 after=e7c7c70601b3a341efef02e30247c2ba71ad82da54d47c504188209e081f9174
+[PASS] S408 同大小/同 mtime/inode 下正文变化不复用旧缓存，执行不被旧指纹跳过
+inode/大小/mtime 不变=True 首次命中=0
+变化后分类=_已整理/未分类课程/文档/笔记.txt SHA与磁盘一致=True 缓存未命中=True
+第二次重扫复用新指纹=True 执行=1/0
+计划后改内容再执行=0/1 errors=['跳过（源文件内容已变化）：下载/第二次.txt']
+[PASS] S409 打开已有批次的空间后历史/撤销立即可用，撤销恢复原路径与 SHA
+打开=True 执行=1 历史可点=True 撤销可点=True
+撤销完成=True 原 SHA=039c9f4fd98b0173f9c0baa4068b472de928725db54d39167fdebe14eb338a1f 恢复 SHA=039c9f4fd98b0173f9c0baa4068b472de928725db54d39167fdebe14eb338a1f 目标仍存在=False
+[PASS] S410 历史定位只返回空间内解析结果；绝对路径/../符号链接越界返回空
+正常='/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_074yqwa1/reveal_boundary/下载/正常.txt'
+绝对='' ../='' 符号链接=''
+空间外内容='空间外\n'
+[PASS] S411 辅助功能可按下「选择第 N 行明细」；进程存活，定位目标/原路径
+明细行=1 NoSelection=True 保留 item wrapper=True
+辅助按钮=['选择第 1 行明细'] 辅助接口计数=('Table', 16)
+整理后辅助按下=True 定位按钮可点=True
+整理后定位目标=True 撤销=True 撤销后辅助按下=True 撤销后定位原路径=True
+[PASS] S412 明细滚出视口的行按钮隐藏，刷新/搜索/上一页不被遮挡
+顶部: 可见按钮=13 越界=[] 压分页=[] 对齐=True 命中刷新=True 命中搜索=True 命中上一页=True 刷新=True 行=-1/-1/-1 搜索聚焦=True
+中段: 可见按钮=13 越界=[] 压分页=[] 对齐=True 命中刷新=True 命中搜索=True 命中上一页=True 刷新=True 行=-1/-1/-1 搜索聚焦=True
+底部: 可见按钮=13 越界=[] 压分页=[] 对齐=True 命中刷新=True 命中搜索=True 命中上一页=True 刷新=True 行=-1/-1/-1 搜索聚焦=True
+820×490: 可见按钮=5 越界=[] 压分页=[] 对齐=True 命中刷新=True 命中搜索=True 命中上一页=True
+移动事件: 触发重排=True 对齐=True 可见=5 越界=[] 压分页=[]
+中段辅助 Press 行=42 成功=True 按钮可见=True
+[PASS] S413 最近空间不用 item view；辅助功能/键盘选中并打开不崩溃
+行数=5 无 item view=True 单选按钮=['选择空间：recent_second，/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_074yqwa1/recent_second，最近打开 2026-11-19T19:13:18.867959，固定否，状态 可用', '选择空间：recent_first，/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_074yqwa1/recent_first，最近打开 2026-11-19T19:13:18.865351，固定否，状态 可用', '选择空间：history_picker_clip，/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_074yqwa1/history_picker_clip，最近打开 2026-11-19T19:13:15.125537，固定否，状态 可用', '选择空间：history_accessibility，/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_074yqwa1/history_accessibility，最近打开 2026-11-19T19:13:13.728855，固定否，状态 可用', '选择空间：reopen_space，/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_074yqwa1/reopen_space，最近打开 2026-11-19T19:13:13.268058，固定否，状态 可用']
+辅助树单选='选择空间：recent_second，/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_074yqwa1/recent_second，最近打开 2026-11-19T19:13:18.867959，固定否，状态 可用' 辅助按下=True 选中=/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_074yqwa1/recent_second 打开按钮可点=True
+打开回调=True 窗口已关=True 键盘下移=True
+
+合计 13 项：通过 13 / 未通过 0
+EXIT:0
+===== tests/test_v12_history_task.py =====
+qt.qpa.fonts: Populating font family aliases took 48 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost.
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+[PASS] H1 空历史：无批次、撤销/恢复/导出均不可用
+        批次行数=0；撤销=False；恢复=False；导出=False
+[PASS] H2 多批次列表：状态与各计数来自持久化实际记录（含混合状态）
+        批次行数=1（表内 ['#1']，目标 #1）；选中：状态=部分完成，移动=7 跳过=1 失败=1 取消=1 注意=⚠ 需核对；DB 实际={'cancelled': 1, 'failed': 1, 'moved': 7, 'skipped': 1}
+[PASS] H4 搜索与状态筛选：关键词过滤、按状态过滤、失败原因可见
+        全部 10 项；关键词「数据结构」3 项；失败筛选 1 项（应为 1）；失败原因示例=模拟移动失败：文件被占用
+[PASS] H12 逐项明细：原/目标相对路径、大小、悬浮显示完整绝对路径
+        原位置=个人/密码学试卷.pdf；提示=/tmp/_v12_verify/rootA/个人/密码学试卷.pdf
+[PASS] H5 导出：CSV 与 JSON 内容与数据库逐项一致，保存位置由用户选择
+        CSV 12 行（含 2 行头）= 动作 10+2；JSON batch_id=1，动作 10 条；文件=/tmp/_v12_verify/export.csv, /tmp/_v12_verify/export.json
+[PASS] H7 撤销边界：旧批次禁用并说明；点击撤销的是最近待撤销批次
+        旧批次撤销禁用=True；提示=单批次场景；最近批次可撤销=True；单批次场景
+[PASS] H3 关闭重开后仍能查询：新窗口读到相同批次与明细
+        历史窗口批次=1，数据库=1，明细行=10
+[PASS] H8 冲突撤销：原位置被占用时保留现状并显示具体冲突原因
+        冲突项 1 个；原因=原路径已被占用（保留现状，请人工核对）；原位置文件保留=True
+[PASS] H9a 移动已发生状态未写回：核对后补记 moved，内容未变，不自动搬回
+        恢复前源不在/目标在=True；恢复后动作=moved；错误标注=[恢复补记] 进程中断后核对；源仍未搬回=True；目标内容未变=True；线程已结束=True
+[PASS] H9b 尚未执行：核对后保持未执行语义，不自动移动
+        恢复前源在/目标不在=True；恢复后动作=planned；源仍在=True；目标仍未创建=True
+[PASS] H9c 状态不明确：目标内容不符/源目标同存 → paused+具体原因，文件保留
+        内容不符项=paused（[恢复] target SHA=37dad93ddb ≠ 预期），目标保留=True；同存项=paused（[恢复] src 和 target 同时存在，可能跨盘 copy 未删），源保留=True 目标保留=True
+[PASS] H9d 恢复结果文案区分：暂停待人工确认 + 批次进入恢复后部分完成
+        批次状态=recovered_partial；状态栏=暂停待人工确认：核对批次 #1 | 补记已移动 1 | 仍未执行 1 | 暂停待人工确认 2 | 批次状态 → recovered_partial
+[PASS] H9e 恢复后重看历史：列表与逐项明细均为数据库实际状态
+        批次状态显示=恢复后部分完成；界面明细={0: '已移动', 1: '未执行', 2: '暂停（待人工确认）', 3: '暂停（待人工确认）'}
+[PASS] H9f 后续撤销：已确认 moved 项路径与内容恢复；paused 项保持现状
+        撤销恢复 1 项；动作0=undone，源回位=True，内容一致=True，目标已移走=True；paused 项保持=paused/paused，文件保留=True
+[PASS] H11 分页：超过 200 项分两页按需渲染
+        第 1 页 200 行（第 1/2 页 · 共 255 项）；第 2 页 55 行（第 2/2 页 · 共 255 项）
+[PASS] H11b 在文件管理器中显示：调用系统定位（mock 验证参数）
+        调用=['open', '-R', '/tmp/_v12_verify/rootE/_已整理/课程/大一下/高数/文档/讲义000.pdf']
+[PASS] H6 根目录隔离：不同根目录历史不混用；切换时旧窗口关闭
+        rootB 历史 1 批（应 1）；切换后旧窗口关闭=True；rootA 历史 1 批（应 1）
+[PASS] H10 忙碌期间：历史页撤销/恢复/导出/刷新全部禁用；结束后恢复
+        忙碌=True；忙碌时撤销/恢复/导出/刷新=False/False/False/False（应全 False）；完成后撤销可用=True
+[PASS] H13 历史刷新失败：只在历史页提示，不误报文件操作失败
+        历史页错误提示=True；主窗口状态栏不变=True
+[PASS] T1 任务上下文流转：扫描→计划→执行→撤销的 kind/进度/描述全部正确
+        空闲=True；扫描=True；计划(可取消,总进度=0)=True；执行进度汇报=True（门控窗口 kind=execute、cur=1、总进度=5、描述='整理中 · 整理中（5 项） · （1/5）'）；计划后空闲=True；撤销=True/True
+[PASS] T2 取消状态进入任务上下文：describe 显示「取消已请求」，结束后复位
+        取消时 describe=生成计划中…［取消已请求］；结束后复位=True
+[PASS] T3 执行按钮：仅在计划有效且任务空闲时启用
+        无效计划=False; 有效计划=True; 忙碌中=False
+[PASS] T4 闭环：历史页打开时撤销完成 → 批次状态自动刷新为真实撤销结果
+        撤销前=已完成；撤销后=已撤销；明细首项状态=已撤销（应含“已撤销”）
+[PASS] H14 历史关闭期间撤销：重开后批次列表与逐项明细均为最新实际状态
+        关闭前：批次=已完成，明细=已移动；重开后：批次=已撤销，明细=已撤销；数据库首项=undone，批次状态=undone
+[PASS] H15 相同批次被选中时手动刷新：明细按数据库实际状态更新
+        刷新后明细首项=失败（原为已撤销）；原因=外部复核：目标位置被占用
+[PASS] H17 导出一致性：JSON 状态与界面明细、数据库逐项一致
+        导出=['failed', 'undone', 'undone', 'undone']；数据库=['failed', 'undone', 'undone', 'undone']；界面=['失败', '已撤销', '已撤销', '已撤销']
+[PASS] H16 搜索/筛选/分页使用更新后数据；页数减少时自动校正页码
+        搜索 g0=1 项；失败筛选=1 项；页大小 2 时：第 1/2 页 · 共 4 项 → 第 2/2 页 · 共 4 项；数据减少后刷新：第 1/1 页 · 共 1 项（剩 1 项）
+[PASS] R1 后台核对恢复：忙碌状态正确、主线程可处理定时器事件、无重叠任务
+        任务=空闲（运行中应为核对恢复中）；忙碌位=True；定时器触发=True；重叠启动被拒=True；线程退出后空闲=True
+[PASS] R2 迟到结果被忽略；恢复真实结果落库；主线程数据库全程可用（独立连接）
+        旧 seq 结果被忽略=True；批次最终状态=cancelled_clean；主线程连接可用=True
+[PASS] R3 恢复异常：明确失败提示，批次与动作保持原状（可复核），不误报成功
+        状态栏=核对恢复失败；批次状态=executing；动作保持 planned=True
+[PASS] R4 恢复运行中关闭：等待线程自然结束，随后自动关闭；期间禁新任务、无阻塞弹窗
+        关闭等待状态=True；禁新任务=True；自动关闭=True；主线程数据库最后关闭=True；关闭等待期间业务弹窗数=0
+[PASS] R5 恢复回调 seq+root 双重校验：错误root的成功/失败/进度均忽略，旧seq忽略，真实结果正常接受
+        错误root成功忽略=True；失败忽略=True；进度忽略=True；旧seq忽略=True；忙碌期禁新任务=True；注入期间新增连接=0（应0）；真实结果被接受=True；规范化一致=True
+[PASS] H18 历史先打开→从历史启动撤销：忙碌期间撤销/恢复/导出/刷新全部禁用，结束后按真实条件恢复
+        启动前撤销可用=True；忙碌期按钮={'undo': False, 'recover': False, 'export': False, 'refresh': False}（应全 False）；提示=主窗口有任务进行中或正在关闭，暂不能从历史启动撤销/恢复。；结束后刷新=True 导出=True 撤销=False（数据库仍有可撤销批次=False）
+[PASS] H19 历史先打开→主窗口启动整理：历史按钮禁用；忙碌期重开历史同样禁用；完成后恢复并显示新批次
+        忙碌期按钮={'undo': False, 'recover': False, 'export': False, 'refresh': False}；忙碌期重开后={'undo': False, 'recover': False, 'export': False, 'refresh': False}（均应全 False）；完成后刷新=True 导出=True；历史批次行数=1（应1）
+[PASS] H20 执行失败后：历史按钮按真实条件恢复（刷新可用；无批次则导出/撤销保持禁用）
+        失败后按钮={'refresh': True, 'export': False, 'undo': False}；任务状态=空闲；批次行数=0（异常注入于批次创建前，应0）
+[PASS] H21 关闭等待期间：已打开历史的操作按钮禁用，恢复入口被拒，线程结束后自动关闭
+        关闭等待=True；历史按钮={'undo': False, 'recover': False, 'export': False, 'refresh': False}（应全 False）；恢复被拒=True；自动关闭=True；数据库最后关闭=True
+
+======================================================================
+合计 36 项：通过 36 / 未通过 0 / 未测 0
+退出码: 0
+======================================================================
+结果已保存: /private/tmp/stage4-daily-use-20261119/归档盒源码/tests/results_v12_history_task.json
+EXIT:0

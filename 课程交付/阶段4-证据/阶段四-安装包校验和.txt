@@ -1,15 +1,15 @@
-# 归档盒 V1.7 · 阶段四安装包校验和（第 5 轮）
+# 归档盒 V1.7 · 阶段四安装包校验和（第 6 轮）
 
 构建时间：2026-11-19（Asia/Shanghai）
-源码：stage4/daily-use，父提交 `c4915d7d49c5584d449f45dbad1d311c632b1a3a`；本轮实现提交 `4fb2ebb7051485fa5300814e860c5b3a95fad7a7`。
+源码：stage4/daily-use，父提交 `6293e701b913835adbacfd8e15f12c955d2c4618`；本轮实现提交 `41547a0d551fbc76d6af0923803e1a2a1eb6ebe0`。
 签名/公证：本次未做公证与公开发布；Mac 包为本地签名。
 
 | 成品 | 路径 | SHA-256 |
 |---|---|---|
-| macOS 免安装包 | `打包/归档盒-macOS-免安装.zip` | `235eff2a428b3ffbcce2c18bc7e35a473984c8cc8bfe096dc3daf067491a75be` |
-| macOS 应用可执行文件 | `打包/归档盒-macOS-免安装/归档盒.app/Contents/MacOS/archivebox` | `474eb24646139ef1529187d42a9ed43379787f054cd703b58fe702cf8fda924a` |
-| Windows 免安装包 | `打包/归档盒-Windows-免安装.zip` | `9ec798e3a502ca8267806239370d17700e449882a3fb73815c3a638d8b9e8648` |
-| Windows 启动器 | `打包/归档盒-Windows-免安装/归档盒.exe` | `bcb8120ce8e623cf073927a6f873a5baab321427de8cf0f3097b7e3b1988d6d2` |
+| macOS 免安装包 | `打包/归档盒-macOS-免安装.zip` | `b19c0fd1aaab93ad70812196d6f28914d481cedfae5077b7d7ff6bfd438b2583` |
+| macOS 应用可执行文件 | `打包/归档盒-macOS-免安装/归档盒.app/Contents/MacOS/archivebox` | `b1e6ed78b2337b274f986c5e629fd87db15568ec275634d2af2085f739445e9e` |
+| Windows 免安装包 | `打包/归档盒-Windows-免安装.zip` | `a10919238b27d6218dd1084563ea34c7ecb33d12274cc8e557bf3f8370e7c566` |
+| Windows 启动器 | `打包/归档盒-Windows-免安装/归档盒.exe` | `0b002a4536e6e11a5dfe83b4c56784487db9a091f55013cd83e0507a0a6fa8ba` |
 | Windows 使用说明 | `打包/归档盒-Windows-免安装/使用说明.txt` | `4f596cdcfea81825880167c0cba9783691e465844a277fddc131149690b17827` |
 
 Mac 包 Info.plist：`CFBundleShortVersionString = 1.7.0`，`CFBundleIdentifier = local.ypjn.archivebox`。
@@ -19,5 +19,6 @@ Windows 包 `使用说明.txt` 与窗口标题均为 V1.7。
 
 - Mac ZIP 453 个符号链接（其中 72 个目录链接），解压后断链 0，链接目标与构建目录一致，普通文件 926/926 一致。
 - Mac ZIP 所有非 ASCII 路径带 UTF-8 标志，无 `__MACOSX/`；`codesign --verify --deep --strict` 对新解压副本退出码 0；解压应用启动标题 `归档盒 V1.7`。
+- 包内代码核对：HistoryDialog.eventFilter 名称表含 Resize、Move、Show、Paint；见 `阶段四-包内代码核对-20261119-第6轮.log`。
 - Windows ZIP 4904 条，非 ASCII 路径 UTF-8 标志齐全，无 `__MACOSX/`；原生 Windows 仍为「未测」。
-- 第 4 轮包 `4279dd2b…`（Mac）、`8f004a9f…`（Windows）已被替换，只在 `阶段四-目录链接与签名-20261119-第5轮.log` 保留身份说明。
+- 第 5 轮包 `235eff2a…`（Mac）、`9ec798e3…`（Windows）已被替换，只在 `阶段四-目录链接与签名-20261119-第6轮.log` 保留身份说明。

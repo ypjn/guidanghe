@@ -1,0 +1,7 @@
+== 第 6 轮 最终 Mac 包内代码核对 ==
+从 打包/归档盒-macOS-免安装/归档盒.app/Contents/MacOS/archivebox 的 PYZ 提取 main 模块，
+HistoryDialog.eventFilter 的名称表包含 Resize、Move、Show、Paint 与 _layout_row_pickers。
+
+模块路径: <module>>HistoryDialog
+eventFilter 名称表: ('getattr', 'type', 'QEvent', 'Resize', 'Move', 'Show', 'Paint', '_layout_row_pickers', 'super', 'eventFilter')
+Move: True Paint: True Resize: True Show: True
