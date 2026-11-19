@@ -373,16 +373,17 @@ def detect_duplicates(
             break
 
         if size == 0 or len(bucket) < 2:
-            # 0 字节文件内容都一样，不算内容重复。
-            # 只有一个文件的桶也不可能有重复，但仍记录 SHA（executor 用）。
-            f = bucket[0]
-            if cancel_event and cancel_event.is_set():
-                break
-            sha = sha256_file(os.path.join(root, f.rel_path)) or ""
-            file_sha_map[f.rel_path] = sha
-            idx += 1
-            if progress_cb and progress_total > 0:
-                progress_cb(progress_base + idx, progress_total, f.rel_path)
+            # 0 字节文件内容都一样，不算内容重复；单文件桶也不可能有重复。
+            # 但每一条仍要记录指纹（executor 执行前必须核验内容），
+            # 不能只算桶里第一个文件的。
+            for f in bucket:
+                if cancel_event and cancel_event.is_set():
+                    break
+                sha = sha256_file(os.path.join(root, f.rel_path)) or ""
+                file_sha_map[f.rel_path] = sha
+                idx += 1
+                if progress_cb and progress_total > 0:
+                    progress_cb(progress_base + idx, progress_total, f.rel_path)
             continue
 
         # 桶内按 SHA-256 分组
@@ -397,9 +398,10 @@ def detect_duplicates(
             if progress_cb and progress_total > 0:
                 progress_cb(progress_base + idx, progress_total, f.rel_path)
 
-        # 只保留组内 >= 2 个文件的
+        # 只保留组内 >= 2 个文件、且指纹有效的组。
+        # 读不出指纹时 sha 为空串，不能把多个“算不出来”的文件并成重复组。
         for sha, group in sha_to_files.items():
-            if len(group) >= 2:
+            if sha and len(group) >= 2:
                 group_id = f"g{group_counter + 1}"
                 dup_groups[group_id] = [f.rel_path for f in group]
                 group_counter += 1

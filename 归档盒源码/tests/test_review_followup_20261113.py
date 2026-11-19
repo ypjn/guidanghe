@@ -145,7 +145,8 @@ def t_zero_byte_and_temp():
     names = [entry.filename for entry in result.files]
     check("临时副本不进计划", "left.archivetmp" not in names
           and "now.archivetmp" not in names, names)
-    check("过期临时副本已删除", not os.path.exists(old))
+    # V1.7 安全复核：扫描零副作用，任何 .archivetmp 文件都不能被删
+    check("过期临时副本也不由扫描删除", os.path.exists(old))
     check("当天临时副本先留着", os.path.exists(fresh))
     groups, _sha = detect_duplicates(result)
     check("0 字节不成重复组", groups == {}, str(groups))

@@ -547,14 +547,48 @@ def _backup_files(root: str) -> List[str]:
     return [os.path.join(d, n) for n in names]
 
 
-def _backup_payload_readable(path: str) -> bool:
-    """备份文件至少能读出一份 custom/default 记录。损坏的 JSON 不算。"""
+def _read_backup_info(path: str) -> BackupInfo:
+    """读取一份备份并做与恢复路径完全一致的有效性判断。"""
+    info = BackupInfo(path=path, state="corrupt")
     try:
-        with open(path, "r", encoding="utf-8") as handle:
-            data = json.load(handle)
-    except (OSError, ValueError):
-        return False
-    return isinstance(data, dict) and data.get("state") in ("custom", "default")
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        info.valid = False
+        info.error = f"备份无法读取：{e}"
+        return info
+    if not isinstance(data, dict):
+        info.valid = False
+        info.error = "备份格式不正确"
+        return info
+    info.state = str(data.get("state", "corrupt"))
+    info.created_at = str(data.get("created_at", ""))
+    if info.state == "custom":
+        cfg = data.get("config")
+        try:
+            if not isinstance(cfg, dict):
+                raise ValueError("缺少配置对象")
+            errs = validate_config_payload(cfg)
+            if errs:
+                raise ValueError("；".join(errs))
+            cfg_obj = config_from_dict(cfg)
+            errs = validate_config(cfg_obj)
+            if errs:
+                raise ValueError("；".join(errs))
+        except Exception as e:
+            info.valid = False
+            info.error = str(e)
+    elif info.state == "default":
+        info.valid = True
+    else:
+        info.valid = False
+        info.error = str(data.get("error", "损坏的配置备份"))
+    return info
+
+
+def _backup_payload_readable(path: str) -> bool:
+    """备份是否可恢复：坏 JSON、合法 JSON 但配置校验失败都不算。"""
+    return _read_backup_info(path).valid
 
 
 def create_backup(root: str, keep: int = MAX_BACKUPS,
@@ -631,46 +665,7 @@ class BackupInfo:
 
 
 def list_backups(root: str) -> List[BackupInfo]:
-    out: List[BackupInfo] = []
-    for path in _backup_files(root):
-        info = BackupInfo(path=path, state="corrupt")
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except (OSError, ValueError) as e:
-            info.valid = False
-            info.error = f"备份无法读取：{e}"
-            out.append(info)
-            continue
-        if not isinstance(data, dict):
-            info.valid = False
-            info.error = "备份格式不正确"
-            out.append(info)
-            continue
-        info.state = str(data.get("state", "corrupt"))
-        info.created_at = str(data.get("created_at", ""))
-        if info.state == "custom":
-            cfg = data.get("config")
-            try:
-                if not isinstance(cfg, dict):
-                    raise ValueError("缺少配置对象")
-                errs = validate_config_payload(cfg)
-                if errs:
-                    raise ValueError("；".join(errs))
-                cfg_obj = config_from_dict(cfg)
-                errs = validate_config(cfg_obj)
-                if errs:
-                    raise ValueError("；".join(errs))
-            except Exception as e:
-                info.valid = False
-                info.error = str(e)
-        elif info.state == "default":
-            info.valid = True
-        else:
-            info.valid = False
-            info.error = str(data.get("error", "损坏的配置备份"))
-        out.append(info)
-    return out
+    return [_read_backup_info(path) for path in _backup_files(root)]
 
 
 def restore_latest_backup(root: str) -> Tuple[str, str]:

@@ -8,7 +8,6 @@
 from __future__ import annotations
 
 import os
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -386,19 +385,101 @@ def _prune_dirnames(result: "ScanResult", dirpath: str, dirnames: List[str]) -> 
     dirnames[:] = kept
 
 
+def _reserved_component_reason(name: str) -> Optional[str]:
+    """目录/文件路径片段的排除原因；空串/None 表示不是保留项。"""
+    low = name.lower()
+    if low in SKIP_DIRS:
+        return "保留目录"
+    if low in WINDOWS_SYSTEM_DIRS:
+        return "Windows 隐藏/系统目录"
+    if name.startswith("."):
+        return "隐藏目录（点号开头）"
+    return None
+
+
+def _relative_parts(path: str, root: str) -> List[str]:
+    """path 相对 root 的路径片段；越界或就是根时返回空列表。"""
+    try:
+        rel = os.path.relpath(os.path.abspath(path), os.path.abspath(root))
+    except ValueError:
+        return []
+    if rel in (".", ""):
+        return []
+    parts = [p for p in rel.split(os.sep) if p and p != "."]
+    if any(p == ".." for p in parts):
+        return []
+    return parts
+
+
+def protected_path_reason(
+    root: str,
+    path: str,
+    protect_dirs=None,
+    detect_project_roots: bool = True,
+    project_cache: Optional[Dict[str, Optional[str]]] = None,
+) -> str:
+    """判断一个文件/目录是否落在禁止整理的范围里，返回原因；空串表示可整理。
+
+    四条入口（整空间、单文件、父目录、子目录）共用这一套判断：
+    路径上任意一级是保留/隐藏目录（含 _已整理、.organizer），
+    或自身/祖先命中显式保护、项目根，都排除。整理空间根自身不整体保护
+    （与 _find_all_project_roots 的既有语义一致）。
+    """
+    root_abs = os.path.abspath(root)
+    p_abs = os.path.abspath(path)
+    root_key = os.path.normcase(root_abs)
+    p_key = os.path.normcase(p_abs)
+
+    # 0) 不在整理空间内
+    if p_key != root_key and not p_key.startswith(root_key + os.sep):
+        return "不在整理空间内"
+
+    # 1) 路径上任意一级保留目录 / 隐藏目录 / Windows 系统目录
+    for part in _relative_parts(p_abs, root_abs):
+        why = _reserved_component_reason(part)
+        if why:
+            return f"{why}「{part}」"
+
+    # 2) 显式保护（用户手动 / 默认保护）
+    for spec in protect_dirs or []:
+        ap = spec[0] if isinstance(spec, (tuple, list)) else spec
+        if not ap:
+            continue
+        key = os.path.normcase(os.path.abspath(ap))
+        if p_key == key or p_key.startswith(key + os.sep):
+            return "受保护目录"
+
+    # 3) 项目根：自身（目录）或任一祖先
+    if detect_project_roots:
+        cache = project_cache if project_cache is not None else {}
+        cur = p_abs if os.path.isdir(win_long_path(p_abs)) else os.path.dirname(p_abs)
+        while True:
+            cur_key = os.path.normcase(cur)
+            if cur_key == root_key or not cur_key.startswith(root_key + os.sep):
+                break
+            if cur not in cache:
+                cache[cur] = _looks_like_project_root(cur)
+            why = cache[cur]
+            if why:
+                return f"项目保护（{why}）"
+            parent = os.path.dirname(cur)
+            if parent == cur:
+                break
+            cur = parent
+    return ""
+
+
 def _consider_file(result: "ScanResult", root: str, full_path: str) -> None:
-    """把一个路径按扫描规则纳入或跳过。规则与整目录扫描一致。"""
+    """把一个路径按扫描规则纳入或跳过。规则与整目录扫描一致。
+
+    扫描/预览只读：这里绝不创建、改名或删除任何文件。
+    """
     import stat as st_mod
 
     fname = os.path.basename(full_path)
     if ".archivetmp" in fname.lower():
-        # 跨盘复制中断留下的临时副本：超过一天就删掉，任何时候都不进计划。
-        try:
-            stat = os.stat(win_long_path(full_path), follow_symlinks=False)
-            if time.time() - stat.st_mtime > 86400:
-                os.unlink(win_long_path(full_path))
-        except OSError:
-            pass
+        # 程序自身跨盘复制可能留下的临时副本：只跳过，不在这里清理。
+        # 清理必须另走可证明“本次整理创建”的流程，不能按文件名子串删用户文件。
         result.skipdir_count += 1
         return
     if os.path.islink(full_path):
@@ -622,10 +703,16 @@ def scan_paths(
 
     checked_dirs = set()
     root_key = os.path.normcase(root)
+    project_cache: Dict[str, Optional[str]] = {}
 
     def _within_root(p: str) -> bool:
         key = os.path.normcase(os.path.abspath(p))
         return key == root_key or key.startswith(root_key + os.sep)
+
+    def _excluded(p: str) -> str:
+        """局部扫描同样向整理空间根核验祖先保护（与整空间扫描同一套）。"""
+        return protected_path_reason(
+            root, p, protect_dirs, detect_project_roots, project_cache)
 
     def note_dir(directory: str):
         directory = strip_long_prefix(os.path.abspath(directory))
@@ -647,6 +734,16 @@ def scan_paths(
                 return
             note_dir(dirpath)
             _prune_dirnames(result, dirpath, dirnames)
+            # _prune_dirnames 只按目录名剪枝；项目根与显式保护要看祖先/自身路径
+            kept = []
+            for name in dirnames:
+                full = os.path.join(dirpath, name)
+                why = _excluded(full)
+                if why:
+                    result.add_skipped_dir(full, why)
+                    continue
+                kept.append(name)
+            dirnames[:] = kept
             for fname in filenames:
                 full = os.path.join(dirpath, fname)
                 note_dir(os.path.dirname(full))
@@ -663,6 +760,12 @@ def scan_paths(
             continue
         if not _within_root(path):
             result.errors.append(f"路径不在整理空间内: {path}")
+            continue
+        # 起点自身也要核验：直接把项目子目录、_已整理/、.organizer 作为扫描起点
+        # 时不能因为“起点不在 os.walk 的子目录名里”而漏掉保护。
+        why = _excluded(path)
+        if why:
+            result.add_skipped_dir(path, why)
             continue
         if os.path.isdir(win_long_path(path)):
             walk_dir(path)

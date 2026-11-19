@@ -122,11 +122,29 @@ def save_settings(settings: AiSettings) -> None:
     _restrict_windows_acl(path)
 
 
+def _has_definite_classification(item, mode: str) -> bool:
+    """规则是否已经给出明确类别（明确后 AI 不得改）。"""
+    if mode == MODE_BY_DIRECTION_SEMESTER:
+        direction = (getattr(item, "direction", "") or "").strip()
+        category = (getattr(item, "category", "") or "").strip()
+        return direction not in ("", "待定") and bool(category)
+    if mode == MODE_BY_COURSE_THEN_TYPE:
+        course = (getattr(item, "course", "") or "").strip()
+        return bool(course) and course != DEFAULT_UNCLASSIFIED
+    return False
+
+
 def needs_ai(item, mode: str) -> bool:
-    """待定，或图片识别失败时，才问 DeepSeek。"""
+    """待定，或规则没给出明确类别时，才问 DeepSeek。
+
+    V1.7 安全复核：OCR 失败不再是“抢走已有分类”的理由；
+    规则已明确类别时，OCR 失败也不问 AI。
+    """
     if getattr(item, "is_manual_overridden", False):
         return False
     if mode == MODE_BY_TYPE:
+        return False
+    if _has_definite_classification(item, mode):
         return False
     ocr_failed = bool((getattr(item, "ocr_error", "") or "").strip())
     if mode == MODE_BY_DIRECTION_SEMESTER:
@@ -203,14 +221,20 @@ def _evidence(item) -> str:
     return "规则没有命中"
 
 
-def _apply_choice(item, mode: str, direction: str, category: str) -> None:
+def _apply_choice(item, mode: str, direction: str, category: str) -> bool:
+    """把 AI 选择写入计划；规则已给出明确类别时拒绝改写。
+
+    返回是否真的应用了。拒绝时只作为建议，不写入计划、不改原勾选。
+    """
+    if _has_definite_classification(item, mode):
+        return False
     evidence = _evidence(item)
     item.rule_key = "ai"
     if mode == MODE_BY_COURSE_THEN_TYPE:
         item.course = category
         item.rule_applied = f"AI（{evidence}）→ {category}"
         item.target_dir_rel = _build_target_dir(mode, category, item.file_type)
-        return
+        return True
     item.direction = direction
     item.category = category
     item.course = category or direction
@@ -218,6 +242,7 @@ def _apply_choice(item, mode: str, direction: str, category: str) -> None:
     item.rule_applied = f"AI（{evidence}）→ {direction}/{category}"
     item.target_dir_rel = _build_target_dir_v2(
         direction, item.semester or "", category, item.file_type)
+    return True
 
 
 def _rebuild_names(plan: OrganizePlan) -> None:
@@ -364,12 +389,17 @@ def _ask_cancellable(settings, item, pairs, transport, cancel_event) -> str:
 
 
 def _cache_key(plan, item, pairs) -> tuple:
-    return (plan.mode,
+    """缓存键必须能区分整理空间、候选规则本身和输入指纹。
+
+    只记候选个数会让两个空间/两套规则互相串结果；只记相对路径也会。
+    """
+    return (os.path.normcase(os.path.abspath(getattr(plan, "root", "") or "")),
+            plan.mode,
             os.path.normcase(item.file.rel_path),
             int(item.file.size),
             int(getattr(item.file, "mtime_ns", 0) or 0),
             (getattr(item, "ocr_text", "") or "")[:200],
-            len(pairs))
+            tuple(sorted(pairs)))
 
 
 _MISS = object()
@@ -412,6 +442,7 @@ def apply_ai_fallback(plan: OrganizePlan, settings: AiSettings,
     limited = pending[:AI_FILE_LIMIT]
     changed = 0
     skipped = 0
+    kept_rule = 0
     reused = 0
     stopped = ""
     for index, item in enumerate(limited, start=1):
@@ -422,7 +453,8 @@ def apply_ai_fallback(plan: OrganizePlan, settings: AiSettings,
             progress_cb(index, len(limited), f"询问 AI {item.file.filename}")
         cache_key = _cache_key(plan, item, pairs)
         cached = _cache_get(cache_key)
-        if cached is not _MISS:
+        # 命中的结果仍要落在当前允许集合里，否则作废并重新询问
+        if cached is not _MISS and (cached is None or cached in allowed):
             reused += 1
             choice = cached
         else:
@@ -440,7 +472,10 @@ def apply_ai_fallback(plan: OrganizePlan, settings: AiSettings,
         if choice is None:
             skipped += 1
             continue
-        _apply_choice(item, plan.mode, choice[0], choice[1])
+        if not _apply_choice(item, plan.mode, choice[0], choice[1]):
+            # 规则已经给出明确类别：AI 的不同意见只作建议，不写入计划
+            kept_rule += 1
+            continue
         changed += 1
     if changed:
         _rebuild_names(plan)
@@ -449,6 +484,8 @@ def apply_ai_fallback(plan: OrganizePlan, settings: AiSettings,
         note += f"（其中 {reused} 个复用上次结果）"
     if skipped:
         note += f"，{skipped} 个仍无法判断"
+    if kept_rule:
+        note += f"，{kept_rule} 个已有明确规则，保留原分类（AI 建议未写入）"
     left = len(pending) - len(limited)
     if left > 0 and not stopped:
         note += f"，另有 {left} 个未询问"

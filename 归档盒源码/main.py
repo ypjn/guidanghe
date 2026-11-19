@@ -62,11 +62,13 @@ from protect_config import (
     load_manual_protect_report, manual_scan_specs,
     normalize_manual_path, save_manual_protect,
 )
-from storage import Storage
+from storage import Storage, StorageAccessError, StorageBusyError
 from storage_tree import StorageTree
 from duplicate_report import csv_safe
 from config_transfer import create_backup, restore_latest_backup
-from intake_model import IntakeList, is_within, normalize_path
+from intake_model import (
+    IntakeList, is_within, normalize_path, scope_fingerprint,
+)
 import recent_spaces
 from executor import (
     execute_plan, undo_latest_batch, undo_is_available,
@@ -281,9 +283,16 @@ class ScanWorker(QThread):
                 r = scan_paths(self.root_path, self.only_paths,
                                protect_dirs=self.protect_dirs,
                                cancel_event=self.cancel_event)
+                # 记录本次范围指纹，供“再次预览”判断旧结果是否仍可复用
+                try:
+                    r.intake_signature = scope_fingerprint(
+                        self.root_path, self.only_paths)
+                except OSError:
+                    r.intake_signature = None
             else:
                 r = scan_directory(self.root_path, protect_dirs=self.protect_dirs,
                                    cancel_event=self.cancel_event)
+                r.intake_signature = None
             self.finished_ok.emit(r)
         except Exception as e:
             _log_worker_failure("扫描", e)
@@ -421,9 +430,10 @@ class UndoWorker(QThread):
     finished_ok = Signal(object)   # UndoResult
     failed = Signal(str)
 
-    def __init__(self, root: str, parent=None):
+    def __init__(self, root: str, batch_id=None, parent=None):
         super().__init__(parent)
         self.root = root
+        self.batch_id = batch_id
         self.cancel_event = threading.Event()
 
     def request_cancel(self):
@@ -433,7 +443,8 @@ class UndoWorker(QThread):
         storage = None
         try:
             storage = Storage(self.root)
-            result = undo_latest_batch(storage, cancel_event=self.cancel_event)
+            result = undo_latest_batch(storage, cancel_event=self.cancel_event,
+                                       batch_id=self.batch_id)
             self.finished_ok.emit(result)
         except Exception as e:
             _log_worker_failure("撤销", e)
@@ -1269,24 +1280,31 @@ class HistoryDialog(QDialog):
                                    "暂不能从历史启动撤销/恢复。")
             return
         pending = self._pending_batch_id()
-        interrupted = self._interrupted_batch_id()
         sel = self._selected_batch_id
         self.btn_refresh.setEnabled(True)
         self.btn_export.setEnabled(sel is not None)
-        can_undo = (sel is not None and pending is not None
-                    and sel == pending and undo_is_available(self._storage()))
-        self.btn_undo.setEnabled(can_undo)
-        if sel is not None and pending is not None and sel != pending:
+        try:
+            st = self._storage()
+            sel_undoable = (sel is not None and st.batch_is_undoable(sel))
+            sel_needs_check = (sel is not None
+                               and st.batch_needs_verification(sel))
+        except Exception:
+            sel_undoable = False
+            sel_needs_check = False
+        self.btn_undo.setEnabled(sel_undoable)
+        if sel is not None and sel_needs_check:
             self.undo_hint.setText(
-                f"只能撤销最近一个尚未完全撤销的批次（当前为 #{pending}）；"
-                f"批次 #{sel} 不在该撤销顺序内。")
-        elif sel is not None and sel == pending and not can_undo:
-            self.undo_hint.setText("当前没有可撤销的批次。")
+                f"批次 #{sel} 还有未核对的项目，请先点「核对恢复」。")
+        elif sel is not None and not sel_undoable:
+            self.undo_hint.setText(
+                f"批次 #{sel} 没有实际移动的文件，或已经撤销。")
+        elif sel is not None:
+            self.undo_hint.setText(f"将撤销选中的批次 #{sel}。")
         else:
             self.undo_hint.setText(
-                f"可撤销批次：#{pending}" if can_undo else "当前没有可撤销的批次。")
-        self.btn_recover.setEnabled(
-            sel is not None and interrupted is not None and sel == interrupted)
+                f"可撤销批次：#{pending}" if pending else "请选择一个批次。")
+        # 核对按钮按选中批次自己的状态判断，不再要求它等于“最近中断批次”
+        self.btn_recover.setEnabled(sel_needs_check)
 
     def refresh_task_gating(self):
         """任务状态变化时的轻量联动入口（V1.2 第三轮）。
@@ -1298,10 +1316,12 @@ class HistoryDialog(QDialog):
         self._refresh_buttons()
 
     def _on_undo(self):
-        """撤销入口：复用主窗口 on_undo 的全部守卫与语义。"""
+        """撤销入口：确认框与后台动作使用同一个选中批次 id。"""
         if not self.btn_undo.isEnabled():
             return
-        self.mw.on_undo()
+        if self._selected_batch_id is None:
+            return
+        self.mw.on_undo(self._selected_batch_id)
         # 撤销在后台线程运行，完成时主窗口会调用 refresh_after_change()
 
     def _on_recover(self):
@@ -2325,12 +2345,23 @@ class MainWindow(QMainWindow):
             self._storage = None
         try:
             self._storage = Storage(root)
-        except OSError as e:
+        except StorageBusyError as e:
+            self._storage = None
+            QMessageBox.warning(
+                self, "归档盒",
+                f"{e}\n\n整理记录没有被改名或重建；另一个进程结束后重试即可。\n"
+                "（扫描与预览仍可使用，但「开始整理」会被禁用）",
+            )
+            self._refresh_folder_list()
+            self._update_inspector()
+            return
+        except (StorageAccessError, OSError) as e:
             self._storage = None
             QMessageBox.critical(
                 self, "归档盒",
-                f"无法在该目录建立整理记录（.organizer）：\n{e}\n\n"
-                "请确认该目录有写入权限，或换一个目录。\n"
+                f"无法读取该目录的整理记录（.organizer）：\n{e}\n\n"
+                "原记录文件保持不变。请确认该目录有读写权限、磁盘可用，"
+                "或换一个目录。\n"
                 "（扫描与预览仍可使用，但「开始整理」会被禁用）",
             )
             self._refresh_folder_list()
@@ -2369,7 +2400,8 @@ class MainWindow(QMainWindow):
         if interrupted is not None:
             reply = QMessageBox.question(
                 self, "归档盒",
-                f"检测到该目录的整理批次 #{interrupted} 上次运行被中断（未完成）。\n\n"
+                f"检测到该目录的整理批次 #{interrupted} 需要核对"
+                "（上次运行可能被中断，或状态未确定）。\n\n"
                 "现在核对磁盘实际状态并恢复记录吗？\n"
                 "（只核对与补记，不会覆盖、删除或再次移动文件）",
                 QMessageBox.Yes | QMessageBox.No,
@@ -2382,7 +2414,12 @@ class MainWindow(QMainWindow):
             return
 
         pending = self._storage.get_pending_batch()
-        if pending is not None and pending.status != "done":
+        if pending is not None:
+            # 只有仍能撤销、或仍需核对的批次才提示；逐项落库的普通 partial
+            # 不再每次打开都追问。
+            if not (self._storage.batch_is_undoable(pending.batch_id)
+                    or self._storage.batch_needs_verification(pending.batch_id)):
+                return
             self.btn_undo.setEnabled(True)
             # S3 / guib F-19：用中文状态、不暴露内部状态码与 ISO 时间；
             # 默认按钮是「否」。
@@ -2929,13 +2966,22 @@ class MainWindow(QMainWindow):
             self._full_scan_result is not None and
             normalize_path(self._full_scan_result.root) == normalize_path(root))
         if same_scan:
-            resolved = self.intake.resolve(root, self._full_scan_result)
-            if (resolved.included_count > 0 and not resolved.not_scanned
-                    and not resolved.unsupported):
-                self._generate_and_show_plan()
-                self.statusBar().showMessage(
-                    "正在计算这些文件会放到哪里。现在还不会移动。")
-                return True
+            # 旧结果只有在“范围指纹完全没变”时才能复用：
+            # 目录里新增/删除/改名/结构变化都会让指纹不同，必须重新扫描，
+            # 不能因为旧结果里还能命中至少一个文件就直接生成预览。
+            try:
+                current_sig = scope_fingerprint(root, self.intake.paths())
+            except OSError:
+                current_sig = None
+            cached_sig = getattr(self._full_scan_result, "intake_signature", None)
+            if cached_sig is not None and cached_sig == current_sig:
+                resolved = self.intake.resolve(root, self._full_scan_result)
+                if (resolved.included_count > 0 and not resolved.not_scanned
+                        and not resolved.unsupported):
+                    self._generate_and_show_plan()
+                    self.statusBar().showMessage(
+                        "正在计算这些文件会放到哪里。现在还不会移动。")
+                    return True
         self._quiet_drop_scan = True
         self._start_scan(root, only_paths=self.intake.paths())
         self.statusBar().showMessage(
@@ -4843,7 +4889,9 @@ class MainWindow(QMainWindow):
 
         summary = result.summary()
         parts = [summary]
-        if result.moved > 0:
+        if getattr(result, "db_write_failed", False):
+            parts.append(f"批次 #{result.batch_id} 结果尚未写入记录，需要核对")
+        elif result.moved > 0:
             parts.append(f"批次 #{result.batch_id} 已记录，可撤销")
         if result.skipped > 0 or result.failed > 0:
             parts.append(f"数据库：{os.path.join(self._storage.db_dir, 'history.db')}")
@@ -4868,15 +4916,21 @@ class MainWindow(QMainWindow):
                 f"跳过 {result.skipped} 项（逐项原因见下方详情）")
         if result.failed:
             msg_lines.append(f"失败 {result.failed} 项（移动错误）")
-        msg_lines.append(f"\n批次 #{result.batch_id} 已保存至 .organizer/history.db")
-        msg_lines.append(f"关闭程序后仍可重新打开撤销。")
+        if getattr(result, "db_write_failed", False):
+            msg_lines.append(
+                "\n⚠ 结果尚未写入整理记录，需要核对。\n"
+                "请用「核对恢复」确认磁盘实际状态；在核对完成前，"
+                "本批次不能当作可撤销，也不应开始新的整理。")
+        else:
+            msg_lines.append(f"\n批次 #{result.batch_id} 已保存至 .organizer/history.db")
+            msg_lines.append("关闭程序后仍可重新打开撤销。")
         if result.errors:
             msg_lines.append(
                 f"\n\n跳过/失败详情（同时写入启动日志）：\n"
                 + "\n".join(result.errors[:20])
                 + ("\n…" if len(result.errors) > 20 else ""))
 
-        if result.failed > 0:
+        if result.failed > 0 or getattr(result, "db_write_failed", False):
             QMessageBox.warning(self, "归档盒", "\n".join(msg_lines))
         else:
             QMessageBox.information(self, "归档盒", "\n".join(msg_lines))
@@ -4888,7 +4942,7 @@ class MainWindow(QMainWindow):
             return
         QMessageBox.critical(self, "归档盒", f"执行整理时发生异常：\n{err}")
 
-    def on_undo(self):
+    def on_undo(self, batch_id=None):
         if self._close_pending or self._closing:
             return  # 关闭等待期间不启动新的撤销
         if self._working or self._plan_working:
@@ -4897,43 +4951,56 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "归档盒", "没有可撤销的批次。")
             return
 
-        # 重复撤销防呆
-        if not undo_is_available(self._storage):
-            QMessageBox.information(self, "归档盒", "没有可撤销的批次（已经是最新状态）。")
-            return
-
-        # S3 / guia F-08：存在未核对的中断批次时，撤销按钮走核对恢复
-        blocked = interrupted_batch_id(self._storage)
-        if blocked is not None:
+        needs_check = self._storage.get_batch_needing_check()
+        # 历史里明确选中某批时，只检查该批；主界面直接撤销时，
+        # 有未核对批次先引导核对。
+        if batch_id is None and needs_check is not None:
             reply = QMessageBox.question(
                 self, "有未核对的批次",
-                f"批次 #{blocked} 上次运行被中断，状态还没核对。\n\n"
+                f"批次 #{needs_check.batch_id} 还有未核对或状态未确定的项目。\n\n"
                 "直接撤销无法保证不丢文件。要先「核对恢复」确认磁盘实际状态吗？\n"
                 "（只核对与补记，不会覆盖、删除或再次移动文件）",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.Yes,
             )
             if reply == QMessageBox.Yes:
-                self.recover_interrupted_batch(blocked)
+                self.recover_interrupted_batch(needs_check.batch_id)
             return
 
-        # 确认
-        undo_batch = self._storage.get_undoable_batch()
-        moved_n = 0
-        when = ""
-        batch_no = "?"
-        if undo_batch is not None:
-            batch_no = str(undo_batch.batch_id)
-            when = undo_batch.created_at or undo_batch.finished_at or ""
-            try:
-                actions = self._storage.get_actions(undo_batch.batch_id)
-                moved_n = sum(1 for action in actions
-                              if action.status in ("moved", "conflict"))
-            except Exception:
-                moved_n = 0
+        # 历史选中项与直接撤销共用同一个批次 id
+        undo_batch = (self._storage.get_batch(int(batch_id))
+                      if batch_id is not None
+                      else self._storage.get_undoable_batch())
+        if undo_batch is not None and self._storage.batch_needs_verification(
+                undo_batch.batch_id):
+            reply = QMessageBox.question(
+                self, "批次需要核对",
+                f"批次 #{undo_batch.batch_id} 还有未核对或状态未确定的项目。\n\n"
+                "要先「核对恢复」确认磁盘实际状态吗？",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes,
+            )
+            if reply == QMessageBox.Yes:
+                self.recover_interrupted_batch(undo_batch.batch_id)
+            return
+        if undo_batch is None or not self._storage.batch_is_undoable(
+                undo_batch.batch_id):
+            QMessageBox.information(
+                self, "归档盒",
+                "该批次没有实际移动的文件，或当前不能撤销（已经是最新状态）。")
+            return
+
+        undo_id = undo_batch.batch_id
+        when = undo_batch.created_at or undo_batch.finished_at or ""
+        try:
+            actions = self._storage.get_actions(undo_id)
+            moved_n = sum(1 for action in actions
+                          if action.status in ("moved", "conflict"))
+        except Exception:
+            moved_n = 0
         reply = QMessageBox.question(
             self, "归档盒",
-            f"将撤销批次 #{batch_no}"
+            f"将撤销批次 #{undo_id}"
             + (f"（{when}）" if when else "")
             + f"，共 {moved_n} 个文件。\n\n"
             "⚠ 注意：\n"
@@ -4948,13 +5015,15 @@ class MainWindow(QMainWindow):
             return
 
         self._set_working(True, "撤销中……")
-        self.task.begin("undo", self._storage.root, phase="撤销最近批次")
+        self.task.begin("undo", self._storage.root,
+                        phase=f"撤销批次 #{undo_id}")
         try:
-            self._undo_worker = UndoWorker(self._storage.root, parent=self)
+            self._undo_worker = UndoWorker(self._storage.root,
+                                           batch_id=undo_id, parent=self)
             self._undo_worker.finished_ok.connect(self._on_undo_done)
             self._undo_worker.failed.connect(self._on_undo_failed)
             self._undo_worker.finished.connect(lambda: self._finish_task("undo"))
-            self._refresh_busy_ui("正在撤销最近批次……")
+            self._refresh_busy_ui(f"正在撤销批次 #{undo_id}……")
             self._undo_worker.start()
         except Exception as e:
             self._abort_task_start("undo", "撤销", e)
@@ -4991,6 +5060,12 @@ class MainWindow(QMainWindow):
 
         if result.refused:
             QMessageBox.warning(self, "归档盒", msg)
+        elif getattr(result, "db_write_failed", False):
+            QMessageBox.warning(
+                self, "归档盒",
+                msg + "\n\n⚠ 撤销结果尚未写入整理记录，需要核对。\n"
+                "请用「核对恢复」确认磁盘实际状态；"
+                "在核对完成前，不能把本批次当作已完整撤销。")
         elif result.was_cancelled:
             QMessageBox.information(
                 self, "归档盒",

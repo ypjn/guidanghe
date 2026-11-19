@@ -27,6 +27,24 @@ from utils import win_long_path, strip_long_prefix
 
 DB_FILENAME = "history.db"
 
+# 打开历史库失败时给调用方的两类可区分结果：
+# - 忙：另一个进程正持锁，稍后重试即可，绝不改名、不新建
+# - 不可访问：权限/IO 问题，保持原库，向用户说明原因
+class StorageBusyError(RuntimeError):
+    """历史库被其他进程占用（可重试）。"""
+
+
+class StorageAccessError(RuntimeError):
+    """历史库无法访问（权限/IO），不可当作损坏处理。"""
+
+
+class _CorruptHistory(Exception):
+    """已确认历史库损坏，可以改名留存并重建。"""
+
+
+# SQLite 忙碌/锁定错误码
+_SQLITE_BUSY_CODES = {5, 6}
+
 # action.status 常量
 STATUS_PLANNED = "planned"          # 已写入意图，尚未执行
 STATUS_MOVED = "moved"              # 移动成功
@@ -36,6 +54,7 @@ STATUS_CANCELLED = "cancelled"      # 用户取消（尚未执行或执行中被
 STATUS_UNDONE = "undone"            # 撤销成功
 STATUS_CONFLICT = "conflict"        # 撤销或恢复时发现冲突，保留现状
 STATUS_PAUSED = "paused"            # 中断恢复时状态不明确，暂停人工处理
+STATUS_RESTORING = "restoring"      # 已写入撤销意图，尚未确认恢复结果
 
 # 批次状态常量
 BATCH_PLANNING = "planning"
@@ -70,6 +89,8 @@ class ActionRecord:
     error: str = ""
     executed_at: str = ""
     undone_at: str = ""
+    # 恢复核对是否已经确认过这一项（planned/paused 需要核对；0 = 还没核对）
+    verified: int = 0
     # V1.4：单文件修正（旧批次为空串 → 自动分类）
     auto_target_rel: str = ""       # 若用户手动改了目标：修正前的自动目标路径
     auto_rule_applied: str = ""     # 修正前的自动分类依据
@@ -184,6 +205,7 @@ class Storage:
         self.db_path = os.path.join(self.db_dir, DB_FILENAME)
         # V1.7：历史库损坏时隔离旧文件并重建，提示用户
         self.recovery_note = ""
+        self.open_error = ""
         self.conn = None
         self._ensure_db_dir()
         self._open_with_recovery()
@@ -191,23 +213,34 @@ class Storage:
     def _ensure_db_dir(self):
         os.makedirs(self.db_dir, exist_ok=True)
 
-    def _open_with_recovery(self):
-        """打开历史库；损坏（或不是 sqlite 文件）时改名留存并重建。
+    @staticmethod
+    def _is_busy_error(exc: BaseException) -> bool:
+        code = getattr(exc, "sqlite_errorcode", None)
+        if code in _SQLITE_BUSY_CODES:
+            return True
+        text = str(exc).lower()
+        return "database is locked" in text or "database is busy" in text
 
-        S3 / filesafe F-14：history.db 是撤销能力的唯一载体。损坏时
-        不能让整个目录直接打不开，也不能悄悄删掉旧文件——改名留存。
-        """
+    @staticmethod
+    def _is_definitely_corrupt(exc: BaseException) -> bool:
+        text = str(exc).lower()
+        return ("file is not a database" in text
+                or "malformed" in text
+                or "file is encrypted" in text)
+
+    @staticmethod
+    def _looks_like_sqlite_file(path: str) -> bool:
+        """空文件交给 SQLite 自己初始化；非空文件必须带 SQLite 文件头。"""
         try:
-            self._open_and_check()
-            return
-        except (sqlite3.DatabaseError, OSError) as e:
-            first_error = e
-        try:
-            if self.conn is not None:
-                self.conn.close()
-        except Exception:
-            pass
-        self.conn = None
+            if os.path.getsize(path) == 0:
+                return True
+            with open(path, "rb") as handle:
+                return handle.read(16) == b"SQLite format 3\x00"
+        except OSError:
+            # 读不了就交给 connect 去报权限/IO，不能据此改名。
+            return True
+
+    def _quarantine_corrupt(self) -> str:
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         backup_path = ""
         try:
@@ -219,8 +252,22 @@ class Storage:
                         os.replace(self.db_path + suffix,
                                    backup_path + suffix)
         except OSError:
-            backup_path = ""
-        self._open_and_check()
+            return ""
+        return backup_path
+
+    def _rebuild_after_corruption(self, first_error) -> None:
+        backup_path = self._quarantine_corrupt()
+        try:
+            self._open_and_check()
+        except sqlite3.OperationalError as e:
+            if self._is_busy_error(e):
+                self.open_error = "另一个归档盒进程正在使用整理记录，请稍后再打开。"
+                raise StorageBusyError(self.open_error) from e
+            self.open_error = f"重建整理记录失败（权限或磁盘问题）：{e}"
+            raise StorageAccessError(self.open_error) from e
+        except (_CorruptHistory, sqlite3.DatabaseError, OSError) as e:
+            self.open_error = f"重建整理记录失败：{e}"
+            raise StorageAccessError(self.open_error) from e
         self.recovery_note = (
             "整理记录（history.db）无法读取，可能已损坏。\n"
             + (f"旧文件已改名为：\n{strip_long_prefix(backup_path)}\n" if backup_path
@@ -228,14 +275,66 @@ class Storage:
             + "已创建新的整理记录；旧记录不会再出现在历史里。\n"
             + f"原始错误：{first_error}")
 
+    def _open_with_recovery(self):
+        """打开历史库：只在确认损坏时改名重建。
+
+        V1.7 安全复核：库被另一个进程占用（SQLITE_BUSY/LOCKED）时，
+        原实现会把健康库当成损坏改名，导致当前批次和撤销记录消失。
+        现在严格区分：
+          - 忙 → StorageBusyError（可重试），不改名、不新建
+          - 权限/IO → StorageAccessError，不改名、不新建
+          - 文件头不是 SQLite，或成功独占打开后 quick_check 失败 → 改名留存并重建
+        """
+        self.recovery_note = ""
+        self.open_error = ""
+        if os.path.exists(self.db_path) and not self._looks_like_sqlite_file(
+                self.db_path):
+            self._rebuild_after_corruption("文件头不是 SQLite 格式")
+            return
+        try:
+            self._open_and_check()
+            return
+        except _CorruptHistory as e:
+            first_error = e
+        except sqlite3.OperationalError as e:
+            if self._is_busy_error(e):
+                self.open_error = "另一个归档盒进程正在使用整理记录，请稍后再打开。"
+                raise StorageBusyError(self.open_error) from e
+            self.open_error = f"无法打开整理记录（权限或磁盘问题）：{e}"
+            raise StorageAccessError(self.open_error) from e
+        except sqlite3.DatabaseError as e:
+            if not self._is_definitely_corrupt(e):
+                # 不要用“捕获全部 DatabaseError”代表损坏。
+                self.open_error = f"无法读取整理记录：{e}"
+                raise StorageAccessError(self.open_error) from e
+            first_error = e
+        except OSError as e:
+            self.open_error = f"无法访问整理记录：{e}"
+            raise StorageAccessError(self.open_error) from e
+        self._rebuild_after_corruption(first_error)
+
     def _open_and_check(self):
-        self.conn = sqlite3.connect(self.db_path)
-        self.conn.execute("PRAGMA foreign_keys = ON")
-        self._init_schema()
-        row = self.conn.execute("PRAGMA quick_check(1)").fetchone()
-        if not row or str(row[0]).lower() != "ok":
-            raise sqlite3.DatabaseError(
-                f"history.db 结构校验失败：{row[0] if row else '无结果'}")
+        conn = sqlite3.connect(self.db_path, timeout=2.0)
+        self.conn = conn
+        try:
+            conn.execute("PRAGMA foreign_keys = ON")
+            self._init_schema()
+            row = conn.execute("PRAGMA quick_check(1)").fetchone()
+            if not row or str(row[0]).lower() != "ok":
+                raise _CorruptHistory(
+                    f"history.db 结构校验失败：{row[0] if row else '无结果'}")
+            # 写探针：确认当前没有别的进程持写锁。
+            # 忙时抛 OperationalError（由上层转成可重试的 StorageBusyError），
+            # 绝不能在这里把库改名。
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute("ROLLBACK")
+        except BaseException:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            self.conn = None
+            raise
 
     def recorded_roots(self) -> List[str]:
         """数据库里记录过的根目录（用于识别目录改名/移动）。"""
@@ -305,6 +404,10 @@ class Storage:
             if col not in act_cols:
                 self.conn.execute(
                     f"ALTER TABLE actions ADD COLUMN {col} TEXT DEFAULT ''")
+        # V1.7 安全复核：planned/paused 是否已经核对过（0 = 待核对）
+        if "verified" not in act_cols:
+            self.conn.execute(
+                "ALTER TABLE actions ADD COLUMN verified INTEGER DEFAULT 0")
         self.conn.commit()
 
     # ============== 批次操作 ==============
@@ -399,19 +502,89 @@ class Storage:
         return self.get_batch(row[0])
 
     def get_undoable_batch(self) -> Optional[BatchRecord]:
-        """最近一个还能撤销的批次（含已完成的 done 批次）。
+        """最近一个"真的移动过文件、且状态已核对"的批次。
 
-        S2 F-09/F-05：done 批次不再作为"未完成"被主动询问，
-        但用户手动点「撤销上一次」时仍可以撤销它。
+        V1.7 安全复核：
+          - 零移动、已经逐项落库的终态批次不再挡住更早真正移动过文件的批次；
+          - 仍需核对（未核对 planned / paused / restoring，或 planning/executing）
+            的批次不进入撤销，由界面引导先「核对恢复」。
         """
+        batch_id = self.undoable_batch_id()
+        if batch_id is None:
+            return None
+        return self.get_batch(batch_id)
+
+    def undoable_batch_id(self) -> Optional[int]:
+        """可撤销批次 id（与 get_undoable_batch 同一判定）。"""
         cur = self.conn.execute(
-            "SELECT id FROM batches WHERE status != ? ORDER BY id DESC LIMIT 1",
-            (BATCH_UNDONE,),
+            "SELECT b.id FROM batches b "
+            "WHERE b.status NOT IN (?, ?, ?) "
+            "  AND EXISTS (SELECT 1 FROM actions a WHERE a.batch_id = b.id "
+            "              AND a.status IN (?, ?)) "
+            "  AND NOT EXISTS (SELECT 1 FROM actions a WHERE a.batch_id = b.id "
+            "                  AND ((a.status = ? AND COALESCE(a.verified, 0) = 0) "
+            "                       OR a.status IN (?, ?))) "
+            "ORDER BY b.id DESC LIMIT 1",
+            (BATCH_UNDONE, BATCH_PLANNING, BATCH_EXECUTING,
+             STATUS_MOVED, STATUS_CONFLICT,
+             STATUS_PLANNED, STATUS_PAUSED, STATUS_RESTORING),
         )
         row = cur.fetchone()
+        return row[0] if row else None
+
+    def batch_is_undoable(self, batch_id: int) -> bool:
+        """指定批次现在能否撤销（历史页按钮与确认框共用）。"""
+        return self._batch_undoable(batch_id)
+
+    def _batch_undoable(self, batch_id: int) -> bool:
+        row = self.conn.execute(
+            "SELECT status FROM batches WHERE id = ?", (batch_id,)).fetchone()
+        if not row or row[0] in (BATCH_UNDONE, BATCH_PLANNING, BATCH_EXECUTING):
+            return False
+        if self.batch_needs_verification(batch_id):
+            return False
+        cur = self.conn.execute(
+            "SELECT COUNT(*) FROM actions WHERE batch_id = ? AND status IN (?, ?)",
+            (batch_id, STATUS_MOVED, STATUS_CONFLICT))
+        return int(cur.fetchone()[0]) > 0
+
+    def batch_needs_verification(self, batch_id: int) -> bool:
+        """该批次是否有还没核对/未落库的动作（主界面/历史/执行守卫共用）。"""
+        row = self.conn.execute(
+            "SELECT status FROM batches WHERE id = ?", (batch_id,)).fetchone()
         if not row:
+            return False
+        if row[0] in (BATCH_PLANNING, BATCH_EXECUTING):
+            return True
+        cur = self.conn.execute(
+            "SELECT COUNT(*) FROM actions WHERE batch_id = ? AND ("
+            "(status = ? AND COALESCE(verified, 0) = 0) OR status IN (?, ?))",
+            (batch_id, STATUS_PLANNED, STATUS_PAUSED, STATUS_RESTORING))
+        return int(cur.fetchone()[0]) > 0
+
+    def get_batch_needing_check(self) -> Optional[BatchRecord]:
+        """最近一个需要核对恢复的批次（含 paused / 结果未落库）。"""
+        candidates: List[int] = []
+        row = self.conn.execute(
+            "SELECT id FROM batches WHERE status IN (?, ?) "
+            "ORDER BY id DESC LIMIT 1",
+            (BATCH_PLANNING, BATCH_EXECUTING)).fetchone()
+        if row:
+            candidates.append(row[0])
+        row = self.conn.execute(
+            "SELECT batch_id FROM actions WHERE (status = ? AND "
+            "COALESCE(verified, 0) = 0) OR status IN (?, ?) "
+            "ORDER BY batch_id DESC LIMIT 1",
+            (STATUS_PLANNED, STATUS_PAUSED, STATUS_RESTORING)).fetchone()
+        if row:
+            candidates.append(row[0])
+        if not candidates:
             return None
-        return self.get_batch(row[0])
+        return self.get_batch(max(candidates))
+
+    def get_verification_batch_id(self) -> Optional[int]:
+        batch = self.get_batch_needing_check()
+        return batch.batch_id if batch else None
 
     def acknowledge_conflict_batch(self, batch_id: int) -> None:
         """用户确认冲突已人工处理后，批次从"待处理"里移出（S3 F-24）。"""
@@ -501,10 +674,14 @@ class Storage:
         return "", ""
 
     def update_action(self, batch_id: int, action_index: int, status: str,
-                      error: str = "", commit: bool = True):
+                      error: str = "", commit: bool = True,
+                      verified: Optional[bool] = None):
         executed_at, undone_at = self._status_timestamps(status)
         sql = "UPDATE actions SET status = ?, error = ?"
         params: list = [status, error]
+        if verified is not None:
+            sql += ", verified = ?"
+            params.append(1 if verified else 0)
         if executed_at:
             sql += ", executed_at = ?"
             params.append(executed_at)
@@ -535,7 +712,7 @@ class Storage:
             "SELECT action_index, source_rel, target_rel, source_size, source_sha256, "
             "status, error, executed_at, undone_at, "
             "auto_target_rel, auto_rule_applied, override_note, "
-            "rule_key, rule_applied "
+            "rule_key, rule_applied, COALESCE(verified, 0) "
             "FROM actions WHERE batch_id = ? ORDER BY action_index ASC",
             (batch_id,),
         )
@@ -551,6 +728,7 @@ class Storage:
                 override_note=row[11] or "",
                 rule_key=row[12] or "",
                 rule_applied=row[13] or "",
+                verified=int(row[14] or 0),
             ))
         return results
 

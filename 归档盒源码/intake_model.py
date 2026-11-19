@@ -40,6 +40,47 @@ def rel_of(root: str, path: str) -> str:
     return "" if rel == "." else rel
 
 
+def scope_fingerprint(root: str, paths) -> tuple:
+    """待整理范围的轻量指纹：能发现新增、删除、改名和目录内部结构变化。
+
+    只读 stat / 目录树，不读文件内容。重新预览时用它判断旧扫描结果
+    是否仍然可用；只要范围里有任何文件/目录增删改名，指纹就会变化。
+    """
+    root_n = normalize_path(root)
+    entries: List[tuple] = []
+    for raw in paths or []:
+        if not raw:
+            continue
+        p = normalize_path(raw)
+        if not os.path.exists(p):
+            entries.append((rel_of(root_n, p), "missing"))
+            continue
+        if os.path.isfile(p):
+            try:
+                st = os.stat(p)
+                entries.append((rel_of(root_n, p), "file",
+                                st.st_size, st.st_mtime_ns))
+            except OSError:
+                entries.append((rel_of(root_n, p), "unreadable"))
+            continue
+        if not os.path.isdir(p):
+            entries.append((rel_of(root_n, p), "other"))
+            continue
+        for dirpath, dirnames, filenames in os.walk(p):
+            dirnames.sort()
+            entries.append((rel_of(root_n, dirpath), "dir"))
+            for name in sorted(filenames):
+                full = os.path.join(dirpath, name)
+                try:
+                    st = os.stat(full)
+                    entries.append((rel_of(root_n, full), "file",
+                                    st.st_size, st.st_mtime_ns))
+                except OSError:
+                    entries.append((rel_of(root_n, full), "unreadable"))
+    entries.sort()
+    return (root_n, tuple(entries))
+
+
 @dataclass
 class IntakeItem:
     path: str
