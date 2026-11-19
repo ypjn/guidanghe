@@ -5,7 +5,7 @@
     {
       "run": 1,
       "os_exit_code": 0,
-      "elapsed_s": 58.69,
+      "elapsed_s": 69.74,
       "log": "../课程交付/阶段5-证据/logs/test_stage2_preferences_run1.log",
       "summary": {
         "total": 65,

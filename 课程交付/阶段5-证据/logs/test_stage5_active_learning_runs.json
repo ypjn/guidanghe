@@ -5,11 +5,11 @@
     {
       "run": 1,
       "os_exit_code": 0,
-      "elapsed_s": 8.14,
+      "elapsed_s": 13.47,
       "log": "../课程交付/阶段5-证据/logs/test_stage5_active_learning_run1.log",
       "summary": {
-        "total": 20,
-        "pass": 20,
+        "total": 24,
+        "pass": 24,
         "fail": 0,
         "untested": 4,
         "reported_exit_code": 0

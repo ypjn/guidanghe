@@ -573,10 +573,11 @@ def import_history_feedback(root: str,
         rows = conn.execute(
             "SELECT " + ", ".join(select_cols) + " FROM actions "
             "ORDER BY batch_id ASC, action_index ASC").fetchall()
-        done_clues = set()
-        seen_decisions = set()
         undone_batches = set()
-        pending_clues = []
+        # 同一 source_rel 只保留 batch_id、action_index 最大的那条去向；
+        # 另按目标目录记录最新批次，供「已有现场判断」时补一致的历史身份。
+        choices: Dict[str, dict] = {}
+        by_target: Dict[str, Dict[str, dict]] = {}
         for row in rows:
             result.scanned_actions += 1
             status = row["status"] or ""
@@ -596,33 +597,78 @@ def import_history_feedback(root: str,
             is_choice = rule_key.startswith("ambiguity_choice:")
             if not (is_override or is_choice):
                 continue
+            batch_id = int(row["batch_id"])
+            action_index = int(row["action_index"])
+            ident = (batch_id, action_index)
             normalized = _norm_rel(source_rel)
-            signature = (int(row["batch_id"]), normalized)
-            if signature in seen_decisions:
-                continue
-            seen_decisions.add(signature)
             after_target = _dirname(target_rel)
             before_target = _dirname(auto_target)
             direction, semester, category = _parse_direction_fields(
                 row["rule_applied"] or "", rule_key, after_target)
+            payload = {
+                "ident": ident,
+                "source_rel": source_rel,
+                "before_target": before_target,
+                "after_target": after_target,
+                "direction": direction,
+                "semester": semester,
+                "category": category,
+                "rule_key": rule_key,
+                "rule_applied": row["rule_applied"] or "",
+                "batch_id": batch_id,
+                "action_index": action_index,
+            }
+            current = choices.get(normalized)
+            if current is None or ident > current["ident"]:
+                choices[normalized] = payload
+            bucket = by_target.setdefault(normalized, {})
+            target_key = _target_key(after_target)
+            same_target = bucket.get(target_key)
+            if same_target is None or ident > same_target["ident"]:
+                bucket[target_key] = payload
+        for payload in choices.values():
+            source_rel = payload["source_rel"]
             key = _decision_key(root, source_rel)
             existing = _find_feedback_by_key(root, key)
             if existing is None:
                 added = _write_decision(
                     root, source_rel, kind=KIND_JUDGMENT, origin="history",
-                    before_target=before_target, after_target=after_target,
-                    keep_in_place=False, direction=direction,
-                    semester=semester, category=category,
-                    rule_key=rule_key, rule_applied=row["rule_applied"] or "",
-                    batch_id=int(row["batch_id"]),
-                    action_index=int(row["action_index"]), reactivate=False)
+                    before_target=payload["before_target"],
+                    after_target=payload["after_target"],
+                    keep_in_place=False,
+                    direction=payload["direction"],
+                    semester=payload["semester"],
+                    category=payload["category"],
+                    rule_key=payload["rule_key"],
+                    rule_applied=payload["rule_applied"],
+                    batch_id=payload["batch_id"],
+                    action_index=payload["action_index"],
+                    reactivate=False)
                 if added:
                     result.judgments_added += 1
-            elif (existing.active and existing.batch_id is None
-                    and existing.kind == KIND_JUDGMENT):
-                # 现场先记下、后来执行成功：合并成同一条，只补批次身份。
-                _fill_batch_identity(root, key, int(row["batch_id"]),
-                                     int(row["action_index"]))
+                continue
+            if not existing.active:
+                continue
+            if existing.origin == "history":
+                old_ident = (existing.batch_id if existing.batch_id is not None else -1,
+                             existing.action_index if existing.action_index is not None else -1)
+                if payload["ident"] > old_ident:
+                    _replace_history_decision(root, key, payload)
+                continue
+            # 已有现场判断：保留现场去向，只补目标一致的历史批次身份。
+            if existing.kind == KIND_JUDGMENT and not existing.keep_in_place:
+                match = by_target.get(
+                    _norm_rel(source_rel), {}).get(
+                        _target_key(existing.after_target))
+                if match is not None:
+                    old_ident = (
+                        existing.batch_id if existing.batch_id is not None else -1,
+                        existing.action_index if existing.action_index is not None else -1)
+                    if match["ident"] > old_ident:
+                        _set_batch_identity(root, key, match["batch_id"],
+                                            match["action_index"])
+        done_clues = set()
+        pending_clues = []
         for batch_id in sorted(undone_batches):
             if batch_id not in done_clues:
                 pending_clues.append(batch_id)
@@ -653,17 +699,41 @@ def _find_feedback_by_key(root: str, key: str) -> Optional[Feedback]:
         conn.close()
 
 
-def _fill_batch_identity(root: str, key: str, batch_id: int,
-                         action_index: int) -> None:
+def _set_batch_identity(root: str, key: str, batch_id: int,
+                        action_index: int) -> None:
     conn = _open(root)
     try:
         conn.execute(
             "UPDATE learning_feedback SET batch_id=?, action_index=?, "
-            "updated_at=? WHERE evidence_key=? AND batch_id IS NULL",
+            "updated_at=? WHERE evidence_key=?",
             (batch_id, action_index, _now(), key))
         conn.commit()
     finally:
         conn.close()
+
+
+def _replace_history_decision(root: str, key: str, payload: dict) -> None:
+    """纯历史判断：用更新批次的目标替换旧行的去向与批次身份。"""
+    conn = _open(root)
+    try:
+        conn.execute(
+            "UPDATE learning_feedback SET origin='history', source_rel=?, "
+            "before_target=?, after_target=?, keep_in_place=0, direction=?, "
+            "semester=?, category=?, rule_key=?, rule_applied=?, "
+            "batch_id=?, action_index=?, active=1, updated_at=? "
+            "WHERE evidence_key=?",
+            (payload["source_rel"], payload["before_target"],
+             payload["after_target"], payload["direction"],
+             payload["semester"], payload["category"], payload["rule_key"],
+             payload["rule_applied"], payload["batch_id"],
+             payload["action_index"], _now(), key))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _target_key(target_dir: str) -> str:
+    return os.path.normcase(os.path.normpath(target_dir or ""))
 
 
 # ======================== 候选归纳 ========================

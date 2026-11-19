@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from typing import Callable, List
 
 from PySide6.QtCore import Qt
@@ -40,23 +41,24 @@ class LearningCandidatesDialog(QDialog):
         lay.setContentsMargins(12, 12, 12, 12)
         lay.setSpacing(8)
 
-        hint = QLabel(
+        self.hint = QLabel(
             "这里只展示根据你最近的实际改单归纳出的候选。"
             "确认前不会写进偏好表；确认后下一次预览才会采用，"
             "文件仍要勾选并走原执行确认才会移动。")
         clue_note = ""
         try:
-            clues = learning.list_feedback(root, learning.KIND_CLUE)
-        except Exception:
+            clues = learning.list_feedback(self.root, learning.KIND_CLUE)
+        except (learning.LearningError, sqlite3.Error, OSError):
+            # 只忽略可预期的存储错误；NameError 等编程错误必须暴露出来。
             clues = []
         if clues:
             clue_note = (
                 f"\n另有 {len(clues)} 条整批撤销线索（没有逐文件分类原因），"
                 "只作待核对，不参与候选计数。")
-        hint.setText(hint.text() + clue_note)
-        hint.setWordWrap(True)
-        hint.setStyleSheet("color:#475569;font-size:12px;")
-        lay.addWidget(hint)
+        self.hint.setText(self.hint.text() + clue_note)
+        self.hint.setWordWrap(True)
+        self.hint.setStyleSheet("color:#475569;font-size:12px;")
+        lay.addWidget(self.hint)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         self.table = QTableWidget(0, 4)

@@ -825,6 +825,21 @@ def main():
         f"clue={len(clues)} 冲突仍在={conflict_after is not None} "
         f"偏好={len(prefs_of(UNDO))}")
 
+    # ---------- 学习建议窗口读取线索（真实窗口，不允许吞掉 NameError） ----------
+    from learning_dialog import LearningCandidatesDialog
+    clue_dlg = LearningCandidatesDialog(
+        UNDO, lambda: learning.list_candidates(UNDO),
+        lambda cid, scope: None, lambda cid: None, lambda cid: None)
+    clue_dlg.show()
+    process()
+    clue_text = clue_dlg.hint.text()
+    rec("S521", "学习建议窗口用当前空间读取 clue，并写明条数、待核对、不参与候选计数",
+        "1 条" in clue_text and "待核对" in clue_text
+        and "不参与候选计数" in clue_text,
+        f"线索说明={clue_text!r}")
+    clue_dlg.close()
+    process(0.05)
+
     # ---------- 旧库兼容：没有学习表的 preferences.db / history.db ----------
     old_root = space("old_db")
     write(old_root, "旧偏好命中.txt", "旧偏好\n")
@@ -922,6 +937,88 @@ def main():
         f"按钮={dlg.btn_confirm.text()} / {dlg.btn_global.text()}")
     dlg.close()
     process(0.05)
+
+    # ---------- 纯历史同一来源多批次：保留最新批次去向 ----------
+    hist_root = space("history_overwrite")
+    write(hist_root, "跨批次.txt", "跨批次内容\n")
+    hist_storage = Storage(hist_root)
+    old_plan = plan_for(hist_root, {"跨批次.txt": {
+        "direction": "项目", "semester": None, "category": "旧去向",
+        "target_dir": "_已整理/项目/旧去向"}})
+    old_result = execute_plan(old_plan, hist_storage)
+    moved_old = os.path.join(hist_root, "_已整理", "项目", "旧去向",
+                             "跨批次.txt")
+    os.replace(moved_old, os.path.join(hist_root, "跨批次.txt"))
+    new_plan = plan_for(hist_root, {"跨批次.txt": {
+        "direction": "项目", "semester": None, "category": "新去向",
+        "target_dir": "_已整理/项目/新去向"}})
+    new_result = execute_plan(new_plan, hist_storage)
+    hist_import = learning.import_history_feedback(hist_root)
+    hist_import_again = learning.import_history_feedback(hist_root)
+    hist_rows = learning.list_feedback(hist_root)
+    rec("S522",
+        "纯历史同一来源批次 1 旧去向、批次 2 新去向：只留一条且为批次 2 的新去向",
+        old_result.batch_id == 1 and new_result.batch_id == 2
+        and hist_import.judgments_added == 1
+        and hist_import_again.judgments_added == 0
+        and len(hist_rows) == 1
+        and hist_rows[0].after_target == os.path.join(
+            "_已整理", "项目", "新去向")
+        and hist_rows[0].batch_id == 2,
+        f"批次 {old_result.batch_id}/{new_result.batch_id} "
+        f"导入新增={hist_import.judgments_added}/"
+        f"{hist_import_again.judgments_added} 记录="
+        f"{[(f.after_target, f.batch_id, f.action_index) for f in hist_rows]}")
+
+    # ---------- 已有现场判断：目标不一致的历史批次不得覆盖 ----------
+    live_root = space("history_live_protect")
+    write(live_root, "现场文件.txt", "现场\n")
+    learning.record_override(
+        live_root, "现场文件.txt", "_已整理/待定",
+        "_已整理/项目/现场去向", "项目", "", "现场去向")
+    live_storage = Storage(live_root)
+    live_plan = plan_for(live_root, {"现场文件.txt": {
+        "direction": "项目", "semester": None, "category": "旧历史去向",
+        "target_dir": "_已整理/项目/旧历史去向"}})
+    live_exec = execute_plan(live_plan, live_storage)
+    learning.import_history_feedback(live_root)
+    live_rows = learning.list_feedback(live_root)
+    rec("S523",
+        "已有现场判断时保留现场去向，目标不一致的历史批次不覆盖类别也不写旧 batch_id",
+        live_exec.moved == 1 and len(live_rows) == 1
+        and live_rows[0].after_target == os.path.join(
+            "_已整理", "项目", "现场去向")
+        and live_rows[0].batch_id is None,
+        f"记录={[(f.after_target, f.batch_id, f.origin) for f in live_rows]}")
+
+    # ---------- 现场判断 + 一致旧批次 + 不一致新批次：只写一致批次 ----------
+    live2_root = space("history_live_consistent")
+    write(live2_root, "现场一致.txt", "现场一致\n")
+    learning.record_override(
+        live2_root, "现场一致.txt", "_已整理/待定",
+        "_已整理/项目/现场一致去向", "项目", "", "现场一致去向")
+    live2_storage = Storage(live2_root)
+    consistent_plan = plan_for(live2_root, {"现场一致.txt": {
+        "direction": "项目", "semester": None, "category": "现场一致去向",
+        "target_dir": "_已整理/项目/现场一致去向"}})
+    consistent_result = execute_plan(consistent_plan, live2_storage)
+    os.replace(os.path.join(live2_root, "_已整理", "项目", "现场一致去向",
+                            "现场一致.txt"),
+               os.path.join(live2_root, "现场一致.txt"))
+    inconsistent_plan = plan_for(live2_root, {"现场一致.txt": {
+        "direction": "项目", "semester": None, "category": "不一致新去向",
+        "target_dir": "_已整理/项目/不一致新去向"}})
+    inconsistent_result = execute_plan(inconsistent_plan, live2_storage)
+    learning.import_history_feedback(live2_root)
+    live2_rows = learning.list_feedback(live2_root)
+    rec("S524",
+        "现场判断存在时，只写入目标一致的历史批次；不一致的新批次不改类别和 batch_id",
+        consistent_result.batch_id == 1 and inconsistent_result.batch_id == 2
+        and len(live2_rows) == 1
+        and live2_rows[0].after_target == os.path.join(
+            "_已整理", "项目", "现场一致去向")
+        and live2_rows[0].batch_id == 1,
+        f"记录={[(f.after_target, f.batch_id, f.origin) for f in live2_rows]}")
 
     # ---------- 汇总 ----------
     failed = [c for c in CHECKS if not c[2]]
