@@ -1,0 +1,41 @@
+== 第 4 轮历史明细辅助功能与访达定位（cocoa 真实窗口） ==
+按钮改为对话框子控件后，辅助功能树顶层出现 Button「选择第 N 行明细」；
+按辅助功能 Press 动作选中行，再用 Finder 实际选中状态核对目标/源文件。
+
+2026-11-19 17:23:52.603 python[24000:2790345] error messaging the mach port for IMKCFRunLoopWakeUpReliable
+空间=/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_ji9h5cav/ax_finder_e2e
+源文件=/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_ji9h5cav/ax_finder_e2e/下载/笔记.txt SHA=039c9f4fd98b0173f9c0baa4068b472de928725db54d39167fdebe14eb338a1f
+整理后目标=/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_ji9h5cav/ax_finder_e2e/_已整理/高等数学/文档/笔记.txt 存在=True
+
+== 整理后历史对话框辅助功能树（顶层） ==
+Dialog name='操作历史 — /private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_ji9h5cav/ax_finder_e2e'
+  [0] StaticText name='批次列表（按整理根目录保存，与计划数量无关，全部来自实际持久化记录）'
+  [1] Table name=''
+  [2] StaticText name=''
+  [3] Button name='刷新'
+  [4] Button name='撤销该批次'
+  [5] Button name='核对恢复…'
+  [6] Button name='导出…'
+  [7] StaticText name='当前没有可撤销的批次。'
+  [8] Button name='关闭'
+  [9] StaticText name='逐项明细'
+  [10] EditableText name=''
+  [11] StaticText name='状态：'
+  [12] ComboBox name='全部状态'
+  [13] Button name='在文件管理器中显示'
+  [14] Table name=''
+  [15] Button name='上一页'
+  [16] StaticText name='第 1/1 页 · 共 1 项'
+  [17] Button name='下一页'
+  [18] StaticText name=''
+  [19] StaticText name=''
+  [20] Button name='选择第 1 行明细'
+找到按钮接口=True
+辅助功能 Press 已触发=True currentRow=0 定位按钮可点=True
+访达当前选中=/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_ji9h5cav/ax_finder_e2e/_已整理/高等数学/文档/笔记.txt
+整理后访达选中目标=True
+撤销完成=True 目标仍存在=False 源文件 SHA=039c9f4fd98b0173f9c0baa4068b472de928725db54d39167fdebe14eb338a1f SHA一致=True
+撤销后辅助功能 Press 已触发=True currentRow=0 定位按钮可点=True
+访达当前选中=/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_ji9h5cav/ax_finder_e2e/下载/笔记.txt
+撤销后访达选中源文件=True
+EXIT:0
