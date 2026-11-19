@@ -82,11 +82,12 @@ PHASE1_EXIT:0
 截图：/private/tmp/s4-demo2-shots/05-撤销后主窗口.png
 PHASE2_EXIT:0
 
-== 最终成品校验和（重建后） ==
-c09eb702a0622e46b1342cbedb8dff30a7f27dc97c5c70122686ff4a3f8b8970  打包/归档盒-macOS-免安装.zip
-1f4cc9cfa9b4b23d3b984b5352e732d8fbe078cde6b409dc5581b0e095f0bfe5  打包/归档盒-macOS-免安装/归档盒.app/Contents/MacOS/archivebox
-c593ec2b70430d4c5364e0d37ac72512920b0b77d5382b66a151907098861da9  打包/归档盒-Windows-免安装.zip
-340c1ea4b2aef9adb0588de28b79854f41caf554c91f8c044bce6e3d04bfd19b  打包/归档盒-Windows-免安装/归档盒.exe
+== 第 2 轮最终成品校验和（重新打包） ==
+89dd7ed5552d368fc8740bcfef426fbb94f1ddcd5c1f5216a70ff46834aeb5dc  打包/归档盒-macOS-免安装.zip
+a731f6fe790c8faed3e1704d69a183b8ce249c0b32c047ff3f40b75aa3e2994d  打包/归档盒-macOS-免安装/归档盒.app/Contents/MacOS/archivebox
+68ba0f9f1008f65ef1ce2cf58ae3cadc16be1ade73c79615a8065d5d0238b62b  打包/归档盒-Windows-免安装.zip
+1203dd57caa01c699cb1c989f220d01728839183cec382ad531aede6cae00af4  打包/归档盒-Windows-免安装/归档盒.exe
 
-== 重建后再次启动 ==
-offscreen 从临时 HOME 启动存活 10 秒（timeout 124）；cocoa 窗口标题 归档盒 V1.7，尺寸 1280×808。
+== 第 2 轮解压后启动 ==
+从 /usr/bin/unzip 解压出的归档盒.app 启动：offscreen 存活 8 秒；cocoa 窗口标题 归档盒 V1.7，尺寸 1280×808。
+ZIP UTF-8 标志与解压细节见 阶段四-ZIP与解压-20261119.log。

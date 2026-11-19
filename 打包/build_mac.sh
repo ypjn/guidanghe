@@ -16,4 +16,8 @@ APP="$DIST/归档盒.app"
 
 rm -rf "$DIST/archivebox" "$ROOT/打包/build"
 codesign --force --deep --sign - "$APP"
+rm -f "$ROOT/打包/归档盒-macOS-免安装.zip"
+"$ROOT/归档盒源码/.venv/bin/python" "$ROOT/打包/zip_unicode.py" \
+  "$APP" "$ROOT/打包/归档盒-macOS-免安装.zip"
 echo "已生成：$APP"
+echo "压缩包：$ROOT/打包/归档盒-macOS-免安装.zip"

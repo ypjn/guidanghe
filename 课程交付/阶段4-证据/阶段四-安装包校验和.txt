@@ -1,21 +1,23 @@
-# 归档盒 V1.7 · 阶段四安装包校验和
+# 归档盒 V1.7 · 阶段四安装包校验和（第 2 轮）
 
 构建时间：2026-11-19（Asia/Shanghai）
-源码：stage4/daily-use 工作树，父基线 5760c5f；最终提交哈希在推送后回传。
-签名/公证：本次未做代码签名之外的公证，也未做公开发布。
+源码：stage4/daily-use，父提交 `3e0c1e996077b06fa3984590f360a8ed74a5add0`；本轮实现提交哈希由推送后回传消息给出。
+签名/公证：本次未做公证与公开发布；Mac 包为本地签名。
 
 | 成品 | 路径 | SHA-256 |
 |---|---|---|
-| macOS 免安装包 | `打包/归档盒-macOS-免安装.zip` | `c09eb702a0622e46b1342cbedb8dff30a7f27dc97c5c70122686ff4a3f8b8970` |
-| macOS 应用可执行文件 | `打包/归档盒-macOS-免安装/归档盒.app/Contents/MacOS/archivebox` | `1f4cc9cfa9b4b23d3b984b5352e732d8fbe078cde6b409dc5581b0e095f0bfe5` |
-| Windows 免安装包 | `打包/归档盒-Windows-免安装.zip` | `c593ec2b70430d4c5364e0d37ac72512920b0b77d5382b66a151907098861da9` |
-| Windows 启动器 | `打包/归档盒-Windows-免安装/归档盒.exe` | `340c1ea4b2aef9adb0588de28b79854f41caf554c91f8c044bce6e3d04bfd19b` |
+| macOS 免安装包 | `打包/归档盒-macOS-免安装.zip` | `89dd7ed5552d368fc8740bcfef426fbb94f1ddcd5c1f5216a70ff46834aeb5dc` |
+| macOS 应用可执行文件 | `打包/归档盒-macOS-免安装/归档盒.app/Contents/MacOS/archivebox` | `a731f6fe790c8faed3e1704d69a183b8ce249c0b32c047ff3f40b75aa3e2994d` |
+| Windows 免安装包 | `打包/归档盒-Windows-免安装.zip` | `68ba0f9f1008f65ef1ce2cf58ae3cadc16be1ade73c79615a8065d5d0238b62b` |
+| Windows 启动器 | `打包/归档盒-Windows-免安装/归档盒.exe` | `1203dd57caa01c699cb1c989f220d01728839183cec382ad531aede6cae00af4` |
+| Windows 使用说明 | `打包/归档盒-Windows-免安装/使用说明.txt` | `4f596cdcfea81825880167c0cba9783691e465844a277fddc131149690b17827` |
 
 Mac 包 Info.plist：`CFBundleShortVersionString = 1.7.0`，`CFBundleIdentifier = local.ypjn.archivebox`。
 Windows 包 `使用说明.txt` 与窗口标题均为 V1.7。
 
 说明：
 
-- Mac 包已从临时 HOME 的打包入口启动；首窗截图见 `截图/01-打包应用首次启动.png`。
+- 新 ZIP 用 `打包/zip_unicode.py` 创建，所有非 ASCII 路径带 UTF-8 标志；Mac 包无 `__MACOSX/`。
+- Mac 包已从 `/usr/bin/unzip` 解压出的 `.app` 启动，窗口标题 `归档盒 V1.7`；首窗截图见 `截图/01-打包应用首次启动.png`。
 - Windows 包在 Mac 上交叉组装，尚未在 Windows 原生系统运行；验证步骤见 `Windows验证步骤.md`。
-- 两个包都不包含 `.venv`、源码树绝对路径或个人资料。
+- 旧包 `c09eb702…`（Mac）与 `c593ec2b…`（Windows）已被替换，只在 `阶段四-ZIP与解压-20261119.log` 保留身份说明。

@@ -1,0 +1,13 @@
+[PASS] S408 同大小/同 mtime/inode 下正文变化不复用旧缓存，执行不被旧指纹跳过
+inode/大小/mtime 不变=True 首次命中=0
+变化后分类=_已整理/未分类课程/文档/笔记.txt SHA与磁盘一致=True 缓存未命中=True
+第二次重扫复用新指纹=True 执行=1/0
+计划后改内容再执行=0/1 errors=['跳过（源文件内容已变化）：下载/第二次.txt']
+qt.qpa.fonts: Populating font family aliases took 141 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost.
+[PASS] S409 打开已有批次的空间后历史/撤销立即可用，撤销恢复原路径与 SHA
+打开=True 执行=1 历史可点=True 撤销可点=True
+撤销完成=True 原 SHA=039c9f4fd98b0173f9c0baa4068b472de928725db54d39167fdebe14eb338a1f 恢复 SHA=039c9f4fd98b0173f9c0baa4068b472de928725db54d39167fdebe14eb338a1f 目标仍存在=False
+[PASS] S410 历史定位只返回空间内解析结果；绝对路径/../符号链接越界返回空
+正常='/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_9x3an119/reveal_boundary/下载/正常.txt'
+绝对='' ../='' 符号链接=''
+空间外内容='空间外\n'

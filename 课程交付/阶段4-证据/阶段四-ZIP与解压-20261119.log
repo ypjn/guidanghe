@@ -1,0 +1,38 @@
+# 阶段四第 2 轮 · ZIP UTF-8 标志与解压日志
+
+日期：2026-11-19
+新包由候选源码重新打包；旧送审包 `c09eb702…`（Mac）与 `c593ec2b…`（Windows）已被替换，仅作为被替换版本保留在变更说明里。
+
+## 新包 SHA-256
+
+| 成品 | SHA-256 |
+|---|---|
+| `打包/归档盒-macOS-免安装.zip` | `89dd7ed5552d368fc8740bcfef426fbb94f1ddcd5c1f5216a70ff46834aeb5dc` |
+| `打包/归档盒-Windows-免安装.zip` | `68ba0f9f1008f65ef1ce2cf58ae3cadc16be1ade73c79615a8065d5d0238b62b` |
+| `归档盒.app/Contents/MacOS/archivebox` | `a731f6fe790c8faed3e1704d69a183b8ce249c0b32c047ff3f40b75aa3e2994d` |
+| `归档盒-Windows-免安装/归档盒.exe` | `1203dd57caa01c699cb1c989f220d01728839183cec382ad531aede6cae00af4` |
+| `归档盒-Windows-免安装/使用说明.txt` | `4f596cdcfea81825880167c0cba9783691e465844a277fddc131149690b17827` |
+
+## UTF-8 标志
+
+压缩步骤已从 `ditto -c -k` 换成 `打包/zip_unicode.py`（Python `zipfile`，非 ASCII 名字自动置通用位第 11 位）。
+
+- Mac 包：1307 条，非 ASCII 1307 条，缺 UTF-8 标志 0 条，`__MACOSX/` 0 条；顶层 `归档盒.app/`。
+- Windows 包：4904 条，非 ASCII 4904 条，缺 UTF-8 标志 0 条，`__MACOSX/` 0 条；顶层 `归档盒-Windows-免安装/`。
+
+## 解压验证
+
+用 `/usr/bin/unzip` 解压（按规范读取 UTF-8 标志）：
+
+- `归档盒.app/Contents/MacOS/archivebox` 存在且权限为 `-rwxr-xr-x`，Mach-O arm64。
+- 从解压出的 `.app` 启动：
+  - offscreen 存活 8 秒（timeout 退出码 124），未崩溃。
+  - cocoa 窗口标题 `归档盒 V1.7`，尺寸 1280×808。
+- Windows 包解压后：
+  - `归档盒-Windows-免安装/归档盒.exe`，SHA-256 `1203dd57…`
+  - `归档盒-Windows-免安装/使用说明.txt`，SHA-256 `4f596cdc…`
+  - 原生 Windows 运行本轮仍为「未测」。
+
+## 旧包说明
+
+旧 Mac 包 `c09eb702a0622e46b1342cbedb8dff30a7f27dc97c5c70122686ff4a3f8b8970` 和旧 Windows 包 `c593ec2b70430d4c5364e0d37ac72512920b0b77d5382b66a151907098861da9` 未再作为送审包使用，只在本日志保留其被替换身份。

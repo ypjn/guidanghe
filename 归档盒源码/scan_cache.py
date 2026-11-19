@@ -13,10 +13,10 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import stat
-import tempfile
 
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 CACHE_FILENAME = "scan_cache.json"
 ORGANIZER_DIR = ".organizer"
 
@@ -28,13 +28,57 @@ def cache_path(root: str) -> str:
     return os.path.join(os.path.abspath(root), ORGANIZER_DIR, CACHE_FILENAME)
 
 
-def _safe_parent(root: str) -> str:
+def _root_real(root: str) -> str:
+    return os.path.realpath(os.path.abspath(root))
+
+
+def _inside_root(path: str, root: str) -> bool:
+    real = os.path.realpath(path)
+    root_real = _root_real(root)
+    try:
+        return os.path.commonpath([real, root_real]) == root_real
+    except ValueError:
+        return False
+
+
+def _open_organizer(root: str):
+    """安全打开 .organizer 目录，返回 (fd, 路径)。
+
+    先拒绝符号链接和空间外路径，再用 O_NOFOLLOW 打开，并把打开后的
+    inode 与当前 lstat 结果比对。即使调用方随后把 .organizer 换成空间外
+    符号链接，后续写入也只会落在已打开的这个目录里。
+    """
     org = os.path.join(os.path.abspath(root), ORGANIZER_DIR)
     if os.path.islink(org):
         raise OSError("缓存目录是符号链接，未写入")
-    if os.path.exists(org) and not os.path.isdir(org):
+    if not os.path.isdir(org):
         raise OSError("缓存目录不是目录，未写入")
-    return org
+    if not _inside_root(org, root):
+        raise OSError("缓存目录在整理空间外，未写入")
+    flags = os.O_RDONLY
+    flags |= getattr(os, "O_DIRECTORY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(org, flags)
+    try:
+        opened = os.fstat(fd)
+        current = os.lstat(org)
+        if opened.st_dev != current.st_dev or opened.st_ino != current.st_ino:
+            raise OSError("缓存目录在打开后被替换，未写入")
+    except Exception:
+        os.close(fd)
+        raise
+    return fd, org
+
+
+def _verify_organizer(fd: int, org: str, root: str) -> None:
+    """最终替换前再核对一次：fd 仍是当前路径，且仍在整理空间内。"""
+    opened = os.fstat(fd)
+    current = os.lstat(org)
+    if (opened.st_dev != current.st_dev or opened.st_ino != current.st_ino
+            or stat.S_ISLNK(current.st_mode)):
+        raise OSError("缓存目录在写入前被替换，未写入")
+    if not _inside_root(org, root):
+        raise OSError("缓存目录在写入前离开整理空间，未写入")
 
 
 def file_identity(path: str):
@@ -50,13 +94,14 @@ def file_identity(path: str):
         "ino": int(info.st_ino),
         "size": int(info.st_size),
         "mtime_ns": int(info.st_mtime_ns),
+        "ctime_ns": int(info.st_ctime_ns),
     }
 
 
 def identity_matches(record, current) -> bool:
     if not isinstance(record, dict) or not isinstance(current, dict):
         return False
-    for key in ("dev", "ino", "size", "mtime_ns"):
+    for key in ("dev", "ino", "size", "mtime_ns", "ctime_ns"):
         if record.get(key) != current.get(key):
             return False
     return True
@@ -65,7 +110,7 @@ def identity_matches(record, current) -> bool:
 def _valid_record(record) -> bool:
     if not isinstance(record, dict):
         return False
-    for key in ("dev", "ino", "size", "mtime_ns"):
+    for key in ("dev", "ino", "size", "mtime_ns", "ctime_ns"):
         if not isinstance(record.get(key), int):
             return False
     return True
@@ -78,6 +123,8 @@ def load(root: str):
         return {}, "缓存是符号链接，已回退全量扫描"
     if not os.path.isfile(path):
         return {}, ""
+    if not _inside_root(path, root):
+        return {}, "缓存路径在整理空间外，已回退全量扫描"
     try:
         if os.path.getsize(path) > 64 * 1024 * 1024:
             return {}, "缓存过大，已回退全量扫描"
@@ -103,32 +150,62 @@ def load(root: str):
 
 
 def save(root: str, files: dict) -> None:
-    """原子写入缓存；失败由调用方决定只记录日志，不影响本次计划。"""
-    parent = _safe_parent(root)
-    os.makedirs(parent, exist_ok=True)
-    path = cache_path(root)
-    if os.path.islink(path):
-        raise OSError("缓存路径是符号链接，未写入")
-    payload = {
-        "version": CACHE_VERSION,
-        "text_version": TEXT_VERSION,
-        "files": files,
-    }
-    text = json.dumps(payload, ensure_ascii=False, sort_keys=True)
-    fd, name = tempfile.mkstemp(prefix=".scan_cache-", suffix=".tmp", dir=parent)
+    """原子写入缓存；写入前后都核对实际目录，绝不落到整理空间外。
+
+    用目录 fd 和 dir_fd 版本的 open/replace：临时文件与最终文件都只在
+    已打开、已核对的 .organizer 目录里创建。若 .organizer 在检查后被换成
+    符号链接或另一个目录，最终核对会失败，空间外文件保持原样。
+    """
+    org_dir = os.path.join(os.path.abspath(root), ORGANIZER_DIR)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        os.mkdir(org_dir)
+    except FileExistsError:
+        pass
+    fd, org = _open_organizer(root)
+    temp_name = ""
+    try:
+        # 原有拒绝：缓存文件本身是符号链接时不写。
+        try:
+            existing = os.stat(CACHE_FILENAME, dir_fd=fd,
+                               follow_symlinks=False)
+            if stat.S_ISLNK(existing.st_mode):
+                raise OSError("缓存文件是符号链接，未写入")
+        except FileNotFoundError:
+            pass
+
+        temp_name = f".scan_cache-{os.getpid()}-{secrets.token_hex(6)}.tmp"
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+        tfd = os.open(temp_name, flags, 0o600, dir_fd=fd)
+        payload = {
+            "version": CACHE_VERSION,
+            "text_version": TEXT_VERSION,
+            "files": files,
+        }
+        text = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        with os.fdopen(tfd, "w", encoding="utf-8") as handle:
             handle.write(text)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(name, path)
-        name = ""
+
+        # 最终替换前再核对：fd 仍是当前 .organizer，且仍在整理空间内。
+        _verify_organizer(fd, org, root)
+        os.replace(temp_name, CACHE_FILENAME,
+                   src_dir_fd=fd, dst_dir_fd=fd)
+        temp_name = ""
+        try:
+            os.fsync(fd)
+        except OSError:
+            pass
+        if not _inside_root(os.path.join(org, CACHE_FILENAME), root):
+            # 理论上 dir_fd 已保证；若仍异常，明确失败而不是静默成功。
+            raise OSError("缓存最终路径离开整理空间")
     finally:
-        if name:
+        if temp_name:
             try:
-                os.unlink(name)
+                os.unlink(temp_name, dir_fd=fd)
             except OSError:
                 pass
+        os.close(fd)
 
 
 def entry(identity: dict, sha256: str = "", text: str | None = None,

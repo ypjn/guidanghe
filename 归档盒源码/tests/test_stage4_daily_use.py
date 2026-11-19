@@ -371,6 +371,214 @@ def test_preview_filter_and_selection():
         f"计数标签={counts_text!r}")
 
 
+def test_cache_save_boundary():
+    """S407：.organizer 在打开后、临时文件落盘前被换成空间外符号链接。"""
+    root = fresh("cache_boundary")
+    organizer = os.path.join(root, ".organizer")
+    os.makedirs(organizer)
+    outside = os.path.join(BASE, "cache_boundary_outside")
+    os.makedirs(outside, exist_ok=True)
+    victim = os.path.join(outside, scan_cache.CACHE_FILENAME)
+    with open(victim, "wb") as handle:
+        handle.write(b"other user file outside workspace\n")
+    before = sha256(victim)
+
+    original_open = scan_cache._open_organizer
+
+    def open_then_swap(root_arg):
+        fd, org = original_open(root_arg)
+        os.rename(organizer, organizer + ".original")
+        os.symlink(outside, organizer, target_is_directory=True)
+        return fd, org
+
+    scan_cache._open_organizer = open_then_swap
+    failed = False
+    try:
+        try:
+            scan_cache.save(root, {})
+        except OSError:
+            failed = True
+    finally:
+        scan_cache._open_organizer = original_open
+        if os.path.islink(organizer):
+            os.unlink(organizer)
+        if os.path.isdir(organizer + ".original"):
+            os.rename(organizer + ".original", organizer)
+
+    after = sha256(victim)
+    outside_intact = before == after
+
+    # 恢复后正常目录仍能写回、读回。
+    scan_cache.save(root, {})
+    loaded, note = scan_cache.load(root)
+    normal_ok = (loaded == {} and note == ""
+                 and os.path.isfile(os.path.join(organizer,
+                                                 scan_cache.CACHE_FILENAME)))
+
+    # 缓存文件本身是符号链接时也要拒绝。
+    link_victim = os.path.join(outside, "linked-cache.json")
+    with open(link_victim, "wb") as handle:
+        handle.write(b"linked victim\n")
+    link_before = sha256(link_victim)
+    cache_file = os.path.join(organizer, scan_cache.CACHE_FILENAME)
+    os.unlink(cache_file)
+    os.symlink(link_victim, cache_file)
+    symlink_failed = False
+    try:
+        scan_cache.save(root, {})
+    except OSError:
+        symlink_failed = True
+    link_intact = sha256(link_victim) == link_before
+    os.unlink(cache_file)
+    scan_cache.save(root, {})
+
+    rec("S407", "缓存替换前复核实际目录；空间外文件不覆盖，正常目录仍可读写",
+        failed and outside_intact and normal_ok and symlink_failed and link_intact,
+        f"save 失败={failed} 空间外 SHA 不变={outside_intact}\n"
+        f"正常读写={normal_ok} 缓存文件符号链接被拒={symlink_failed} "
+        f"链接目标不变={link_intact}\n"
+        f"victim before={before} after={after}")
+
+
+def test_stale_cache_same_size_mtime():
+    """S408：内容变了但 inode/大小/mtime 不变时，不能复用旧指纹和正文。"""
+    root = fresh("stale_cache")
+    path = write(root, "下载/笔记.txt", "高等数学\n")
+    original = os.stat(path)
+    _sr, first = run_plan(root)
+    entries, note = scan_cache.load(root)
+    before_hits = first["plan"].cache_stats.get("cache_hits")
+
+    with open(path, "r+b") as handle:
+        handle.write("数据结构\n".encode("utf-8"))
+    os.utime(path, ns=(original.st_atime_ns, original.st_mtime_ns))
+    after_stat = os.stat(path)
+    same_identity = (
+        after_stat.st_ino == original.st_ino
+        and after_stat.st_size == original.st_size
+        and after_stat.st_mtime_ns == original.st_mtime_ns)
+
+    _sr2, second = run_plan(root, entries, note)
+    second_plan = second["plan"]
+    target_after_change = second_plan.items[0].target_rel_path
+    sha_after_change = second_plan.items[0].source_sha256
+    disk_sha = sha256(path)
+    content_changed = sha_after_change == disk_sha
+    classified_new = "未分类" in target_after_change
+    cache_missed = (
+        second_plan.cache_stats.get("cache_hits") == 0
+        and second_plan.cache_stats.get("sha_computed") == 1
+        and second_plan.cache_stats.get("sha_reused", 0) == 0)
+
+    entries2, note2 = scan_cache.load(root)
+    _sr3, third = run_plan(root, entries2, note2)
+    third_plan = third["plan"]
+    second_scan_reused = (
+        third_plan.cache_stats.get("cache_hits") == 1
+        and third_plan.cache_stats.get("sha_reused") == 1
+        and third_plan.items[0].target_rel_path == target_after_change
+        and third_plan.items[0].source_sha256 == disk_sha)
+
+    for item in third_plan.items:
+        item.selected = True
+    result = execute_plan(third_plan, Storage(root))
+    executed_ok = (
+        result.moved == 1 and result.skipped == 0
+        and not os.path.exists(path)
+        and os.path.isfile(os.path.join(root, target_after_change)))
+
+    # 计划后、执行前再次改成同大小内容，执行前校验仍要跳过。
+    root2 = fresh("stale_cache_after_plan")
+    path2 = write(root2, "下载/第二次.txt", "高等数学\n")
+    st2 = os.stat(path2)
+    _s, plan2 = run_plan(root2)
+    with open(path2, "r+b") as handle:
+        handle.write("数据结构\n".encode("utf-8"))
+    os.utime(path2, ns=(st2.st_atime_ns, st2.st_mtime_ns))
+    for item in plan2["plan"].items:
+        item.selected = True
+    result2 = execute_plan(plan2["plan"], Storage(root2))
+    post_plan_skipped = (
+        result2.moved == 0 and result2.skipped == 1
+        and any("源文件内容已变化" in line for line in result2.errors))
+
+    rec("S408", "同大小/同 mtime/inode 下正文变化不复用旧缓存，执行不被旧指纹跳过",
+        same_identity and before_hits == 0 and content_changed and classified_new
+        and cache_missed and second_scan_reused and executed_ok and post_plan_skipped,
+        f"inode/大小/mtime 不变={same_identity} 首次命中={before_hits}\n"
+        f"变化后分类={target_after_change} SHA与磁盘一致={content_changed} "
+        f"缓存未命中={cache_missed}\n"
+        f"第二次重扫复用新指纹={second_scan_reused} 执行={result.moved}/"
+        f"{result.skipped}\n"
+        f"计划后改内容再执行={result2.moved}/{result2.skipped} "
+        f"errors={result2.errors}")
+
+
+def test_open_space_history_undo_ready():
+    """S409：打开已有可撤销批次的空间后，不扫描即可看历史、撤销。"""
+    root = fresh("reopen_space")
+    source = write(root, "下载/笔记.txt", "高等数学 极限 导数\n")
+    source_sha = sha256(source)
+    _sr, out = run_plan(root)
+    plan = out["plan"]
+    for item in plan.items:
+        item.selected = True
+    target_rel = plan.items[0].target_rel_path
+    target = os.path.join(root, target_rel)
+    executed = execute_plan(plan, Storage(root))
+    storage = Storage(root)
+    undo_before = storage.list_batches(include_actions=False)
+    storage.close()
+
+    window = main_mod.MainWindow()
+    opened = window._open_recent_space(root)
+    process(0.2)
+    history_enabled = window.btn_history.isEnabled()
+    undo_enabled = window.btn_undo.isEnabled()
+
+    QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Yes)
+    window.on_undo()
+    ok = wait_until(lambda: (not window._working)
+                    and not os.path.exists(target)
+                    and os.path.exists(source), timeout=20)
+    restored_sha = sha256(source) if os.path.exists(source) else ""
+    window._closing = True
+    window.hide()
+    window.deleteLater()
+    process(0.05)
+
+    rec("S409", "打开已有批次的空间后历史/撤销立即可用，撤销恢复原路径与 SHA",
+        opened and executed.moved == 1 and bool(undo_before)
+        and history_enabled and undo_enabled and ok
+        and restored_sha == source_sha and not os.path.exists(target),
+        f"打开={opened} 执行={executed.moved} 历史可点={history_enabled} "
+        f"撤销可点={undo_enabled}\n"
+        f"撤销完成={ok} 原 SHA={source_sha} 恢复 SHA={restored_sha} "
+        f"目标仍存在={os.path.exists(target)}")
+
+
+def test_reveal_stays_inside_space():
+    """S410：绝对路径、../、空间外符号链接都不能被历史定位打开。"""
+    root = fresh("reveal_boundary")
+    write(root, "下载/正常.txt", "正常\n")
+    outside = os.path.join(BASE, "reveal_outside.txt")
+    with open(outside, "w", encoding="utf-8") as handle:
+        handle.write("空间外\n")
+    link = os.path.join(root, "下载", "链接.txt")
+    os.symlink(outside, link)
+    normal = main_mod.history_reveal_target(root, "下载/正常.txt", "")
+    absolute = main_mod.history_reveal_target(root, outside, "")
+    parent = main_mod.history_reveal_target(root, "../reveal_outside.txt", "")
+    symlink = main_mod.history_reveal_target(root, "下载/链接.txt", "")
+    outside_bytes = open(outside, encoding="utf-8").read()
+    rec("S410", "历史定位只返回空间内解析结果；绝对路径/../符号链接越界返回空",
+        normal == os.path.join(root, "下载", "正常.txt")
+        and absolute == "" and parent == "" and symlink == ""
+        and outside_bytes == "空间外\n",
+        f"正常={normal!r}\n绝对={absolute!r} ../={parent!r} "
+        f"符号链接={symlink!r}\n空间外内容={outside_bytes!r}")
+
+
 def test_history_reveal_current_path():
     root = fresh("reveal")
     source_rel = "下载/笔记.txt"
@@ -414,12 +622,17 @@ def main():
     QMessageBox.information = staticmethod(lambda *a, **k: QMessageBox.Ok)
     QMessageBox.warning = staticmethod(lambda *a, **k: QMessageBox.Ok)
     QMessageBox.critical = staticmethod(lambda *a, **k: QMessageBox.Ok)
+    QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Yes)
     test_scan_progress_and_seq()
     test_cache_hits_and_invalidation()
     test_corrupt_cache_and_execution_validation()
     test_ooxml_parsing_and_bad_files()
     test_preview_filter_and_selection()
     test_history_reveal_current_path()
+    test_cache_save_boundary()
+    test_stale_cache_same_size_mtime()
+    test_open_space_history_undo_ready()
+    test_reveal_stays_inside_space()
     failed = [row for row in CHECKS if not row[2]]
     print()
     print(f"合计 {len(CHECKS)} 项：通过 {len(CHECKS) - len(failed)} / 未通过 {len(failed)}")

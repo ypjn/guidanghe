@@ -131,8 +131,7 @@ Apple 芯片的 Mac 请用另一份「归档盒.app」，不要用这个 exe。
 EOF
 
 rm -f "$PACK/归档盒-Windows-免安装.zip"
-# --norsrc + COPYFILE_DISABLE：不把 AppleDouble 资源叉打进发布包
-COPYFILE_DISABLE=1 ditto -c -k --norsrc --keepParent "$DIST" \
-  "$PACK/归档盒-Windows-免安装.zip"
+"$ROOT/归档盒源码/.venv/bin/python" "$PACK/zip_unicode.py" \
+  "$DIST" "$PACK/归档盒-Windows-免安装.zip"
 echo "已生成：$DIST/归档盒.exe"
 echo "压缩包：$PACK/归档盒-Windows-免安装.zip"

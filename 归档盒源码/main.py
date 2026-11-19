@@ -22,6 +22,7 @@ import copy
 import csv
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -31,10 +32,11 @@ import traceback
 
 from PySide6.QtCore import (
     Qt, QThread, Signal, QTimer, QCoreApplication, QEvent, QItemSelectionModel,
+    QRect, QPoint, QSize,
 )
 from PySide6.QtGui import QColor, QFont, QPalette
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLayout,
     QPushButton, QLineEdit, QTableWidget, QTableWidgetItem,
     QLabel, QHeaderView, QFileDialog, QStatusBar, QProgressBar,
     QMessageBox, QAbstractItemView, QComboBox, QTextEdit,
@@ -938,15 +940,22 @@ def _reveal_in_file_manager(path: str) -> str:
 def history_reveal_target(root: str, source_rel: str, target_rel: str) -> str:
     """历史定位的当前路径：优先目标，其次原位置，都不存在返回空串。
 
-    只使用记录里的精确相对路径，不按文件名搜索，避免打开另一份同名文件。
+    只接受解析后仍在 realpath(整理空间) 内的相对路径。绝对路径、../ 和
+    指向空间外的符号链接一律返回空串，避免定位到空间外文件；也不按文件名
+    搜索其他同名文件。
     """
-    root = root or ""
-    target = os.path.join(root, target_rel) if target_rel else ""
-    source = os.path.join(root, source_rel) if source_rel else ""
-    if target and os.path.exists(target):
-        return target
-    if source and os.path.exists(source):
-        return source
+    root_real = os.path.realpath(os.path.abspath(root or "."))
+    for rel in (target_rel, source_rel):
+        if not rel or os.path.isabs(rel):
+            continue
+        candidate = os.path.realpath(os.path.join(root_real, rel))
+        try:
+            if os.path.commonpath([candidate, root_real]) != root_real:
+                continue
+        except ValueError:
+            continue
+        if os.path.exists(candidate):
+            return candidate
     return ""
 
 
@@ -1625,6 +1634,75 @@ class HistoryDialog(QDialog):
 # ======================== 主窗口 ========================
 
 
+class FlowLayout(QLayout):
+    """按可用宽度自动换行的布局，窄窗口下不裁切筛选控件。"""
+
+    def __init__(self, parent=None, margin=0, spacing=6):
+        super().__init__(parent)
+        self.setContentsMargins(margin, margin, margin, margin)
+        self._spacing = spacing
+        self._items = []
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, index):
+        return self._items[index] if 0 <= index < len(self._items) else None
+
+    def takeAt(self, index):
+        if 0 <= index < len(self._items):
+            return self._items.pop(index)
+        return None
+
+    def expandingDirections(self):
+        return Qt.Orientations(0)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._do_layout(QRect(0, 0, width, 0), True)
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self._do_layout(rect, False)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        margins = self.contentsMargins()
+        return size + QSize(margins.left() + margins.right(),
+                            margins.top() + margins.bottom())
+
+    def _do_layout(self, rect, test_only):
+        margins = self.contentsMargins()
+        effective = rect.adjusted(margins.left(), margins.top(),
+                                  -margins.right(), -margins.bottom())
+        x = effective.x()
+        y = effective.y()
+        line_height = 0
+        for item in self._items:
+            hint = item.sizeHint()
+            next_x = x + hint.width() + self._spacing
+            if next_x - self._spacing > effective.right() + 1 and line_height > 0:
+                x = effective.x()
+                y += line_height + self._spacing
+                next_x = x + hint.width() + self._spacing
+                line_height = 0
+            if not test_only:
+                item.setGeometry(QRect(QPoint(x, y), hint))
+            x = next_x
+            line_height = max(line_height, hint.height())
+        return y + line_height - rect.y() + margins.bottom()
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -2040,6 +2118,7 @@ class MainWindow(QMainWindow):
         splitter.addWidget(side_scroll)
 
         center_host = QWidget()
+        self.center_host = center_host
         fill_panel(center_host, "#FFFFFF")
         center = QVBoxLayout(center_host)
         center.setContentsMargins(12, 10, 12, 10)
@@ -2063,27 +2142,30 @@ class MainWindow(QMainWindow):
         toolbar.addWidget(self.btn_scan)
         center.addLayout(toolbar)
 
-        filters = QHBoxLayout()
-        filters.setSpacing(6)
+        filters = FlowLayout(spacing=6)
         filters.addWidget(QLabel("筛选："))
         self.plan_search = QLineEdit()
+        self.plan_search.setMinimumWidth(220)
         self.plan_search.setPlaceholderText("搜索原位置、目标位置或分类依据")
         self.plan_search.setToolTip("按文字筛选预览行；只影响显示，不改变勾选")
         self.plan_search.textChanged.connect(self._apply_plan_filters)
-        filters.addWidget(self.plan_search, 3)
+        filters.addWidget(self.plan_search)
         self.type_filter = QComboBox()
+        self.type_filter.setMinimumWidth(96)
         self.type_filter.setToolTip("按文件类型筛选预览")
         self.type_filter.setAccessibleName("类型筛选")
         self.type_filter.addItem("全部类型", "")
         self.type_filter.currentIndexChanged.connect(self._apply_plan_filters)
-        filters.addWidget(self.type_filter, 1)
+        filters.addWidget(self.type_filter)
         self.dir_filter = QComboBox()
+        self.dir_filter.setMinimumWidth(96)
         self.dir_filter.setToolTip("按分类目录筛选预览")
         self.dir_filter.setAccessibleName("分类目录筛选")
         self.dir_filter.addItem("全部目录", "")
         self.dir_filter.currentIndexChanged.connect(self._apply_plan_filters)
-        filters.addWidget(self.dir_filter, 1)
+        filters.addWidget(self.dir_filter)
         self.source_filter = QComboBox()
+        self.source_filter.setMinimumWidth(96)
         self.source_filter.setToolTip("按分类来源筛选：自动 / 长期规则 / 本次手动修正")
         self.source_filter.setAccessibleName("分类来源筛选")
         self.source_filter.addItem("全部来源", "")
@@ -2091,7 +2173,7 @@ class MainWindow(QMainWindow):
         self.source_filter.addItem("长期规则", "long_term")
         self.source_filter.addItem("本次手动修正", "manual")
         self.source_filter.currentIndexChanged.connect(self._apply_plan_filters)
-        filters.addWidget(self.source_filter, 1)
+        filters.addWidget(self.source_filter)
         self.pending_check = QCheckBox("待定")
         self.pending_check.setToolTip("只看还没定分类的文件")
         self.pending_check.stateChanged.connect(self._apply_plan_filters)
@@ -2318,15 +2400,26 @@ class MainWindow(QMainWindow):
         insp.addWidget(quiet)
         insp.addStretch(1)
 
+        # Long filenames and excerpts must reflow within the scroll viewport.
+        for label in insp_inner.findChildren(QLabel):
+            if label.wordWrap():
+                label.setTextFormat(Qt.TextFormat.PlainText)
+                policy = label.sizePolicy()
+                policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+                label.setSizePolicy(policy)
+
         insp_scroll = QScrollArea()
         insp_scroll.setWidgetResizable(True)
         insp_scroll.setFrameShape(QFrame.Shape.NoFrame)
         insp_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         fill_panel(insp_scroll, "#FFFFFF")
         insp_scroll.setWidget(insp_inner)
-        insp_scroll.setMinimumWidth(0)
+        insp_scroll.setMinimumWidth(
+            insp.minimumSize().width() + insp_scroll.verticalScrollBar().sizeHint().width())
         insp_scroll.setMaximumWidth(480)
         splitter.addWidget(insp_scroll)
+        self.inspector_scroll = insp_scroll
+        insp_scroll.hide()
         splitter.setStretchFactor(0, 0)
         splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 0)
@@ -2414,27 +2507,27 @@ class MainWindow(QMainWindow):
                 item = plan.items[row]
         if item is None:
             if len(rows) > 1:
-                self.inspector_title.setText("选中了多行")
-                self.inspector_meta.setText("一次只说明一个文件。请改选一行。")
+                self._set_inspector_detail(self.inspector_title, "选中了多行")
+                self._set_inspector_detail(self.inspector_meta, "一次只说明一个文件。请改选一行。")
             else:
-                self.inspector_title.setText("还没有选中文件")
-                self.inspector_meta.setText("在中间的表格里选中一行。")
-            self.inspector_reason.setText("—")
-            self.inspector_evidence.setText("—")
+                self._set_inspector_detail(self.inspector_title, "还没有选中文件")
+                self._set_inspector_detail(self.inspector_meta, "在中间的表格里选中一行。")
+            self._set_inspector_detail(self.inspector_reason, "—")
+            self._set_inspector_detail(self.inspector_evidence, "—")
             self.inspector_content_cap.hide()
             self.inspector_content.hide()
-            self.inspector_dir.setText("—")
-            self.inspector_name.setText("—")
+            self._set_inspector_detail(self.inspector_dir, "—")
+            self._set_inspector_detail(self.inspector_name, "—")
             self.inspector_ocr_cap.hide()
             self.inspector_ocr.hide()
             self.inspector_note.hide()
             self._set_inspector_open(len(rows) > 1)
             return
         self._set_inspector_open(True)
-        self.inspector_title.setText(item.file.filename)
+        self._set_inspector_detail(self.inspector_title, item.file.filename)
         folder = os.path.dirname(item.file.rel_path) or "所在文件夹的根目录"
-        self.inspector_meta.setText(f"{folder} · {item.file.size_display}")
-        self.inspector_reason.setText(item.rule_applied or "—")
+        self._set_inspector_detail(self.inspector_meta, f"{folder} · {item.file.size_display}")
+        self._set_inspector_detail(self.inspector_reason, item.rule_applied or "—")
         source_label = item.content_source or "未确定"
         extra_source = ""
         if getattr(item, "ambiguity", None):
@@ -2443,13 +2536,14 @@ class MainWindow(QMainWindow):
             extra_source = "｜用户已改选"
         elif getattr(item, "skipped", False):
             extra_source = "｜用户已跳过"
-        self.inspector_evidence.setText(
+        self._set_inspector_detail(
+            self.inspector_evidence,
             f"{source_label}{extra_source}｜{item.path_evidence or '相对路径'}")
         self._show_inspector_content(item)
         self._show_inspector_ocr(item)
         shown_dir = (item.target_dir_rel or "—").replace(os.sep, " / ")
-        self.inspector_dir.setText(shown_dir)
-        self.inspector_name.setText(item.target_filename or "—")
+        self._set_inspector_detail(self.inspector_dir, shown_dir)
+        self._set_inspector_detail(self.inspector_name, item.target_filename or "—")
         if item.conflict_with_existing:
             self.inspector_note.setText(
                 "同名文件已经存在。整理时改名，不覆盖原来的文件。")
@@ -2457,25 +2551,27 @@ class MainWindow(QMainWindow):
         else:
             self.inspector_note.hide()
 
+    @staticmethod
+    def _set_inspector_detail(label: QLabel, text: str):
+        # Give Qt wrap opportunities in filenames and paths with no spaces.
+        # These display labels do not supply the paths used by file operations.
+        label.setText(re.sub(r"[!-~]{7}(?=[!-~])", lambda match: match[0] + "\u200b", text))
+
     def _set_inspector_open(self, open_pane: bool):
-        """没选中文件时把右侧说明让给表格；选中后再展开。"""
-        splitter = getattr(self, "main_splitter", None)
-        if splitter is None:
+        """按选中状态显示详情栏，让表格使用空闲空间。"""
+        inspector = self.inspector_scroll
+        if not open_pane:
+            inspector.hide()
             return
-        sizes = splitter.sizes()
-        if len(sizes) < 3:
+        if not inspector.isHidden():
             return
-        if open_pane:
-            if sizes[2] >= 200:
-                return
-            give = min(280, max(160, sizes[1] // 4))
-            sizes[1] = max(240, sizes[1] - give)
-            sizes[2] = give
-            splitter.setSizes(sizes)
-        elif sizes[2]:
-            sizes[1] += sizes[2]
-            sizes[2] = 0
-            splitter.setSizes(sizes)
+
+        side, table, _ = self.main_splitter.sizes()
+        table_min = self.main_splitter.widget(1).minimumWidth()
+        preferred = min(280, max(160, table // 4))
+        pane_width = max(inspector.minimumWidth(), min(preferred, table - table_min))
+        inspector.show()
+        self.main_splitter.setSizes([side, max(table_min, table - pane_width), pane_width])
 
     def _show_inspector_content(self, item):
         """显示正文摘录或读取失败原因；图片走「图片文字」那一栏。"""
@@ -2622,6 +2718,9 @@ class MainWindow(QMainWindow):
         self._refresh_folder_list()
         self._update_inspector()
         self._check_pending_batch()
+        # 打开已有空间后，不必先扫描：有记录库就能看历史，有可撤销批次
+        # 就能撤销。_update_button_states 会按 _storage 和 undo 状态刷新。
+        self._update_button_states()
 
     def _check_pending_batch(self):
         """启动/切换目录时检查 .organizer/history.db 中的未完成批次。"""

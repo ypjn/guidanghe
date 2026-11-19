@@ -1,0 +1,6 @@
+candidate= /private/tmp/stage4-daily-use-20261119/归档盒源码/scan_cache.py
+organizer_link_was_created= True
+save_error= OSError: 缓存目录在写入前被替换，未写入
+outside= /private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/s4-cache-replay-2hjfsq97/outside/scan_cache.json before_sha= e7c7c70601b3a341efef02e30247c2ba71ad82da54d47c504188209e081f9174 after_sha= e7c7c70601b3a341efef02e30247c2ba71ad82da54d47c504188209e081f9174
+root_boundary_intact= True
+normal_save_load= True
