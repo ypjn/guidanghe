@@ -53,6 +53,7 @@ from planner import (
 )
 from ocr_engine import OcrError, collect_image_text, engine_label, ocr_supported
 from content_extract import extract_contents
+import scan_cache
 from ai_fallback import AiSettings, apply_ai_fallback, load_settings, save_settings
 from classification_config import (
     ClassificationConfig, ClassificationConfigError, config_summary,
@@ -269,34 +270,43 @@ def _log_worker_failure(task: str, e: BaseException) -> None:
 
 
 class ScanWorker(QThread):
-    """后台扫描线程。"""
-    finished_ok = Signal(object)
-    failed = Signal(str)
+    """后台扫描线程。进度信号带 seq，旧扫描不能写入新扫描的界面状态。"""
+    progress = Signal(int, int, str)        # seq, 已发现文件数, 当前相对路径
+    stage = Signal(int, str)                # seq, 阶段说明
+    finished_ok = Signal(int, object)       # seq, ScanResult
+    failed = Signal(int, str)               # seq, error
 
     def __init__(self, root_path: str, protect_dirs=None, only_paths=None,
-                 parent=None):
+                 parent=None, seq: int = 0):
         super().__init__(parent)
         self.root_path = root_path
         self.protect_dirs = protect_dirs or []
         self.only_paths = list(only_paths or [])
+        self.seq = seq
         self.cancel_event = threading.Event()
 
     def request_cancel(self):
         self.cancel_event.set()
 
+    def _progress(self, seen: int, current: str):
+        self.progress.emit(self.seq, seen, current)
+
     def run(self):
         try:
+            self.stage.emit(self.seq, "扫描工作区")
             if self.only_paths:
                 r = scan_paths(self.root_path, self.only_paths,
                                protect_dirs=self.protect_dirs,
-                               cancel_event=self.cancel_event)
+                               cancel_event=self.cancel_event,
+                               progress_cb=self._progress)
             else:
                 r = scan_directory(self.root_path, protect_dirs=self.protect_dirs,
-                                   cancel_event=self.cancel_event)
-            self.finished_ok.emit(r)
+                                   cancel_event=self.cancel_event,
+                                   progress_cb=self._progress)
+            self.finished_ok.emit(self.seq, r)
         except Exception as e:
             _log_worker_failure("扫描", e)
-            self.failed.emit(_describe_exception(e))
+            self.failed.emit(self.seq, _describe_exception(e))
 
 
 class PlanWorker(QThread):
@@ -306,6 +316,7 @@ class PlanWorker(QThread):
     过期任务的结果/进度/失败/取消/结束都不会影响新任务状态。
     """
     progress = Signal(int, int, int, str)   # seq, current, total, current_filename
+    stage = Signal(int, str)                # seq, 阶段说明
     finished_ok = Signal(int, object)       # seq, OrganizePlan
     cancelled = Signal(int)                 # seq — 用户取消（不返回半成品）
     failed = Signal(int, str)               # seq, error
@@ -313,7 +324,9 @@ class PlanWorker(QThread):
 
     def __init__(self, seq: int, scan_result: ScanResult, mode: str,
                  rules, config=None, ocr_enabled: bool = False,
-                 ai_settings: AiSettings | None = None, parent=None):
+                 ai_settings: AiSettings | None = None, parent=None,
+                 scan_cache_entries: dict | None = None,
+                 cache_note: str = "", merge_cache: bool = False):
         super().__init__(parent)
         self.seq = seq
         self.scan_result = scan_result
@@ -323,19 +336,116 @@ class PlanWorker(QThread):
         self.config = config
         self.ocr_enabled = ocr_enabled
         self.ai_settings = ai_settings
+        self.scan_cache_entries = scan_cache_entries or {}
+        self.cache_note = cache_note
+        self.merge_cache = merge_cache
         self.cancel_event = threading.Event()
 
     def request_cancel(self):
         self.cancel_event.set()
+
+    def _cache_inputs(self):
+        """把缓存里身份仍一致的结果拆成可复用部分和待重算列表。"""
+        entries = self.scan_cache_entries or {}
+        identities = {}
+        known_sha = {}
+        texts = {}
+        errors = {}
+        kinds = {}
+        notes = {}
+        to_extract = []
+        hits = 0
+        misses = 0
+        for entry in self.scan_result.files:
+            rel = entry.rel_path
+            identity = scan_cache.file_identity(entry.abs_path)
+            if identity is None:
+                # 读不出身份的项不套用旧结果，交给本轮重新处理。
+                misses += 1
+                to_extract.append(entry)
+                continue
+            identities[rel] = identity
+            record = entries.get(rel)
+            if not scan_cache.identity_matches(record, identity):
+                misses += 1
+                to_extract.append(entry)
+                continue
+            hits += 1
+            sha = record.get("sha256")
+            if isinstance(sha, str) and sha:
+                known_sha[rel] = sha
+            kind = record.get("kind")
+            if not isinstance(kind, str):
+                kind = ""
+            if kind:
+                kinds[rel] = kind
+            text = record.get("text")
+            has_text = isinstance(text, str)
+            if has_text:
+                texts[rel] = text
+            note = record.get("note")
+            if isinstance(note, str) and note:
+                notes[rel] = note
+            if kind in ("图片", "空文件", "未支持"):
+                continue
+            if kind == "正文" and has_text:
+                continue
+            to_extract.append(entry)
+        return {
+            "identities": identities,
+            "known_sha": known_sha,
+            "texts": texts,
+            "errors": errors,
+            "kinds": kinds,
+            "notes": notes,
+            "to_extract": to_extract,
+            "hits": hits,
+            "misses": misses,
+        }
+
+    def _save_cache(self, inputs, plan, texts, errors, kinds, stats):
+        """把本轮确认过的身份、指纹和正文写成下一轮可复用的缓存。"""
+        sha_map = {item.file.rel_path: item.source_sha256
+                   for item in plan.items}
+        entries = dict(self.scan_cache_entries) if self.merge_cache else {}
+        for entry in self.scan_result.files:
+            rel = entry.rel_path
+            identity = inputs["identities"].get(rel)
+            current = scan_cache.file_identity(entry.abs_path)
+            if identity is None or not scan_cache.identity_matches(identity, current):
+                continue
+            kind = kinds.get(rel, "")
+            if kind == "读取失败":
+                continue
+            text = texts.get(rel) if kind == "正文" else None
+            note = errors.get(rel, "") if kind in ("正文", "未支持") else ""
+            entries[rel] = scan_cache.entry(
+                identity, sha_map.get(rel, ""), text, kind, note)
+        scan_cache.save(self.scan_result.root, entries)
+        stats["cache_files"] = len(entries)
+        stats["cache_saved"] = True
 
     def run(self):
         try:
             def _progress(cur, total, fname):
                 self.progress.emit(self.seq, cur, total, fname)
 
+            def _stage(name):
+                self.stage.emit(self.seq, name)
+
+            inputs = self._cache_inputs()
+            stats = {
+                "cache_hits": inputs["hits"],
+                "cache_misses": inputs["misses"],
+                "content_reused": len(inputs["texts"]),
+                "content_read": len(inputs["to_extract"]),
+                "cache_note": self.cache_note,
+            }
+
             ocr_texts = None
             ocr_errors = None
             if self.ocr_enabled:
+                _stage("识别图片文字")
                 try:
                     ocr_texts, ocr_errors = collect_image_text(
                         self.scan_result.files,
@@ -350,9 +460,11 @@ class PlanWorker(QThread):
                     self.cancelled.emit(self.seq)
                     return
 
-            # 阶段 1：读取纯文本正文（.txt/.md）；图片仍由上面的 OCR 负责。
+            # 未命中缓存的文件才重新读取正文；身份一致的文件直接复用摘录。
+            _stage("读取正文" if inputs["hits"] == 0
+                   else f"读取正文（复用 {inputs['hits']} 个缓存）")
             extraction = extract_contents(
-                self.scan_result.files,
+                inputs["to_extract"],
                 cancel_event=self.cancel_event,
                 progress_cb=_progress,
                 root=self.scan_result.root,
@@ -361,6 +473,16 @@ class PlanWorker(QThread):
                 # 取消后不发布半成品计划；界面按 seq 丢弃迟到的结果。
                 self.cancelled.emit(self.seq)
                 return
+            texts = dict(inputs["texts"])
+            texts.update(extraction.texts)
+            kinds = dict(inputs["kinds"])
+            kinds.update(extraction.kinds)
+            errors = dict(inputs["notes"])
+            errors.update(extraction.errors)
+            stats["content_reused"] = len(inputs["texts"])
+            stats["content_read"] = len(extraction.texts) + len(
+                [rel for rel in extraction.errors
+                 if kinds.get(rel) == "读取失败"])
 
             plan = generate_plan(
                 self.scan_result, self.mode, self.rules,
@@ -369,8 +491,11 @@ class PlanWorker(QThread):
                 config=self.config,
                 ocr_texts=ocr_texts,
                 ocr_errors=ocr_errors,
-                content_texts=extraction.texts,
-                content_errors=extraction.errors,
+                content_texts=texts,
+                content_errors=errors,
+                known_sha=inputs["known_sha"],
+                cache_stats=stats,
+                stage_cb=_stage,
             )
 
             if self.cancel_event.is_set():
@@ -379,6 +504,7 @@ class PlanWorker(QThread):
                 return
 
             if self.ai_settings is not None and self.mode != MODE_BY_TYPE:
+                _stage("AI 补充分类")
                 apply_ai_fallback(
                     plan, self.ai_settings,
                     cancel_event=self.cancel_event,
@@ -390,6 +516,13 @@ class PlanWorker(QThread):
                     self.cancelled.emit(self.seq)
                     return
 
+            try:
+                self._save_cache(inputs, plan, texts, errors, kinds, stats)
+            except OSError as exc:
+                stats["cache_saved"] = False
+                stats["cache_error"] = str(exc)
+                append_startup_log(f"增量缓存写入失败，本次计划不受影响：{exc}")
+            plan.cache_stats = dict(stats)
             self.finished_ok.emit(self.seq, plan)
         except Exception as e:
             _log_worker_failure("计划生成", e)
@@ -800,6 +933,21 @@ def _reveal_in_file_manager(path: str) -> str:
         return ""
     except Exception as e:
         return f"无法调用系统文件管理器：{e}"
+
+
+def history_reveal_target(root: str, source_rel: str, target_rel: str) -> str:
+    """历史定位的当前路径：优先目标，其次原位置，都不存在返回空串。
+
+    只使用记录里的精确相对路径，不按文件名搜索，避免打开另一份同名文件。
+    """
+    root = root or ""
+    target = os.path.join(root, target_rel) if target_rel else ""
+    source = os.path.join(root, source_rel) if source_rel else ""
+    if target and os.path.exists(target):
+        return target
+    if source and os.path.exists(source):
+        return source
+    return ""
 
 
 def _norm_root(p: str) -> str:
@@ -1357,10 +1505,14 @@ class HistoryDialog(QDialog):
         a = items[start + idx] if start + idx < len(items) else None
         if a is None:
             return
-        # 优先定位仍存在的目标文件，其次原位置
-        tgt = os.path.join(self.root or "", a.target_rel)
-        src = os.path.join(self.root or "", a.source_rel)
-        target = tgt if os.path.exists(tgt) else src
+        # 优先定位仍存在的目标文件，其次原位置；两边都不在就明确说明。
+        target = history_reveal_target(self.root or "", a.source_rel, a.target_rel)
+        if not target:
+            QMessageBox.information(
+                self, "归档盒",
+                "找不到这个文件：原位置和目标位置都不存在。\n"
+                "可能已被移动、撤销或删除，请勿按文件名打开其他同名文件。")
+            return
         err = _reveal_in_file_manager(target)
         if err:
             QMessageBox.warning(self, "归档盒", err)
@@ -1556,6 +1708,8 @@ class MainWindow(QMainWindow):
         self._duplicate_cache_entries = None
         self._duplicate_pending_entries = None
         self._scan_generation = 0
+        self._scan_seq_counter = 0
+        self._current_scan_seq = 0
         self._ocr_supported = ocr_supported()
         self._ai_settings = load_settings()
         self.setAcceptDrops(True)
@@ -2558,6 +2712,9 @@ class MainWindow(QMainWindow):
 
         self.table.setRowCount(0)
         phase = "正在计算目标位置……" if only_paths else "扫描中……"
+        self._scan_seq_counter += 1
+        self._current_scan_seq = self._scan_seq_counter
+        seq = self._current_scan_seq
         self.task.begin("scan", root, phase=phase)
         self._set_working(True, phase)
 
@@ -2567,21 +2724,60 @@ class MainWindow(QMainWindow):
 
         try:
             self._scan_worker = ScanWorker(
-                root, protect_dirs=protect, only_paths=only_paths, parent=self)
+                root, protect_dirs=protect, only_paths=only_paths, parent=self,
+                seq=seq)
             self._scan_worker.finished_ok.connect(self._on_scan_done)
             self._scan_worker.failed.connect(self._on_scan_failed)
-            self._scan_worker.finished.connect(self._on_scan_worker_finished)
+            self._scan_worker.finished.connect(
+                lambda s=seq: self._on_scan_worker_finished(s))
+            progress_signal = getattr(self._scan_worker, "progress", None)
+            if progress_signal is not None:
+                progress_signal.connect(self._on_scan_progress)
+            stage_signal = getattr(self._scan_worker, "stage", None)
+            if stage_signal is not None:
+                stage_signal.connect(self._on_scan_stage)
             self._refresh_busy_ui(phase)
             self._scan_worker.start()
         except Exception as e:
             self._abort_task_start("scan", "扫描", e)
 
-    def _on_scan_worker_finished(self):
+    def _on_scan_stage(self, seq: int, stage: str):
+        if seq != self._current_scan_seq or self._close_pending or self._closing:
+            return
+        if self.task.kind != "scan":
+            return
+        self.task.phase = stage
+        self.statusBar().showMessage(f"{stage}…")
+
+    def _on_scan_progress(self, seq: int, seen: int, current: str):
+        if seq != self._current_scan_seq:
+            return
+        if self._close_pending or self._closing:
+            return
+        if self.task.kind != "scan" or not self._working:
+            return
+        self.task.update_progress(seen, 0, current)
+        self._apply_progress(seen, 0)
+        if seen:
+            self.progress_label.setText(f"已发现 {seen}")
+        suffix = f" · {current}" if current else ""
+        self.statusBar().showMessage(f"扫描中：已发现 {seen} 个文件{suffix}")
+
+    def _on_scan_worker_finished(self, seq: int | None = None):
         """扫描线程结束。只清理扫描态，不能覆盖仍在运行的计划生成态。"""
+        if seq is not None and seq != self._current_scan_seq:
+            return
         self.task.end("scan")     # 若计划生成已接续开始，kind 保持为 plan
         self._set_working(False)
 
-    def _on_scan_done(self, result: ScanResult):
+    def _on_scan_done(self, seq_or_result, result: ScanResult | None = None):
+        if result is None:
+            result = seq_or_result
+            seq = self._current_scan_seq
+        else:
+            seq = seq_or_result
+        if seq != self._current_scan_seq:
+            return  # 旧扫描的完成信号，不能写入这次扫描的结果
         worker = getattr(self, "_scan_worker", None)
         if worker is not None and getattr(worker, "cancel_event", None) is not None \
                 and worker.cancel_event.is_set():
@@ -2706,7 +2902,14 @@ class MainWindow(QMainWindow):
         )
         self.protect_label.show()
 
-    def _on_scan_failed(self, err: str):
+    def _on_scan_failed(self, seq_or_err, err: str | None = None):
+        if err is None:
+            err = seq_or_err
+            seq = self._current_scan_seq
+        else:
+            seq = seq_or_err
+        if seq != self._current_scan_seq:
+            return
         root = self.path_edit.text().strip()
         self._discard_plan("扫描失败，旧预览已失效；请排除问题后重新扫描生成新预览")
         # S4 / guia F-25：状态栏说明是哪个目录、失败在扫描阶段
@@ -4031,15 +4234,22 @@ class MainWindow(QMainWindow):
         self._update_button_states()
 
         try:
+            cache_entries, cache_note = scan_cache.load(self.scan_result.root)
+            if cache_note:
+                append_startup_log(f"增量缓存：{cache_note}")
             worker = PlanWorker(
                 seq, self.scan_result, mode, self.rules,
                 config=plan_config, ocr_enabled=use_ocr,
                 ai_settings=(self._ai_snapshot() if use_ai else None),
-                parent=self)
+                parent=self,
+                scan_cache_entries=cache_entries,
+                cache_note=cache_note,
+                merge_cache=(self._plan_scope != "space"))
             self._plan_worker = worker
             self._plan_workers.append(worker)
 
             worker.progress.connect(self._on_plan_progress)
+            worker.stage.connect(self._on_plan_stage)
             worker.finished_ok.connect(self._on_plan_done)
             worker.cancelled.connect(self._on_plan_cancelled)
             worker.failed.connect(self._on_plan_failed)
@@ -4068,6 +4278,14 @@ class MainWindow(QMainWindow):
         except ValueError:
             pass
 
+    def _on_plan_stage(self, seq: int, stage: str):
+        if seq != self._current_plan_seq or not self._plan_working:
+            return
+        if self._close_pending or self._closing:
+            return
+        self.task.phase = stage
+        self.statusBar().showMessage(f"{stage}…")
+
     def _on_plan_progress(self, seq: int, cur: int, total: int, fname: str):
         if seq != self._current_plan_seq:
             return  # 过期进度，忽略
@@ -4075,7 +4293,8 @@ class MainWindow(QMainWindow):
             return  # 任务已结束，迟到的进度不再污染界面
         self.task.update_progress(cur, total, fname)
         self._apply_progress(cur, total)
-        self.statusBar().showMessage(f"生成计划中… [{cur}/{total}] {fname}")
+        prefix = self.task.phase or "生成计划"
+        self.statusBar().showMessage(f"{prefix}… [{cur}/{total}] {fname}")
 
     def _on_plan_done(self, seq: int, plan: OrganizePlan):
         if self._closing or self._close_pending:

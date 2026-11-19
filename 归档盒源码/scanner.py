@@ -521,6 +521,7 @@ def scan_directory(
     protect_dirs: Optional[List[str]] = None,
     detect_project_roots: bool = True,
     cancel_event=None,
+    progress_cb=None,
 ) -> ScanResult:
     """
     递归扫描目录，返回普通文件列表。
@@ -554,6 +555,10 @@ def scan_directory(
     # 使用 os.walk；对 skipdirs 设置 topdown 过滤
     # S3 / filesafe F-16/F-22：onerror 记录权限错误；walk 根使用 \\?\ 长路径前缀。
     walk_root = win_long_path(root)
+    seen = 0
+    last_emit = 0.0
+    if progress_cb is not None:
+        progress_cb(0, "")
     for dirpath, dirnames, filenames in os.walk(
             walk_root, followlinks=False,
             onerror=lambda e: _walk_error(result, e)):
@@ -567,9 +572,21 @@ def scan_directory(
 
         _prune_dirnames(result, dirpath, dirnames)
         for fname in filenames:
-            _consider_file(result, root, os.path.join(dirpath, fname))
+            full = os.path.join(dirpath, fname)
+            _consider_file(result, root, full)
+            seen += 1
+            now = time.monotonic()
+            if (progress_cb is not None
+                    and (seen % 200 == 0 or now - last_emit >= 0.1)):
+                last_emit = now
+                progress_cb(
+                    seen,
+                    strip_long_prefix(os.path.relpath(full, walk_root)))
         if not filenames and not dirnames:
             result.empty_dirs += 1
+
+    if progress_cb is not None and seen:
+        progress_cb(seen, "")
 
     detected: Dict[str, str] = {}
     if detect_project_roots:
@@ -607,6 +624,7 @@ def scan_paths(
     protect_dirs: Optional[List[str]] = None,
     detect_project_roots: bool = True,
     cancel_event=None,
+    progress_cb=None,
 ) -> ScanResult:
     """只读取给定的文件或目录，不遍历整理空间里的其他内容。
 
@@ -622,6 +640,21 @@ def scan_paths(
 
     checked_dirs = set()
     root_key = os.path.normcase(root)
+    seen = 0
+    last_emit = 0.0
+
+    def emit(full: str) -> None:
+        nonlocal seen, last_emit
+        seen += 1
+        now = time.monotonic()
+        if (progress_cb is not None
+                and (seen % 200 == 0 or now - last_emit >= 0.1)):
+            last_emit = now
+            try:
+                rel = os.path.relpath(strip_long_prefix(full), root)
+            except ValueError:
+                rel = os.path.basename(full)
+            progress_cb(seen, rel)
 
     def _within_root(p: str) -> bool:
         key = os.path.normcase(os.path.abspath(p))
@@ -651,6 +684,7 @@ def scan_paths(
                 full = os.path.join(dirpath, fname)
                 note_dir(os.path.dirname(full))
                 _consider_file(result, root, full)
+                emit(full)
             if not filenames and not dirnames:
                 result.empty_dirs += 1
 
@@ -670,6 +704,10 @@ def scan_paths(
             for directory in _ancestors_within(path, root):
                 note_dir(directory)
             _consider_file(result, root, path)
+            emit(path)
+
+    if progress_cb is not None and seen:
+        progress_cb(seen, "")
 
     detected: Dict[str, str] = {}
     if detect_project_roots:

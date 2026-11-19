@@ -1,8 +1,9 @@
 """读取待整理文件的正文片段，供分类规则和预览依据使用。
 
-阶段 1 只读取纯文本（.txt/.md）：按块读到上限即停，不把整个文件读进内存。
-图片继续交给 ocr_engine；PDF、Word 和其余格式当前没有解析库，明确标成
-「未支持」并继续处理后面的文件。本模块不新增任何解析依赖。
+纯文本（.txt/.md）按块读到上限即停；.docx/.pptx/.xlsx 用标准库
+zipfile + XML 读取正文，不新增联网或第三方解析依赖。PDF、旧版
+Office 和压缩包继续明确标成「未支持」，坏文件只记录原因，后面的
+文件继续处理。图片继续交给 ocr_engine。
 """
 
 from __future__ import annotations
@@ -10,6 +11,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import os
+import re
+import zipfile
+import xml.etree.ElementTree as ET
 
 from ocr_engine import OCR_EXTENSIONS
 
@@ -19,16 +23,17 @@ MAX_TEXT_BYTES = 4096
 CHUNK_BYTES = 1024
 
 TEXT_EXTENSIONS = {".txt", ".md"}
+OOXML_EXTENSIONS = {".docx", ".pptx", ".xlsx"}
+
+#: OOXML 解压后最多读取的字节数，避免压缩包展开后占满内存。
+OOXML_READ_BYTES = MAX_TEXT_BYTES * 64
 
 #: 有明确原因、当前阶段不读取正文的格式。
 UNSUPPORTED_REASONS = {
     ".pdf": "当前版本没有 PDF 解析库，未读取正文",
     ".doc": "当前版本没有 Word 解析库，未读取正文",
-    ".docx": "当前版本没有 Word 解析库，未读取正文",
     ".xls": "当前版本没有表格解析库，未读取正文",
-    ".xlsx": "当前版本没有表格解析库，未读取正文",
     ".ppt": "当前版本没有演示文稿解析库，未读取正文",
-    ".pptx": "当前版本没有演示文稿解析库，未读取正文",
     ".zip": "压缩包不读取正文，避免把打包内容当作文本",
     ".rar": "压缩包不读取正文，避免把打包内容当作文本",
     ".7z": "压缩包不读取正文，避免把打包内容当作文本",
@@ -90,6 +95,144 @@ def read_text_excerpt(path: str, limit: int = MAX_TEXT_BYTES):
         decode_note = f"第 {exc.start} 字节起不是有效 UTF-8，已用替换字符"
     text = text.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n").strip()
     return text, decode_note, reached_limit
+
+
+class OfficeReadError(Exception):
+    """OOXML 文件无法读取正文，原因只写短说明，不带绝对路径。"""
+
+
+def _local_tag(node) -> str:
+    tag = node.tag or ""
+    return tag.rsplit("}", 1)[-1]
+
+
+def _read_zip_member(zf: zipfile.ZipFile, name: str, limit: int) -> bytes:
+    try:
+        info = zf.getinfo(name)
+    except KeyError:
+        raise OfficeReadError(f"缺少正文部件 {name}")
+    if info.file_size > limit * 16:
+        # 仍然只读上限，避免压缩包展开后占满内存；读到上限就交给截断说明。
+        pass
+    try:
+        with zf.open(name) as handle:
+            return handle.read(limit)
+    except RuntimeError as exc:
+        if "encrypted" in str(exc).lower():
+            raise OfficeReadError("文件已加密，未读取正文")
+        raise OfficeReadError(str(exc))
+
+
+def _parse_xml(data: bytes):
+    try:
+        return ET.fromstring(data)
+    except ET.ParseError:
+        raise OfficeReadError("正文 XML 损坏，无法解析")
+
+
+def _join_text_nodes(root, local_name: str) -> str:
+    return "".join(node.text or "" for node in root.iter()
+                   if _local_tag(node) == local_name)
+
+
+def _read_docx(zf: zipfile.ZipFile, limit: int) -> str:
+    root = _parse_xml(_read_zip_member(zf, "word/document.xml", limit))
+    paragraphs = []
+    for node in root.iter():
+        if _local_tag(node) != "p":
+            continue
+        text = "".join(child.text or "" for child in node.iter()
+                       if _local_tag(child) == "t")
+        if text:
+            paragraphs.append(text)
+    return "\n".join(paragraphs)
+
+
+def _read_pptx(zf: zipfile.ZipFile, limit: int) -> str:
+    slides = []
+    for name in zf.namelist():
+        match = re.fullmatch(r"ppt/slides/slide(\d+)\.xml", name)
+        if match:
+            slides.append((int(match.group(1)), name))
+    slides.sort()
+    parts = []
+    for _index, name in slides:
+        root = _parse_xml(_read_zip_member(zf, name, limit))
+        text = _join_text_nodes(root, "t")
+        if text:
+            parts.append(text)
+    return "\n\n".join(parts)
+
+
+def _read_xlsx(zf: zipfile.ZipFile, limit: int) -> str:
+    shared: list[str] = []
+    if "xl/sharedStrings.xml" in zf.namelist():
+        root = _parse_xml(_read_zip_member(zf, "xl/sharedStrings.xml", limit))
+        for node in root.iter():
+            if _local_tag(node) != "si":
+                continue
+            shared.append("".join(child.text or ""
+                                  for child in node.iter()
+                                  if _local_tag(child) == "t"))
+    sheets = []
+    for name in zf.namelist():
+        match = re.fullmatch(r"xl/worksheets/sheet(\d+)\.xml", name)
+        if match:
+            sheets.append((int(match.group(1)), name))
+    sheets.sort()
+    parts = []
+    for _index, name in sheets:
+        root = _parse_xml(_read_zip_member(zf, name, limit))
+        cells = []
+        for node in root.iter():
+            if _local_tag(node) != "c":
+                continue
+            inline = "".join(child.text or "" for child in node.iter()
+                             if _local_tag(child) == "t")
+            if inline:
+                cells.append(inline)
+                continue
+            for child in node:
+                if _local_tag(child) != "v" or not child.text:
+                    continue
+                value = child.text.strip()
+                if value.isdigit() and int(value) < len(shared):
+                    cells.append(shared[int(value)])
+                else:
+                    cells.append(value)
+                break
+        if cells:
+            parts.append("\t".join(cells))
+    return "\n".join(parts)
+
+
+def read_ooxml_excerpt(path: str, ext: str,
+                       limit: int = MAX_TEXT_BYTES) -> tuple[str, str]:
+    """读取 .docx/.pptx/.xlsx 的正文，返回 (文本, 截断说明)。
+
+    只读标准库能解开的 OOXML；损坏、加密、缺少正文部件时抛
+    OfficeReadError，文件打不开时抛 OSError，由调用方记录原因。
+    """
+    try:
+        with zipfile.ZipFile(path) as zf:
+            if ext == ".docx":
+                text = _read_docx(zf, OOXML_READ_BYTES)
+            elif ext == ".pptx":
+                text = _read_pptx(zf, OOXML_READ_BYTES)
+            else:
+                text = _read_xlsx(zf, OOXML_READ_BYTES)
+    except zipfile.BadZipFile:
+        raise OfficeReadError("不是有效的 Office 压缩包或文件已损坏")
+    except OfficeReadError:
+        raise
+    except OSError:
+        raise
+    text = text.replace("\r\n", "\n").replace("\r", "\n").strip()
+    note = ""
+    if len(text) > limit:
+        text = text[:limit]
+        note = f"正文较长：只读取了前 {limit} 个字符"
+    return text, note
 
 
 def _is_within_root(path: str, root: str) -> bool:
@@ -185,6 +328,31 @@ def extract_contents(files, cancel_event=None, progress_cb=None,
                 if reached:
                     result.errors[entry.rel_path] = (
                         "正文较长：只读取了前 4096 字节")
+            result.texts[entry.rel_path] = text
+            continue
+
+        if ext in OOXML_EXTENSIONS:
+            if root is not None and not _is_within_root(entry.abs_path, root):
+                result.errors[entry.rel_path] = "无法读取正文：越出整理空间"
+                result.kinds[entry.rel_path] = "读取失败"
+                continue
+            try:
+                text, note = read_ooxml_excerpt(entry.abs_path, ext)
+            except OfficeReadError as exc:
+                result.errors[entry.rel_path] = f"无法读取正文：{exc}"
+                result.kinds[entry.rel_path] = "读取失败"
+                continue
+            except OSError as exc:
+                result.errors[entry.rel_path] = f"无法读取正文：{_short_error(exc)}"
+                result.kinds[entry.rel_path] = "读取失败"
+                continue
+            result.kinds[entry.rel_path] = "正文"
+            if note:
+                result.errors[entry.rel_path] = note
+            if not text:
+                result.errors[entry.rel_path] = (
+                    result.errors.get(entry.rel_path)
+                    or "正文为空或没有可读取的文字")
             result.texts[entry.rel_path] = text
             continue
 

@@ -164,6 +164,8 @@ class OrganizePlan:
     ai_note: str = ""
     # 阶段 1：AI 返回但不能进入可执行批次的原因（仅内存字段）
     ai_rejections: List[dict] = field(default_factory=list)
+    # 阶段 4：本轮复用了多少缓存 / 实际计算了多少指纹与正文
+    cache_stats: dict = field(default_factory=dict)
 
     # ---- 汇总 ----
     @property
@@ -352,6 +354,8 @@ def detect_duplicates(
     progress_cb=None,
     progress_base: int = 0,
     progress_total: int = 0,
+    known_sha: Optional[Dict[str, str]] = None,
+    stats: Optional[dict] = None,
 ) -> Tuple[dict, dict]:
     """
     按 (size, SHA-256) 检测内容重复组。
@@ -380,6 +384,20 @@ def detect_duplicates(
 
     file_count = len(scan_result.files)
     idx = 0
+    known = known_sha or {}
+    if stats is not None:
+        stats.setdefault("sha_reused", 0)
+        stats.setdefault("sha_computed", 0)
+
+    def _sha_for(entry) -> str:
+        cached = (known.get(entry.rel_path) or "").strip()
+        if cached:
+            if stats is not None:
+                stats["sha_reused"] += 1
+            return cached
+        if stats is not None:
+            stats["sha_computed"] += 1
+        return sha256_file(os.path.join(root, entry.rel_path)) or ""
 
     for size, bucket in size_buckets.items():
         if cancel_event and cancel_event.is_set():
@@ -391,7 +409,7 @@ def detect_duplicates(
             f = bucket[0]
             if cancel_event and cancel_event.is_set():
                 break
-            sha = sha256_file(os.path.join(root, f.rel_path)) or ""
+            sha = _sha_for(f)
             file_sha_map[f.rel_path] = sha
             idx += 1
             if progress_cb and progress_total > 0:
@@ -403,7 +421,7 @@ def detect_duplicates(
         for f in bucket:
             if cancel_event and cancel_event.is_set():
                 break
-            sha = sha256_file(os.path.join(root, f.rel_path)) or ""
+            sha = _sha_for(f)
             file_sha_map[f.rel_path] = sha
             sha_to_files.setdefault(sha, []).append(f)
             idx += 1
@@ -802,6 +820,8 @@ def classify_entries(
     for idx, fentry in enumerate(scan_result.files):
         if cancel_event and cancel_event.is_set():
             break
+        if progress_cb is not None:
+            progress_cb(idx + 1, total, f"生成预览 {fentry.filename}")
 
         extra = ""
         extra_source = "image"
@@ -1024,6 +1044,9 @@ def build_plan(
     ocr_errors: Optional[Dict[str, str]] = None,
     content_texts: Optional[Dict[str, str]] = None,
     content_errors: Optional[Dict[str, str]] = None,
+    known_sha: Optional[Dict[str, str]] = None,
+    cache_stats: Optional[dict] = None,
+    stage_cb=None,
 ) -> OrganizePlan:
     """构造计划。compute_duplicates=False 时跳过 SHA-256（试运行/影响预览用）。
 
@@ -1038,10 +1061,14 @@ def build_plan(
 
     dup_groups: dict = {}
     file_sha_map: dict = {}
+    stats = cache_stats if cache_stats is not None else {}
     if compute_duplicates:
+        if stage_cb is not None:
+            stage_cb("计算指纹")
         dup_groups, file_sha_map = detect_duplicates(
             scan_result, cancel_event=cancel_event, progress_cb=progress_cb,
             progress_base=0, progress_total=len(scan_result.files),
+            known_sha=known_sha, stats=stats,
         )
         if cancel_event and cancel_event.is_set():
             return OrganizePlan(
@@ -1051,12 +1078,15 @@ def build_plan(
                 config_snapshot=(compile_config(config).snapshot
                                  if mode == MODE_BY_DIRECTION_SEMESTER else {}),
                 duplicates_computed=True,
+                cache_stats=dict(stats),
             )
 
+    if stage_cb is not None:
+        stage_cb("生成预览")
     items, compiled = classify_entries(
         scan_result, mode, rules, config=config,
         cancel_event=cancel_event,
-        progress_cb=(progress_cb if not compute_duplicates else None),
+        progress_cb=progress_cb,
         ocr_texts=ocr_texts, ocr_errors=ocr_errors,
         content_texts=content_texts, content_errors=content_errors,
     )
@@ -1078,6 +1108,7 @@ def build_plan(
         dup_total_files=sum(len(v) for v in dup_groups.values()),
         config_snapshot=(compiled.snapshot if compiled is not None else {}),
         duplicates_computed=compute_duplicates,
+        cache_stats=dict(stats),
     )
 
 
@@ -1092,6 +1123,9 @@ def generate_plan(
     ocr_errors: Optional[Dict[str, str]] = None,
     content_texts: Optional[Dict[str, str]] = None,
     content_errors: Optional[Dict[str, str]] = None,
+    known_sha: Optional[Dict[str, str]] = None,
+    cache_stats: Optional[dict] = None,
+    stage_cb=None,
 ) -> OrganizePlan:
     """生成正式计划（含 SHA-256 与内容重复检测）。
 
@@ -1104,6 +1138,7 @@ def generate_plan(
         cancel_event=cancel_event, progress_cb=progress_cb,
         ocr_texts=ocr_texts, ocr_errors=ocr_errors,
         content_texts=content_texts, content_errors=content_errors,
+        known_sha=known_sha, cache_stats=cache_stats, stage_cb=stage_cb,
     )
 
 

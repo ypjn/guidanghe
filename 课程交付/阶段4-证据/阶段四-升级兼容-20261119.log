@@ -1,0 +1,58 @@
+== 阶段三基线 5760c5f 创建升级样本 ==
+{
+  "space": "/private/tmp/stage4-upgrade-fixture/space",
+  "space_v1": "/private/tmp/stage4-upgrade-fixture/space_v1",
+  "files_before": {
+    "课程/高等数学/笔记.txt": "039c9f4fd98b0173f9c0baa4068b472de928725db54d39167fdebe14eb338a1f",
+    "课程/高等数学/习题.txt": "9754b655a20eae97a967932c080be9fc59bfc03578cbd6bc0e3e49868e608642",
+    "项目/周报/第1周.txt": "cd6fc0c36bfd3ef8fc08861b4e8630f2eb30f9eeb5d4567959415911a40d7586",
+    "下载/其他.txt": "80eae849ecdfc0a7a2f89f9429a400f9ddd5a5513b1d4594705e009d3c2103ef",
+    "保护目录/内部.txt": "b465004c193f9226101d1b1d84a61d408c5e50c64b9ec0509f31c8c9ceab2292"
+  },
+  "batch": {
+    "id": 1,
+    "moved": 5,
+    "skipped": 0,
+    "failed": 0
+  },
+  "preferences_space": [
+    "lt-upgrade-space"
+  ],
+  "preferences_global": [
+    "lt-upgrade-global"
+  ],
+  "protect": [
+    "/private/tmp/stage4-upgrade-fixture/space/保护目录"
+  ],
+  "schemes": [
+    "内置默认方案",
+    "空白方案",
+    "升级方案"
+  ],
+  "recent": [
+    "/private/tmp/stage4-upgrade-fixture/space"
+  ]
+}
+CREATE_EXIT:0
+
+== 候选版本读取与恢复 ==
+qt.qpa.fonts: Populating font family aliases took 124 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
+{
+  "ok": true,
+  "checks": {
+    "config_v2": true,
+    "preferences_space": true,
+    "preferences_global": true,
+    "protect": true,
+    "scheme": true,
+    "recent": true,
+    "history_done": true,
+    "undo": true,
+    "config_v1_read": true,
+    "config_v1_upgraded": true,
+    "corrupt_recovery": true
+  },
+  "config_source": "custom",
+  "config_v1_source": "custom"
+}
+VERIFY_EXIT:0

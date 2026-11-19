@@ -1,0 +1,21 @@
+# 归档盒 V1.7 · 阶段四安装包校验和
+
+构建时间：2026-11-19（Asia/Shanghai）
+源码：stage4/daily-use 工作树，父基线 5760c5f；最终提交哈希在推送后回传。
+签名/公证：本次未做代码签名之外的公证，也未做公开发布。
+
+| 成品 | 路径 | SHA-256 |
+|---|---|---|
+| macOS 免安装包 | `打包/归档盒-macOS-免安装.zip` | `c09eb702a0622e46b1342cbedb8dff30a7f27dc97c5c70122686ff4a3f8b8970` |
+| macOS 应用可执行文件 | `打包/归档盒-macOS-免安装/归档盒.app/Contents/MacOS/archivebox` | `1f4cc9cfa9b4b23d3b984b5352e732d8fbe078cde6b409dc5581b0e095f0bfe5` |
+| Windows 免安装包 | `打包/归档盒-Windows-免安装.zip` | `c593ec2b70430d4c5364e0d37ac72512920b0b77d5382b66a151907098861da9` |
+| Windows 启动器 | `打包/归档盒-Windows-免安装/归档盒.exe` | `340c1ea4b2aef9adb0588de28b79854f41caf554c91f8c044bce6e3d04bfd19b` |
+
+Mac 包 Info.plist：`CFBundleShortVersionString = 1.7.0`，`CFBundleIdentifier = local.ypjn.archivebox`。
+Windows 包 `使用说明.txt` 与窗口标题均为 V1.7。
+
+说明：
+
+- Mac 包已从临时 HOME 的打包入口启动；首窗截图见 `截图/01-打包应用首次启动.png`。
+- Windows 包在 Mac 上交叉组装，尚未在 Windows 原生系统运行；验证步骤见 `Windows验证步骤.md`。
+- 两个包都不包含 `.venv`、源码树绝对路径或个人资料。

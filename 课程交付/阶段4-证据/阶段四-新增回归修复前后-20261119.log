@@ -1,0 +1,17 @@
+===== 修复前：阶段三基线 5760c5f =====
+scanner_file /private/tmp/guidanghe-stage3-excl-20261118/归档盒源码/scanner.py
+scan_directory (root_path: 'str', protect_dirs: 'Optional[List[str]]' = None, detect_project_roots: 'bool' = True, cancel_event=None) -> 'ScanResult'
+progress_cb FAILED: scan_directory() got an unexpected keyword argument 'progress_cb'
+scan_cache FAILED: ModuleNotFoundError No module named 'scan_cache'
+下载/a.docx kind= 未支持 text= None error= 未支持：当前版本没有 Word 解析库，未读取正文
+下载/b.pptx kind= 未支持 text= None error= 未支持：当前版本没有演示文稿解析库，未读取正文
+下载/c.xlsx kind= 未支持 text= None error= 未支持：当前版本没有表格解析库，未读取正文
+
+===== 修复后：候选版本 =====
+scanner_file /private/tmp/stage4-daily-use-20261119/归档盒源码/scanner.py
+scan_directory (root_path: 'str', protect_dirs: 'Optional[List[str]]' = None, detect_project_roots: 'bool' = True, cancel_event=None, progress_cb=None) -> 'ScanResult'
+progress_cb OK
+scan_cache OK: /private/tmp/stage4-daily-use-20261119/归档盒源码/scan_cache.py
+下载/a.docx kind= 正文 text= '高等数学 Word 正文' error= None
+下载/b.pptx kind= 正文 text= '项目 答辩' error= None
+下载/c.xlsx kind= 正文 text= '数据结构' error= None
