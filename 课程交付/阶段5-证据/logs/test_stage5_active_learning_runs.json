@@ -5,7 +5,7 @@
     {
       "run": 1,
       "os_exit_code": 0,
-      "elapsed_s": 8.28,
+      "elapsed_s": 8.14,
       "log": "../课程交付/阶段5-证据/logs/test_stage5_active_learning_run1.log",
       "summary": {
         "total": 20,

@@ -928,11 +928,9 @@ def main():
     print()
     print(f"评分样本逐文件：")
     for r in rows:
+        baseline_edits = 1 if r["file"] == SCORE_PREFIX + matched_name else 0
         print(f"  {r['file']} | 基线={r['baseline']} | 阶段五={r['stage5']} "
-              f"| {r['state']} | 基线改单=1 阶段五改单=0"
-              if r["file"] == matched_name else
-              f"  {r['file']} | 基线={r['baseline']} | 阶段五={r['stage5']} "
-              f"| {r['state']} | 基线改单=0 阶段五改单=0")
+              f"| {r['state']} | 基线改单={baseline_edits} 阶段五改单=0")
     print(f"首次确认候选次数：1（不计入评分文件改单次数）")
     print(f"评分改单次数：阶段四 {before_edits} → 阶段五 {after_edits}")
     print(f"第三空间与基线一致：{third_same}")
