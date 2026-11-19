@@ -1,0 +1,23 @@
+== 第 5 轮最近打开辅助功能（真实 cocoa 模态流程） ==
+通过辅助功能 Toggle 选中一行，按「打开空间」进入空间并关闭窗口；
+再次打开用键盘方向键选中，按「关闭」退出；进程存活，无新增 archivebox 崩溃报告。
+本机终端未获系统辅助功能授权，无法驱动 VoiceOver 真机；这里走 Qt 辅助功能接口（与 macOS AX 桥同一层）。
+
+2026-11-19 18:43:09.499 python[62373:2921618] error messaging the mach port for IMKCFRunLoopWakeUpReliable
+== 最近打开：真实 cocoa 模态流程 ==
+ax_radio_found=True
+ax_radio_toggle=True
+selected='/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_7ky4xbw9/recent_modal_b'
+open_enabled=True
+ax_open_press=True
+modal_returned=True
+root_after='/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_7ky4xbw9/recent_modal_b'
+alive_after_open=True
+keyboard_buttons=2
+keyboard_checked=1
+keyboard_selected='/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_7ky4xbw9/recent_modal_a'
+ax_close_press=True
+closed_by_keyboard_round=True
+alive_after_keyboard=True
+本次运行后新增 archivebox 崩溃报告=[]
+EXIT:0

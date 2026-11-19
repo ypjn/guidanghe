@@ -1,0 +1,22 @@
+== 第 5 轮最终成品校验（2026-11-19） ==
+构建：打包/build_mac.sh、打包/build_windows.sh；源码含行按钮裁切与最近空间辅助功能修复
+
+== 解压对照构建目录 / codesign / 启动标题 ==
+mac_entries=1379 links=453/453 dirlinks=72 broken=0 link_mismatch=0 regular=926/926 file_diff=0 missing=0 utf8_missing=0 __MACOSX=0
+codesign_exit=0
+CFBundleShortVersionString=1.7.0
+launched_pid=62269 alive_when_checked=True window_title='归档盒 V1.7'
+win_entries=4904 utf8_missing=0 __MACOSX=0
+win_exe_sha=bcb8120ce8e623cf073927a6f873a5baab321427de8cf0f3097b7e3b1988d6d2
+win_readme_sha=4f596cdcfea81825880167c0cba9783691e465844a277fddc131149690b17827
+mac_zip_sha=235eff2a428b3ffbcce2c18bc7e35a473984c8cc8bfe096dc3daf067491a75be
+win_zip_sha=9ec798e3a502ca8267806239370d17700e449882a3fb73815c3a638d8b9e8648
+mac_bin_sha=474eb24646139ef1529187d42a9ed43379787f054cd703b58fe702cf8fda924a
+
+== 被替换的第 4 轮包（仅留身份） ==
+Mac ZIP 4279dd2bcb4af4928a852f4df4cddd0d80c71442794bba509c4c4e3478af3e31 -> 本轮见上
+Mac 可执行 0a9c3bf00796bb0a3cda36cfd1704a2b482028efc39387e71c5f6fcfc4c210c1 -> 本轮见上
+Windows ZIP 8f004a9f0c4b5e5887034a7db0a6cc992375162d3a9fd29c615e6b9173003371 -> 本轮见上
+Windows exe 4677893c1720c0f2e6c38c8f2169368679bf1aff58491b592569b73a702ee6c6 -> 本轮见上
+Windows 使用说明 4f596cdcfea81825880167c0cba9783691e465844a277fddc131149690b17827（未变）
+原生 Windows 运行：未测

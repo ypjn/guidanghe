@@ -1,0 +1,15 @@
+阶段四第 5 轮。基线是 stage4/daily-use 的 c4915d7d49c5584d449f45dbad1d311c632b1a3a，实现父提交 2690c43d2c3416d557fbe2af2e75e81072d7f5f1。只修下面两项。版本保持 V1.7。不要改写历史，不要强制推送，不要并入 main。
+
+已经通过、不要重开：Mac ZIP 解压后 codesign --verify --deep --strict 通过，453 个符号链接、72 个目录链接、断链 0。单条历史可以用辅助功能按下「选择第 1 行明细」，访达先定位整理后的文件，重开空间后不扫描即可撤销，再定位到源文件，SHA-256 一致。820 宽度下未选中时右栏收起。
+
+1. 操作历史滚动后，行选择按钮挡住别的控件。
+_layout_row_pickers 只按左右边界隐藏按钮，滚出明细表可视区域的按钮仍然 visible，并且盖在「刷新」「搜索」「上一页」上。85 条明细的复现日志：/tmp/guidanghe-s4-c4915d7-history.WeJrHK/logs/row-overlay-pointer.log。1080×720、滚到中段后，点「刷新」实际命中「选择第 12 行明细」，刷新次数仍是 0，current row 变成 12。底部和 820×490 窄窗口同样挡住「刷新」「搜索」「上一页」。
+
+修完后用同一批 85 条明细实点：顶部、中段、底部，以及 820 宽的窄窗口。点「刷新」必须真的刷新，不能改成选中表外的某一行。点「搜索」和「上一页」必须命中这两个控件。行按钮只能在明细表当前可见区域内响应；滚出可视区域的按钮必须隐藏，不能再接到点击。已经通过的单行路径还要在：辅助功能树里有「选择第 1 行明细」，Press 后 current row 为 0，「在文件管理器中显示」可点，进程不退出。滚到中段后，只能对仍可见的那一行做 Press。
+
+2. Mac 成品的「最近打开」崩溃。
+隔离样本里打开「最近打开」，用键盘选空间时进程退出。报告：/Users/ypjn/Library/Logs/DiagnosticReports/archivebox-2026-11-19-180933.ips，PID 43706，SIGSEGV。栈在 QDialog::exec 里读取辅助功能树：NSAccessibility → accessibilityArrayAttributeCount: → _AXXMIGCopyHierarchy。RecentSpacesDialog 的表格仍是 SingleSelection，和历史明细上 QTBUG-149612 是同一类路径。
+
+不要把会盖住其他按钮的对话框浮层再搬到这个窗口上。重打包后，用系统辅助功能把「最近打开」走完：选中一行、打开空间、关闭窗口。进程必须还在，不能有新的崩溃报告。键盘选择也不能退出。
+
+两项都改完再打包。Mac、Windows 都换新 ZIP，更新 SHA-256。Mac 包仍要满足：目录符号链接 72 个都在、断链 0、UTF-8 标志齐全、无 __MACOSX、codesign --verify --deep --strict 退出码 0、启动标题「归档盒 V1.7」。回归至少跑原先那十一套，退出码都是 0。证据放到 课程交付/阶段4-证据/。Windows 原生运行、Linux、真实 DeepSeek、跨卷和外接盘、本人试用这几项继续标成未测，不要写成通过。
