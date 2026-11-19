@@ -32,7 +32,9 @@ from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication, QMessageBox, QAbstractItemView, QRadioButton,
 )
-from PySide6.QtGui import QAccessible, QAccessibleActionInterface  # noqa: E402
+from PySide6.QtGui import (  # noqa: E402
+    QAccessible, QAccessibleActionInterface, QMoveEvent,
+)
 
 import main as main_mod  # noqa: E402
 import scan_cache  # noqa: E402
@@ -786,6 +788,38 @@ def test_history_row_picker_clipped_to_viewport():
                 bad.append(r)
         return shown, bad
 
+    def pagination_overlap():
+        res = []
+        prev_tl = dlg.btn_prev.mapToGlobal(QPoint(0, 0))
+        prev_br = dlg.btn_prev.mapToGlobal(
+            QPoint(dlg.btn_prev.width() - 1, dlg.btn_prev.height() - 1))
+        for r, btn in enumerate(dlg._row_pickers):
+            if not btn.isVisible():
+                continue
+            tl = btn.mapToGlobal(QPoint(0, 0))
+            br = btn.mapToGlobal(QPoint(btn.width() - 1, btn.height() - 1))
+            if (tl.x() <= prev_br.x() and br.x() >= prev_tl.x()
+                    and tl.y() <= prev_br.y() and br.y() >= prev_tl.y()):
+                res.append(r)
+        return res
+
+    def pickers_aligned():
+        vp2 = dlg.item_table.viewport()
+        for r, btn in enumerate(dlg._row_pickers):
+            if not btn.isVisible():
+                continue
+            item = dlg.item_table.item(r, 0)
+            if item is None:
+                return False
+            visible = dlg.item_table.visualItemRect(item).intersected(vp2.rect())
+            if visible.isEmpty():
+                return False
+            expected = vp2.mapToGlobal(visible.topLeft())
+            actual = btn.mapToGlobal(QPoint(0, 0))
+            if (actual.x(), actual.y()) != (expected.x(), expected.y()):
+                return False
+        return True
+
     bar = dlg.item_table.verticalScrollBar()
     positions = [("顶部", bar.minimum()),
                  ("中段", (bar.minimum() + bar.maximum()) // 2),
@@ -796,9 +830,12 @@ def test_history_row_picker_clipped_to_viewport():
         bar.setValue(value)
         process(0.2)
         shown, bad = clipped_bad()
+        overlap = pagination_overlap()
+        aligned_step = pickers_aligned()
         hit_refresh = hit(dlg.btn_refresh) is dlg.btn_refresh
         hit_search = hit(dlg.search_edit) is dlg.search_edit
         hit_prev = hit(dlg.btn_prev) is dlg.btn_prev
+        hit_next = hit(dlg.btn_next) is dlg.btn_next
         before_hits = len(refresh_hits)
         QTest.mouseClick(dlg.btn_refresh, Qt.LeftButton)
         process(0.2)
@@ -811,14 +848,18 @@ def test_history_row_picker_clipped_to_viewport():
         QTest.mouseClick(dlg.btn_prev, Qt.LeftButton)
         process(0.05)
         row_after_prev = dlg.item_table.currentRow()
-        step_ok = (shown > 0 and not bad and hit_refresh and hit_search
-                   and hit_prev and refreshed
+        step_ok = (shown > 0 and not bad and not overlap and aligned_step
+                   and hit_refresh
+                   and hit_search
+                   and hit_prev and hit_next and refreshed
                    and row_after_refresh == -1 and search_focus
                    and row_after_search == -1 and row_after_prev == -1)
         ok = ok and step_ok
         report.append(
-            f"{label}: 可见按钮={shown} 越界={bad} 命中刷新={hit_refresh} "
-            f"命中搜索={hit_search} 命中上一页={hit_prev} 刷新={refreshed} "
+            f"{label}: 可见按钮={shown} 越界={bad} 压分页={overlap} "
+            f"对齐={aligned_step} 命中刷新={hit_refresh} "
+            f"命中搜索={hit_search} 命中上一页={hit_prev} 命中下一页={hit_next} "
+            f"刷新={refreshed} "
             f"行={row_after_refresh}/{row_after_search}/{row_after_prev} "
             f"搜索聚焦={search_focus}")
 
@@ -828,15 +869,39 @@ def test_history_row_picker_clipped_to_viewport():
     bar.setValue((bar.minimum() + bar.maximum()) // 2)
     process(0.2)
     shown_n, bad_n = clipped_bad()
-    narrow_ok = (shown_n > 0 and not bad_n
+    overlap_n = pagination_overlap()
+    aligned_n = pickers_aligned()
+    narrow_ok = (shown_n > 0 and not bad_n and not overlap_n and aligned_n
                  and hit(dlg.btn_refresh) is dlg.btn_refresh
                  and hit(dlg.search_edit) is dlg.search_edit
-                 and hit(dlg.btn_prev) is dlg.btn_prev)
-    report.append(f"820×490: 可见按钮={shown_n} 越界={bad_n} "
+                 and hit(dlg.btn_prev) is dlg.btn_prev
+                 and hit(dlg.btn_next) is dlg.btn_next)
+    report.append(f"820×490: 可见按钮={shown_n} 越界={bad_n} 压分页={overlap_n} "
+                  f"对齐={aligned_n} "
                   f"命中刷新={hit(dlg.btn_refresh) is dlg.btn_refresh} "
                   f"命中搜索={hit(dlg.search_edit) is dlg.search_edit} "
-                  f"命中上一页={hit(dlg.btn_prev) is dlg.btn_prev}")
+                  f"命中上一页={hit(dlg.btn_prev) is dlg.btn_prev} "
+                  f"命中下一页={hit(dlg.btn_next) is dlg.btn_next}")
     ok = ok and narrow_ok
+
+    # 视口只移动不缩放也要触发重排（布局换行时按钮不能停在旧位置）
+    vp = dlg.item_table.viewport()
+    layout_calls = []
+    original_layout = dlg._layout_row_pickers
+    dlg._layout_row_pickers = lambda: (layout_calls.append(1),
+                                       original_layout())[1]
+    QApplication.postEvent(vp, QMoveEvent(vp.pos(), vp.pos()))
+    process(0.2)
+    move_relayout = bool(layout_calls)
+    aligned = pickers_aligned()
+    dlg._layout_row_pickers = original_layout
+    shown_m, bad_m = clipped_bad()
+    overlap_m = pagination_overlap()
+    move_ok = move_relayout and aligned and shown_m > 0 and not bad_m \
+        and not overlap_m
+    report.append(f"移动事件: 触发重排={move_relayout} 对齐={aligned} "
+                  f"可见={shown_m} 越界={bad_m} 压分页={overlap_m}")
+    ok = ok and move_ok
 
     # 滚到中段后，只对仍可见的那一行做辅助功能 Press
     dlg.resize(1080, 720)

@@ -1461,18 +1461,25 @@ class HistoryDialog(QDialog):
                 btn.hide()
                 continue
             top_left = vp.mapTo(self, visible.topLeft())
-            btn.setGeometry(top_left.x(), top_left.y(),
-                            visible.width(), visible.height())
+            geometry = (top_left.x(), top_left.y(),
+                        visible.width(), visible.height())
+            was_visible = btn.isVisible()
+            if (btn.x(), btn.y(), btn.width(), btn.height()) != geometry:
+                btn.setGeometry(*geometry)
             btn.show()
-            btn.raise_()
+            if not was_visible:
+                btn.raise_()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._layout_row_pickers()
 
     def eventFilter(self, obj, event):
-        if obj is getattr(self, "_item_viewport", None) and \
-                event.type() == QEvent.Resize:
+        # viewport 可能只移动不缩放（筛选栏换行、批次配置标签出现时），
+        # 只盯 Resize 会让按钮停在旧位置、伸到分页栏上。这里对移动、
+        # 显示和重绘也同步裁切，保证按钮始终贴着当前视口。
+        if obj is getattr(self, "_item_viewport", None) and event.type() in (
+                QEvent.Resize, QEvent.Move, QEvent.Show, QEvent.Paint):
             self._layout_row_pickers()
         return super().eventFilter(obj, event)
 
