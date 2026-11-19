@@ -11,24 +11,39 @@ from __future__ import annotations
 import os
 from typing import Callable, List
 
-from PySide6.QtCore import QItemSelectionModel, Qt, Signal
+from PySide6.QtCore import QEvent, QItemSelectionModel, Qt, Signal
 from PySide6.QtWidgets import (
-    QAbstractItemView, QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout,
-    QLabel, QListWidget, QListWidgetItem, QMessageBox, QPushButton,
-    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QButtonGroup, QDialog, QDialogButtonBox, QFileDialog,
+    QGridLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMessageBox,
+    QPushButton, QRadioButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 import recent_spaces
 from intake_model import IntakeList, is_within, normalize_path
 
 
+def _elide_text(text: str, limit: int = 72) -> str:
+    text = text or ""
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
 class RecentSpacesDialog(QDialog):
+    """最近整理空间。
+
+    不使用 QTableWidget/QListWidget 的选择模型：Qt 6.12 的 macOS 辅助功能
+    在「选中单元格替换占位符」时会删除父表接口，VoiceOver 读取
+    NSAccessibility 层级时崩溃（QTBUG-149612，历史明细同源）。这里改为
+    普通的单选按钮行，辅助功能直接看到「选择空间：名称、路径……」，按下
+    即可选中，不进入 item view 的选择路径；所有控件都在布局里，没有浮层。
+    """
+
     def __init__(self, open_callback: Callable[[str], bool], parent=None):
         super().__init__(parent)
         self.setWindowTitle("最近整理空间")
         self.resize(900, 520)
         self.open_callback = open_callback
         self._records = []
+        self._row_group = None
         self._build_ui()
         self.refresh()
 
@@ -42,15 +57,20 @@ class RecentSpacesDialog(QDialog):
         tip.setStyleSheet("padding:6px;background:#ECEFF1;border-radius:4px;")
         lay.addWidget(tip)
 
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(
-            ["名称", "完整路径", "最近打开", "固定", "状态"])
-        self.table.verticalHeader().setVisible(False)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table.itemSelectionChanged.connect(self._update_buttons)
-        lay.addWidget(self.table, 1)
+        hint = QLabel("用鼠标、方向键或辅助功能选中一行，再点「打开空间」。")
+        hint.setStyleSheet("color:#455A64;")
+        lay.addWidget(hint)
+
+        self.rows_host = QWidget()
+        self.rows_grid = QGridLayout(self.rows_host)
+        self.rows_grid.setColumnStretch(2, 1)
+        self.rows_grid.setHorizontalSpacing(10)
+        self.rows_grid.setVerticalSpacing(6)
+        self.rows_grid.setContentsMargins(8, 8, 16, 8)
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setWidget(self.rows_host)
+        lay.addWidget(self.scroll, 1)
 
         row = QHBoxLayout()
         self.btn_open = QPushButton("打开空间")
@@ -74,36 +94,116 @@ class RecentSpacesDialog(QDialog):
         bb.accepted.connect(self.reject)
         lay.addWidget(bb)
 
+    def _clear_rows(self):
+        for i in range(self.rows_grid.rowCount()):
+            self.rows_grid.setRowStretch(i, 0)
+        while self.rows_grid.count():
+            item = self.rows_grid.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+                widget.deleteLater()
+        if self._row_group is not None:
+            for button in self._row_group.buttons():
+                self._row_group.removeButton(button)
+            self._row_group.deleteLater()
+            self._row_group = None
+
+    def _add_header(self):
+        headers = ["选择", "名称", "完整路径", "最近打开", "固定", "状态"]
+        for col, text in enumerate(headers):
+            label = QLabel(text)
+            label.setStyleSheet("color:#546E7A;font-weight:600;")
+            self.rows_grid.addWidget(label, 0, col)
+
     def refresh(self):
+        self._clear_rows()
         try:
             self._records = recent_spaces.list_spaces()
         except recent_spaces.RecentSpacesError as exc:
             self._records = []
-            self.table.setRowCount(0)
             QMessageBox.warning(self, "最近整理空间", str(exc))
             self._update_buttons()
             return
-        self.table.setRowCount(len(self._records))
+        self._add_header()
+        if not self._records:
+            empty = QLabel("还没有最近打开的空间。")
+            empty.setStyleSheet("color:#78909C;padding:8px;")
+            self.rows_grid.addWidget(empty, 1, 0, 1, 6)
+            self._update_buttons()
+            return
+        self._row_group = QButtonGroup(self)
+        self._row_group.setExclusive(True)
         for r, rec in enumerate(self._records):
-            self.table.setItem(r, 0, QTableWidgetItem(rec.name))
-            path_item = QTableWidgetItem(rec.path)
-            path_item.setToolTip(rec.path)
-            self.table.setItem(r, 1, path_item)
-            self.table.setItem(r, 2, QTableWidgetItem(rec.last_opened or "—"))
-            self.table.setItem(r, 3, QTableWidgetItem("是" if rec.pinned else "否"))
             status = rec.status
             if rec.status_reason:
                 status += f"：{rec.status_reason}"
-            self.table.setItem(r, 4, QTableWidgetItem(status))
-            self.table.item(r, 0).setData(Qt.UserRole, rec.path)
-        self.table.resizeColumnsToContents()
+            pick = QRadioButton()
+            pick.setFixedWidth(24)
+            pick.setAccessibleName(
+                f"选择空间：{rec.name}，{rec.path}，"
+                f"最近打开 {rec.last_opened or '无记录'}，"
+                f"固定{'是' if rec.pinned else '否'}，状态 {status}")
+            pick.setToolTip("选择这一行，再点「打开空间」")
+            pick.installEventFilter(self)
+            self._row_group.addButton(pick, r)
+            pick.toggled.connect(lambda _checked=False: self._update_buttons())
+            self.rows_grid.addWidget(pick, r + 1, 0)
+
+            name_label = QLabel(_elide_text(rec.name, 20))
+            name_label.setToolTip(rec.name)
+            self.rows_grid.addWidget(name_label, r + 1, 1)
+
+            path_label = QLabel(_elide_text(rec.path, 60))
+            path_label.setToolTip(rec.path)
+            path_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+            path_label.setMinimumWidth(180)
+            self.rows_grid.addWidget(path_label, r + 1, 2)
+
+            opened_label = QLabel(rec.last_opened or "—")
+            self.rows_grid.addWidget(opened_label, r + 1, 3)
+
+            pin_label = QLabel("是" if rec.pinned else "否")
+            self.rows_grid.addWidget(pin_label, r + 1, 4)
+
+            status_label = QLabel(_elide_text(status, 36))
+            status_label.setToolTip(status)
+            self.rows_grid.addWidget(status_label, r + 1, 5)
+        self.rows_grid.setRowStretch(len(self._records) + 1, 1)
         self._update_buttons()
 
+    def row_count(self) -> int:
+        return len(self._records)
+
+    def eventFilter(self, obj, event):
+        """方向键在单选行之间移动，键盘和辅助功能都能选中一行。"""
+        if (isinstance(obj, QRadioButton)
+                and event.type() == QEvent.KeyPress
+                and self._row_group is not None):
+            key = event.key()
+            if key in (Qt.Key_Down, Qt.Key_Right):
+                self._move_selection(1)
+                return True
+            if key in (Qt.Key_Up, Qt.Key_Left):
+                self._move_selection(-1)
+                return True
+        return super().eventFilter(obj, event)
+
+    def _move_selection(self, delta: int):
+        buttons = self._row_group.buttons() if self._row_group else []
+        if not buttons:
+            return
+        current = self._row_group.checkedId()
+        if current < 0:
+            current = 0
+        target = max(0, min(len(buttons) - 1, current + delta))
+        buttons[target].setChecked(True)
+        buttons[target].setFocus()
+
     def _selected(self):
-        rows = self.table.selectionModel().selectedRows()
-        if not rows:
+        if self._row_group is None:
             return None
-        row = rows[0].row()
+        row = self._row_group.checkedId()
         if 0 <= row < len(self._records):
             return self._records[row]
         return None

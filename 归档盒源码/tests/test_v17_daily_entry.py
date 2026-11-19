@@ -277,7 +277,7 @@ def main():
         mk(root, "a/x.txt")
         recent_spaces.touch(root)
         rdlg = RecentSpacesDialog(lambda p: True, None)
-        rows_ok = rdlg.table.rowCount() == len(recent_spaces.list_spaces())
+        rows_ok = rdlg.row_count() == len(recent_spaces.list_spaces())
         rdlg.close()
 
         lst = IntakeList()

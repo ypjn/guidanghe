@@ -27,7 +27,11 @@ SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
-from PySide6.QtWidgets import QApplication, QMessageBox, QAbstractItemView  # noqa: E402
+from PySide6.QtCore import QPoint, Qt  # noqa: E402
+from PySide6.QtTest import QTest  # noqa: E402
+from PySide6.QtWidgets import (  # noqa: E402
+    QApplication, QMessageBox, QAbstractItemView, QRadioButton,
+)
 from PySide6.QtGui import QAccessible, QAccessibleActionInterface  # noqa: E402
 
 import main as main_mod  # noqa: E402
@@ -596,17 +600,19 @@ def _ax_row_pick(dlg, name):
 
 
 def _ax_press(iface):
-    """按辅助功能实际的 Press 动作触发按钮，返回是否触发成功。"""
+    """按辅助功能实际的 Press/Toggle 动作触发控件，返回是否触发成功。"""
     if iface is None:
         return False
     ai = iface.actionInterface()
     if ai is None:
         return False
-    press = QAccessibleActionInterface.pressAction()
-    if press not in ai.actionNames():
-        return False
-    ai.doAction(press)
-    return True
+    actions = ai.actionNames()
+    for action in (QAccessibleActionInterface.pressAction(),
+                   QAccessibleActionInterface.toggleAction()):
+        if action in actions:
+            ai.doAction(action)
+            return True
+    return False
 
 
 def test_history_selection_accessibility():
@@ -716,6 +722,232 @@ def test_history_selection_accessibility():
         f"撤销后辅助按下={ax_pressed_after_undo} 撤销后定位原路径={located_source}")
 
 
+def _ax_collect(iface, out, depth=0):
+    if iface is None or depth > 6:
+        return
+    try:
+        out.append((iface.role().name,
+                    iface.text(QAccessible.Text.Name)))
+    except Exception:
+        return
+    for i in range(iface.childCount()):
+        _ax_collect(iface.child(i), out, depth + 1)
+
+
+def test_history_row_picker_clipped_to_viewport():
+    """S412：明细滚出视口的行按钮必须隐藏，不能挡住刷新/搜索/上一页。"""
+    root = fresh("history_picker_clip")
+    for i in range(85):
+        write(root, f"下载/课程{i:02d}.txt", f"高等数学 第{i}章\n")
+    _sr, out = run_plan(root)
+    plan = out["plan"]
+    for item in plan.items:
+        item.selected = True
+    execute_plan(plan, Storage(root))
+
+    window = main_mod.MainWindow()
+    window.show()
+    process(0.2)
+    window._open_recent_space(root)
+    window.on_history()
+    process(0.5)
+    dlg = window._history_dialog
+    dlg.resize(1080, 720)
+    dlg.activateWindow()
+    dlg.raise_()
+    process(0.3)
+
+    refresh_hits = []
+    try:
+        dlg.btn_refresh.clicked.disconnect()
+    except Exception:
+        pass
+    dlg.btn_refresh.clicked.connect(
+        lambda: (refresh_hits.append(1), dlg.refresh_all()))
+
+    def hit(widget):
+        return QApplication.widgetAt(widget.mapToGlobal(widget.rect().center()))
+
+    def clipped_bad():
+        vp = dlg.item_table.viewport()
+        vp_tl = vp.mapToGlobal(QPoint(0, 0))
+        vp_br = vp.mapToGlobal(QPoint(vp.width() - 1, vp.height() - 1))
+        shown = 0
+        bad = []
+        for r, btn in enumerate(dlg._row_pickers):
+            if not btn.isVisible():
+                continue
+            shown += 1
+            tl = btn.mapToGlobal(QPoint(0, 0))
+            br = btn.mapToGlobal(QPoint(btn.width() - 1, btn.height() - 1))
+            inside = (vp_tl.x() <= tl.x() and vp_tl.y() <= tl.y()
+                      and br.x() <= vp_br.x() and br.y() <= vp_br.y())
+            if not inside:
+                bad.append(r)
+        return shown, bad
+
+    bar = dlg.item_table.verticalScrollBar()
+    positions = [("顶部", bar.minimum()),
+                 ("中段", (bar.minimum() + bar.maximum()) // 2),
+                 ("底部", bar.maximum())]
+    report = []
+    ok = True
+    for label, value in positions:
+        bar.setValue(value)
+        process(0.2)
+        shown, bad = clipped_bad()
+        hit_refresh = hit(dlg.btn_refresh) is dlg.btn_refresh
+        hit_search = hit(dlg.search_edit) is dlg.search_edit
+        hit_prev = hit(dlg.btn_prev) is dlg.btn_prev
+        before_hits = len(refresh_hits)
+        QTest.mouseClick(dlg.btn_refresh, Qt.LeftButton)
+        process(0.2)
+        refreshed = len(refresh_hits) == before_hits + 1
+        row_after_refresh = dlg.item_table.currentRow()
+        QTest.mouseClick(dlg.search_edit, Qt.LeftButton)
+        process(0.05)
+        search_focus = dlg.focusWidget() is dlg.search_edit
+        row_after_search = dlg.item_table.currentRow()
+        QTest.mouseClick(dlg.btn_prev, Qt.LeftButton)
+        process(0.05)
+        row_after_prev = dlg.item_table.currentRow()
+        step_ok = (shown > 0 and not bad and hit_refresh and hit_search
+                   and hit_prev and refreshed
+                   and row_after_refresh == -1 and search_focus
+                   and row_after_search == -1 and row_after_prev == -1)
+        ok = ok and step_ok
+        report.append(
+            f"{label}: 可见按钮={shown} 越界={bad} 命中刷新={hit_refresh} "
+            f"命中搜索={hit_search} 命中上一页={hit_prev} 刷新={refreshed} "
+            f"行={row_after_refresh}/{row_after_search}/{row_after_prev} "
+            f"搜索聚焦={search_focus}")
+
+    # 窄窗口同样不能盖住其他控件
+    dlg.resize(820, 490)
+    process(0.3)
+    bar.setValue((bar.minimum() + bar.maximum()) // 2)
+    process(0.2)
+    shown_n, bad_n = clipped_bad()
+    narrow_ok = (shown_n > 0 and not bad_n
+                 and hit(dlg.btn_refresh) is dlg.btn_refresh
+                 and hit(dlg.search_edit) is dlg.search_edit
+                 and hit(dlg.btn_prev) is dlg.btn_prev)
+    report.append(f"820×490: 可见按钮={shown_n} 越界={bad_n} "
+                  f"命中刷新={hit(dlg.btn_refresh) is dlg.btn_refresh} "
+                  f"命中搜索={hit(dlg.search_edit) is dlg.search_edit} "
+                  f"命中上一页={hit(dlg.btn_prev) is dlg.btn_prev}")
+    ok = ok and narrow_ok
+
+    # 滚到中段后，只对仍可见的那一行做辅助功能 Press
+    dlg.resize(1080, 720)
+    process(0.2)
+    bar.setValue((bar.minimum() + bar.maximum()) // 2)
+    process(0.2)
+    visible_rows = [r for r, btn in enumerate(dlg._row_pickers)
+                    if btn.isVisible()]
+    target_row = visible_rows[len(visible_rows) // 2] if visible_rows else -1
+    ax_ok = False
+    if target_row >= 0:
+        pick = _ax_row_pick(dlg, f"选择第 {target_row + 1} 行明细")
+        pressed = _ax_press(pick)
+        wait_until(lambda: dlg.item_table.currentRow() == target_row,
+                   timeout=3)
+        ax_ok = (pressed and dlg.item_table.currentRow() == target_row
+                 and dlg.btn_reveal.isEnabled()
+                 and dlg._row_pickers[target_row].isVisible())
+    report.append(f"中段辅助 Press 行={target_row} 成功={ax_ok} "
+                  f"按钮可见={target_row >= 0 and dlg._row_pickers[target_row].isVisible()}")
+
+    dlg.accept()
+    window._closing = True
+    window.hide()
+    window.deleteLater()
+    process(0.1)
+    rec("S412", "明细滚出视口的行按钮隐藏，刷新/搜索/上一页不被遮挡",
+        ok and ax_ok,
+        "\n".join(report))
+
+
+def test_recent_spaces_dialog_accessibility():
+    """S413：最近空间不用 item view 选择，辅助功能/键盘选中不崩溃。"""
+    from daily_entry_dialogs import RecentSpacesDialog
+    import recent_spaces
+
+    first = fresh("recent_first")
+    write(first, "笔记.txt", "a\n")
+    recent_spaces.touch(first)
+    second = fresh("recent_second")
+    write(second, "笔记.txt", "b\n")
+    recent_spaces.touch(second)
+
+    opened = []
+    dlg = RecentSpacesDialog(lambda p: (opened.append(p), True)[1], None)
+    dlg.show()
+    process(0.3)
+    no_item_view = not dlg.findChildren(QAbstractItemView)
+    rows = dlg.row_count()
+    radios = dlg.findChildren(QRadioButton)
+    names = [r.accessibleName() for r in radios]
+    radioless = bool(radios) and all(n.startswith("选择空间：") for n in names)
+
+    tree = []
+    iface = QAccessible.queryAccessibleInterface(dlg)
+    _ax_collect(iface, tree)
+    ax_radio = next((nm for role, nm in tree
+                     if role == "RadioButton" and nm.startswith("选择空间：")),
+                    None)
+
+    ax_pick = None
+    # 递归按名称找辅助功能接口
+    def find_iface(node, prefix, depth=0):
+        if node is None or depth > 6:
+            return None
+        try:
+            if node.text(QAccessible.Text.Name).startswith(prefix):
+                return node
+        except Exception:
+            pass
+        for i in range(node.childCount()):
+            found = find_iface(node.child(i), prefix, depth + 1)
+            if found is not None:
+                return found
+        return None
+
+    ax_pick = find_iface(iface, "选择空间：")
+    ax_pressed = _ax_press(ax_pick)
+    process(0.2)
+    selected = dlg._selected()
+    selected_path = selected.path if selected is not None else ""
+    open_ready = dlg.btn_open.isEnabled()
+    QTest.mouseClick(dlg.btn_open, Qt.LeftButton)
+    process(0.2)
+    opened_ok = bool(opened) and opened[-1] == selected_path
+    closed = not dlg.isVisible()
+
+    dlg2 = RecentSpacesDialog(lambda p: True, None)
+    dlg2.show()
+    process(0.2)
+    radios2 = dlg2._row_group.buttons() if dlg2._row_group else []
+    keyboard_ok = False
+    if len(radios2) >= 2:
+        radios2[0].setFocus()
+        process(0.05)
+        QTest.keyClick(radios2[0], Qt.Key_Down)
+        process(0.1)
+        keyboard_ok = dlg2._row_group.checkedId() == 1
+    dlg2.accept()
+    process(0.1)
+
+    rec("S413", "最近空间不用 item view；辅助功能/键盘选中并打开不崩溃",
+        no_item_view and rows >= 2 and radioless and ax_radio is not None
+        and ax_pressed and bool(selected_path) and open_ready
+        and opened_ok and closed and keyboard_ok,
+        f"行数={rows} 无 item view={no_item_view} 单选按钮={names}\n"
+        f"辅助树单选={ax_radio!r} 辅助按下={ax_pressed} "
+        f"选中={selected_path} 打开按钮可点={open_ready}\n"
+        f"打开回调={opened_ok} 窗口已关={closed} 键盘下移={keyboard_ok}")
+
+
 def test_history_reveal_current_path():
     root = fresh("reveal")
     source_rel = "下载/笔记.txt"
@@ -771,6 +1003,8 @@ def main():
     test_open_space_history_undo_ready()
     test_reveal_stays_inside_space()
     test_history_selection_accessibility()
+    test_history_row_picker_clipped_to_viewport()
+    test_recent_spaces_dialog_accessibility()
     failed = [row for row in CHECKS if not row[2]]
     print()
     print(f"合计 {len(CHECKS)} 项：通过 {len(CHECKS) - len(failed)} / 未通过 {len(failed)}")

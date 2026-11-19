@@ -1132,6 +1132,10 @@ class HistoryDialog(QDialog):
             lambda _=None: self._layout_row_pickers())
         self.item_table.horizontalScrollBar().valueChanged.connect(
             lambda _=None: self._layout_row_pickers())
+        # 明细表内部尺寸变化（筛选栏换行、分页栏显隐）不一定伴随对话框
+        # 缩放，单独盯住 viewport 的尺寸变化，保证按钮裁切范围同步。
+        self._item_viewport = self.item_table.viewport()
+        self._item_viewport.installEventFilter(self)
         lay.addWidget(self.item_table, 1)
 
         page_row = QHBoxLayout()
@@ -1438,7 +1442,7 @@ class HistoryDialog(QDialog):
         self._row_pickers = []
 
     def _layout_row_pickers(self):
-        """把行选择按钮覆盖到第 0 列单元格上，并随滚动/缩放重新定位。"""
+        """把行选择按钮裁到明细表当前可见区域内，滚出视口的按钮隐藏。"""
         pickers = getattr(self, "_row_pickers", None)
         if not pickers:
             return
@@ -1450,18 +1454,27 @@ class HistoryDialog(QDialog):
                 btn.hide()
                 continue
             rect = self.item_table.visualItemRect(item)
-            if rect.isEmpty() or rect.right() < 0 or rect.left() >= vp_rect.width():
+            # 行已滚出视口或只露出边缘时，按钮不能伸到表格外去盖住
+            # 「刷新」「搜索」「上一页」等控件；只保留与视口相交的部分。
+            visible = rect.intersected(vp_rect)
+            if rect.isEmpty() or visible.isEmpty():
                 btn.hide()
                 continue
-            top_left = vp.mapTo(self, rect.topLeft())
+            top_left = vp.mapTo(self, visible.topLeft())
             btn.setGeometry(top_left.x(), top_left.y(),
-                            rect.width(), rect.height())
+                            visible.width(), visible.height())
             btn.show()
             btn.raise_()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._layout_row_pickers()
+
+    def eventFilter(self, obj, event):
+        if obj is getattr(self, "_item_viewport", None) and \
+                event.type() == QEvent.Resize:
+            self._layout_row_pickers()
+        return super().eventFilter(obj, event)
 
     def showEvent(self, event):
         super().showEvent(event)
