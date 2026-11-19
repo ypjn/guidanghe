@@ -23,6 +23,7 @@ import errno
 import os
 import shutil
 import stat
+import sys
 import threading
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional
@@ -981,14 +982,100 @@ _renamex_np = None
 _renamex_checked = False
 
 
+def _open_source_shared(path: str) -> int:
+    """打开移动的源文件，返回只读 fd。
+
+    Windows 上必须带 FILE_SHARE_DELETE：Python 的 os.open 不共享删除，
+    句柄未关时 MoveFileExW / unlink 会以 WinError 32 失败。这里用
+    CreateFileW 显式申请「读/写/删除」共享，再包装成普通 fd。
+    其他平台保持原来的 O_NOFOLLOW 只读打开。
+    """
+    if sys.platform != "win32":
+        nofollow = getattr(os, "O_NOFOLLOW", 0)
+        binary = getattr(os, "O_BINARY", 0)
+        return os.open(win_long_path(path), os.O_RDONLY | nofollow | binary)
+
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+
+    generic_read = 0x80000000
+    share_read = 0x00000001
+    share_write = 0x00000002
+    share_delete = 0x00000004
+    open_existing = 3
+    file_attribute_normal = 0x80
+    invalid_handle = ctypes.c_void_p(-1).value
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_file = kernel32.CreateFileW
+    create_file.argtypes = [
+        wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p,
+        wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE,
+    ]
+    create_file.restype = wintypes.HANDLE
+
+    handle = create_file(
+        win_long_path(path), generic_read,
+        share_read | share_write | share_delete,
+        None, open_existing, file_attribute_normal, None,
+    )
+    if not handle or handle == invalid_handle:
+        err = ctypes.get_last_error()
+        raise OSError(err, ctypes.FormatError(err).strip() or f"WinError {err}")
+    try:
+        return msvcrt.open_osfhandle(
+            handle, os.O_RDONLY | getattr(os, "O_BINARY", 0))
+    except OSError:
+        kernel32.CloseHandle(handle)
+        raise
+
+
+def _rename_no_replace_windows(src_path: str, dst_path: str) -> tuple[str, str]:
+    """Windows 同卷「目标存在就失败」的重命名。
+
+    使用 MoveFileExW 且不带 MOVEFILE_REPLACE_EXISTING：目标名已存在时
+    调用失败，绝不覆盖。返回值语义与 _rename_no_replace 一致。
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    move_file = kernel32.MoveFileExW
+    move_file.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD]
+    move_file.restype = wintypes.BOOL
+
+    if move_file(src_path, dst_path, 0):
+        return "ok", ""
+    err = ctypes.get_last_error()
+    if err in (80, 183):          # ERROR_FILE_EXISTS / ERROR_ALREADY_EXISTS
+        return "exists", ""
+    if err == 17:                 # ERROR_NOT_SAME_DEVICE
+        return "unsupported", "跨卷"
+    if err == 32:                 # ERROR_SHARING_VIOLATION
+        if os.path.lexists(dst_path):
+            return "exists", ""
+        return "error", "文件正被其他程序占用（WinError 32）"
+    if err == 5:                  # ERROR_ACCESS_DENIED
+        if os.path.lexists(dst_path):
+            return "exists", ""
+        return "error", "没有权限移动该文件（WinError 5）"
+    return "error", f"MoveFileExW 失败（WinError {err}）"
+
+
 def _rename_no_replace(src_path: str, dst_path: str) -> tuple[str, str]:
-    """macOS 同卷「目标存在就失败」的重命名。
+    """同卷「目标存在就失败」的重命名。
 
     返回值：("ok"|"exists"|"unsupported"|"error", 说明)。
-    使用 renamex_np(RENAME_EXCL, 0x4)：目标名已存在时返回 EEXIST，绝不覆盖。
+    macOS 使用 renamex_np(RENAME_EXCL, 0x4)：目标名已存在时返回 EEXIST，
+    绝不覆盖；Windows 使用不带 REPLACE_EXISTING 的 MoveFileExW。
     不回退到 os.replace / os.rename（它们的覆盖语义会丢文件）。
     """
     global _renamex_np, _renamex_checked
+    if sys.platform == "win32":
+        return _rename_no_replace_windows(src_path, dst_path)
+    if sys.platform != "darwin":
+        return "unsupported", "当前平台没有 renamex_np"
     if not _renamex_checked:
         _renamex_checked = True
         try:
@@ -998,7 +1085,7 @@ def _rename_no_replace(src_path: str, dst_path: str) -> tuple[str, str]:
             fn.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
             fn.restype = ctypes.c_int
             _renamex_np = fn
-        except (OSError, AttributeError, ImportError):
+        except (OSError, AttributeError, ImportError, TypeError):
             _renamex_np = None
     if _renamex_np is None:
         return "unsupported", "当前平台没有 renamex_np"
@@ -1110,15 +1197,13 @@ def _move_file(src_path: str, dst_path: str, root: str,
                on_tmp_ready: Optional[Callable[[str], None]] = None
                ) -> tuple[bool, str, bool]:
     """同卷优先重命名（RENAME_EXCL），跨卷/不可用时才复制。"""
-    nofollow = getattr(os, "O_NOFOLLOW", 0)
-    binary = getattr(os, "O_BINARY", 0)
     if not _is_within_root(src_path, root):
         return False, f"源路径越出整理空间：{src_path}", False
     if not _is_within_root(dst_path, root):
         return False, f"目标路径越出整理空间：{dst_path}", False
 
     try:
-        src_fd = os.open(win_long_path(src_path), os.O_RDONLY | nofollow | binary)
+        src_fd = _open_source_shared(src_path)
     except OSError as e:
         return False, f"无法打开源文件：{e}", False
     try:
@@ -1243,8 +1328,7 @@ def _copy_then_replace(src_path: str, dst_path: str, root: str,
     if not _is_within_root(src_path, root):
         return False, f"源路径越出整理空间：{src_path}", False
     try:
-        src_fd = os.open(win_long_path(src_path),
-                         os.O_RDONLY | nofollow | binary)
+        src_fd = _open_source_shared(src_path)
     except OSError as e:
         return False, f"无法打开源文件：{e}", False
     try:
