@@ -20,6 +20,12 @@ def iter_files(root: str):
         dirnames[:] = sorted(
             name for name in dirnames
             if name not in ("__MACOSX", ".git", "__pycache__"))
+        # os.walk classifies directory symlinks in dirnames, not filenames.
+        for name in dirnames[:]:
+            full = os.path.join(dirpath, name)
+            if os.path.islink(full):
+                yield full
+                dirnames.remove(name)
         for name in sorted(filenames):
             if name == ".DS_Store" or name.startswith("._"):
                 continue

@@ -27,7 +27,8 @@ SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
-from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
+from PySide6.QtWidgets import QApplication, QMessageBox, QAbstractItemView  # noqa: E402
+from PySide6.QtGui import QAccessible  # noqa: E402
 
 import main as main_mod  # noqa: E402
 import scan_cache  # noqa: E402
@@ -579,6 +580,92 @@ def test_reveal_stays_inside_space():
         f"符号链接={symlink!r}\n空间外内容={outside_bytes!r}")
 
 
+def test_history_selection_accessibility():
+    """S411：历史明细用 current row，不再进入 selected-cell 辅助功能崩溃路径。"""
+    root = fresh("history_accessibility")
+    source = write(root, "下载/笔记.txt", "高等数学 极限 导数\n")
+    source_sha = sha256(source)
+    _sr, out = run_plan(root)
+    plan = out["plan"]
+    for item in plan.items:
+        item.selected = True
+    target_rel = plan.items[0].target_rel_path
+    target = os.path.join(root, target_rel)
+    execute_plan(plan, Storage(root))
+
+    window = main_mod.MainWindow()
+    window._open_recent_space(root)
+    window.on_history()
+    process(0.2)
+    dlg = window._history_dialog
+    rows = dlg.item_table.rowCount() if dlg is not None else 0
+    no_selection = (dlg is not None
+                    and dlg.item_table.selectionMode()
+                    == QAbstractItemView.NoSelection)
+    wrappers_kept = bool(dlg is not None and dlg._item_wrappers)
+
+    if dlg is not None and rows:
+        dlg._select_item_row(0)
+        # 模拟辅助功能读取表格接口；NoSelection 下 selected children 为空。
+        iface = QAccessible.queryAccessibleInterface(dlg.item_table)
+        counts = None
+        if iface is not None:
+            counts = (iface.role().name, iface.childCount())
+        button_ready = dlg.btn_reveal.isEnabled()
+        captured = []
+        original_reveal = main_mod._reveal_in_file_manager
+        main_mod._reveal_in_file_manager = (
+            lambda path: (captured.append(path), "")[1])
+        try:
+            dlg._on_reveal()
+        finally:
+            main_mod._reveal_in_file_manager = original_reveal
+        located_target = bool(captured and os.path.abspath(captured[-1])
+                              == os.path.abspath(target)
+                              and sha256(captured[-1]) == sha256(target))
+    else:
+        counts = None
+        button_ready = located_target = False
+
+    if dlg is not None:
+        dlg.accept()
+    QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Yes)
+    window.on_undo()
+    undone = wait_until(lambda: (not window._working)
+                        and not os.path.exists(target)
+                        and os.path.exists(source), timeout=20)
+    window.on_history()
+    process(0.2)
+    dlg2 = window._history_dialog
+    located_source = False
+    if dlg2 is not None and dlg2.item_table.rowCount():
+        dlg2._select_item_row(0)
+        captured2 = []
+        original_reveal = main_mod._reveal_in_file_manager
+        main_mod._reveal_in_file_manager = (
+            lambda path: (captured2.append(path), "")[1])
+        try:
+            dlg2._on_reveal()
+        finally:
+            main_mod._reveal_in_file_manager = original_reveal
+        located_source = bool(captured2 and os.path.abspath(captured2[-1])
+                              == os.path.abspath(source)
+                              and sha256(source) == source_sha)
+        dlg2.accept()
+    window._closing = True
+    window.hide()
+    window.deleteLater()
+    process(0.05)
+
+    rec("S411", "历史明细选中不进入辅助功能崩溃路径；整理后定位目标、撤销后定位原路径",
+        no_selection and wrappers_kept and button_ready and located_target
+        and undone and located_source,
+        f"明细行={rows} NoSelection={no_selection} 保留 item wrapper={wrappers_kept}\n"
+        f"辅助接口计数={counts} 定位按钮可点={button_ready}\n"
+        f"整理后定位目标={located_target} 撤销={undone} "
+        f"撤销后定位原路径={located_source}")
+
+
 def test_history_reveal_current_path():
     root = fresh("reveal")
     source_rel = "下载/笔记.txt"
@@ -633,6 +720,7 @@ def main():
     test_stale_cache_same_size_mtime()
     test_open_space_history_undo_ready()
     test_reveal_stays_inside_space()
+    test_history_selection_accessibility()
     failed = [row for row in CHECKS if not row[2]]
     print()
     print(f"合计 {len(CHECKS)} 项：通过 {len(CHECKS) - len(failed)} / 未通过 {len(failed)}")

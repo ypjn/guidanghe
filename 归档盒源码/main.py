@@ -1098,9 +1098,15 @@ class HistoryDialog(QDialog):
         self.item_table = QTableWidget(0, len(_HISTORY_ITEM_COLUMNS))
         self.item_table.setHorizontalHeaderLabels(_HISTORY_ITEM_COLUMNS)
         self.item_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.item_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        # Qt 6.12 的 macOS 辅助功能在「选中真实单元格替换占位符」时会删除
+        # 父表接口，导致 NSAccessibility 读取时崩溃（QTBUG-149612）。
+        # 这里不让表格维护 selected children，改用 current row 表示选中行；
+        # 辅助功能和鼠标选中都会走 currentCellChanged，进程不再进入该路径。
+        self.item_table.setSelectionMode(QAbstractItemView.NoSelection)
         self.item_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.item_table.verticalHeader().setVisible(False)
+        self._item_wrappers = []
+        self._batch_wrappers = []
         # S3 / guib F-13：状态/原因列不能太窄，长文本用 tooltip
         self.item_table.setColumnWidth(0, 46)
         self.item_table.setColumnWidth(3, 70)
@@ -1111,8 +1117,12 @@ class HistoryDialog(QDialog):
             1, QHeaderView.Stretch)
         self.item_table.horizontalHeader().setSectionResizeMode(
             2, QHeaderView.Stretch)
-        self.item_table.itemSelectionChanged.connect(
-            self._on_item_selection_changed)
+        self.item_table.currentCellChanged.connect(
+            lambda *_: self._on_item_selection_changed())
+        self.item_table.cellClicked.connect(
+            lambda row, _col: self._select_item_row(row))
+        self.item_table.itemActivated.connect(
+            lambda item: self._select_item_row(item.row()))
         self.item_table.doubleClicked.connect(self._on_reveal)
         lay.addWidget(self.item_table, 1)
 
@@ -1198,6 +1208,7 @@ class HistoryDialog(QDialog):
     def _render_batches(self, keep_selection=False):
         prev = self._selected_batch_id if keep_selection else None
         self.batch_table.setRowCount(len(self._batches))
+        self._batch_wrappers = []
         for r, b in enumerate(self._batches):
             c = self._counts.get(b.batch_id, {})
             moved = c.get("moved", 0)
@@ -1223,6 +1234,7 @@ class HistoryDialog(QDialog):
             ]
             for col, text in enumerate(cells):
                 it = QTableWidgetItem(text)
+                self._batch_wrappers.append(it)
                 if col in (4, 5, 6, 7, 8):
                     it.setTextAlignment(Qt.AlignCenter)
                 if col in (1, 2, 3, 9):
@@ -1248,6 +1260,7 @@ class HistoryDialog(QDialog):
             if not self._batches:
                 self.batch_table.setRowCount(1)
                 empty = QTableWidgetItem("这个文件夹还没有整理记录")
+                self._batch_wrappers.append(empty)
                 empty.setToolTip(
                     "整理一次后，批次与逐项明细会记录在这里；"
                     "记录保存在该文件夹的 .organizer 里。")
@@ -1324,6 +1337,8 @@ class HistoryDialog(QDialog):
         start = self._page * HISTORY_PAGE_SIZE
         chunk = items[start:start + HISTORY_PAGE_SIZE]
         self.item_table.setRowCount(len(chunk))
+        self._item_wrappers = []
+        self.item_table.setCurrentCell(-1, -1)
         root = self.root or ""
         for r, a in enumerate(chunk):
             reason = a.error or ""
@@ -1342,6 +1357,7 @@ class HistoryDialog(QDialog):
             ]
             for col, text in enumerate(cells):
                 it = QTableWidgetItem(text)
+                self._item_wrappers.append(it)
                 if col in (0, 3, 4, 6):
                     it.setTextAlignment(Qt.AlignCenter)
                 if col in (1, 2):
@@ -1381,6 +1397,15 @@ class HistoryDialog(QDialog):
                     if tip:
                         it.setToolTip(tip)
                 self.item_table.setItem(r, col, it)
+            # 辅助功能可直接激活的行选择按钮：不依赖 QTableWidget 的
+            # selected-cell 接口，避免 QTBUG-149612 的父表接口被删除。
+            pick = QPushButton(str(r + 1))
+            pick.setFlat(True)
+            pick.setCursor(Qt.PointingHandCursor)
+            pick.setAccessibleName(f"选择第 {r + 1} 行明细")
+            pick.setToolTip("选择这一行，再用「在文件管理器中显示」定位")
+            pick.clicked.connect(lambda _=False, row=r: self._select_item_row(row))
+            self.item_table.setCellWidget(r, 0, pick)
         self.page_label.setText(
             f"第 {self._page + 1}/{pages} 页 · 共 {len(items)} 项"
             if items else "无匹配项")
@@ -1397,13 +1422,21 @@ class HistoryDialog(QDialog):
         self._page = 0
         self._render_items()
 
+    def _select_item_row(self, row: int):
+        if row < 0 or row >= self.item_table.rowCount():
+            return
+        # NoSelection 下用 current cell 表示选中行，避免 macOS 辅助功能
+        # 进入 QTableWidget 的 selected-cell 占位符替换路径。
+        self.item_table.setCurrentCell(row, 1)
+        self._on_item_selection_changed()
+
     def _on_item_selection_changed(self):
-        rows = self.item_table.selectionModel().selectedRows()
-        if not rows:
+        row = self.item_table.currentRow()
+        if row < 0:
             self.detail_label.setText("")
             self.btn_reveal.setEnabled(False)
             return
-        idx = rows[0].row()
+        idx = row
         items = self._filtered_items()
         start = self._page * HISTORY_PAGE_SIZE
         a = items[start + idx] if start + idx < len(items) else None
@@ -1505,10 +1538,9 @@ class HistoryDialog(QDialog):
         self.mw.recover_interrupted_batch(batch_id)
 
     def _on_reveal(self):
-        rows = self.item_table.selectionModel().selectedRows()
-        if not rows:
+        idx = self.item_table.currentRow()
+        if idx < 0:
             return
-        idx = rows[0].row()
         items = self._filtered_items()
         start = self._page * HISTORY_PAGE_SIZE
         a = items[start + idx] if start + idx < len(items) else None
