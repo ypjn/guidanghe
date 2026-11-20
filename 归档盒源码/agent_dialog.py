@@ -74,8 +74,10 @@ class AgentDialog(QDialog):
         self.protect_dirs = list(protect_dirs or [])
         self.result: agent.AgentResult | None = None
         self._worker: AgentWorker | None = None
+        self._workers: list[AgentWorker] = []
         self._searching = False
         self._closing = False
+        self._pending_close = False
         self._search_seq = 0
         self._stale = False
         self._semester_choice: str | None = None
@@ -214,6 +216,7 @@ class AgentDialog(QDialog):
         self._set_busy(True, "正在扫描并查找相关文件……")
         worker = AgentWorker(self.root, instruction, self.protect_dirs, self)
         self._worker = worker
+        self._workers.append(worker)
         worker.progress.connect(self._on_progress)
         worker.done.connect(lambda result, s=seq: self._on_done(result, s))
         worker.failed.connect(lambda message, s=seq: self._on_failed(message, s))
@@ -250,10 +253,19 @@ class AgentDialog(QDialog):
         QMessageBox.warning(self, "AI 管家", f"查找失败：\n{message}")
 
     def _on_worker_finished(self, worker):
+        if worker in self._workers:
+            self._workers.remove(worker)
         if self._worker is worker:
             self._worker = None
-        if self._closing:
+        if not self._workers and self._pending_close:
+            # 所有后台查找都退出了，才真正关闭并销毁窗口。
+            self._pending_close = False
+            self._closing = True
+            QDialog.reject(self)
             self.deleteLater()
+
+    def running_workers(self):
+        return [w for w in self._workers if w.isRunning()]
 
     # ---------- 结果渲染 ----------
 
@@ -404,14 +416,38 @@ class AgentDialog(QDialog):
         self.btn_answer.setEnabled(True)
         self.question_combo.setEnabled(True)
 
-    def reject(self):
+    def _begin_pending_close(self) -> bool:
+        """还有后台查找时先取消，等全部退出后再真正关闭。"""
+        running = self.running_workers()
+        if not running:
+            return False
+        if self._pending_close:
+            return True
+        self._pending_close = True
         self._closing = True
-        if self._worker is not None and self._worker.isRunning():
-            self._worker.request_cancel()
+        self._search_seq += 1
+        self._stale = True
+        self._searching = False
+        for worker in running:
+            worker.request_cancel()
+        self.btn_find.setEnabled(False)
+        self.instruction_edit.setEnabled(False)
+        self.btn_apply.setEnabled(False)
+        self.btn_answer.setEnabled(False)
+        self.question_combo.setEnabled(False)
+        self.summary_label.setText("正在停止后台查找…")
+        self.hint.setText("正在停止后台查找；等它们退出后窗口会自动关闭。")
+        return True
+
+    def reject(self):
+        if self._begin_pending_close():
+            return
+        self._closing = True
         super().reject()
 
     def closeEvent(self, event):
+        if self._begin_pending_close():
+            event.ignore()
+            return
         self._closing = True
-        if self._worker is not None and self._worker.isRunning():
-            self._worker.request_cancel()
         super().closeEvent(event)

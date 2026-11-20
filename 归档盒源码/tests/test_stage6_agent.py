@@ -204,6 +204,76 @@ def set_manual_protect(win, path):
     process(0.1)
 
 
+def cancel_race_case(root, order):
+    """两次查找途中取消；按指定顺序放行，返回可断言的结果。"""
+    before = snapshot(root)
+    win = open_window(root)
+    win.on_agent()
+    dlg = win._agent_dialog
+    gates = []
+    entered = []
+    real_run_agent = agent.run_agent
+
+    def slow_run_agent(*args, **kwargs):
+        index = len(gates)
+        gates.append(threading.Event())
+        entered.append(threading.Event())
+        entered[index].set()
+        gates[index].wait(20)
+        return real_run_agent(*args, **kwargs)
+
+    agent.run_agent = slow_run_agent
+    try:
+        dlg.set_instruction("帮我找这学期的数据结构实验报告")
+        dlg.start_search()
+        assert wait_until(lambda: len(entered) >= 1 and entered[0].is_set(), 10)
+        set_manual_protect(win, os.path.join(root, "大二上/受保护的实验"))
+        dlg.set_instruction("帮我找这学期的数据结构实验报告")
+        dlg.start_search()
+        assert wait_until(lambda: len(entered) >= 2 and entered[1].is_set(), 10)
+
+        dlg.reject()
+        if order == "old_first":
+            gates[0].set()
+            wait_until(lambda: len(getattr(dlg, "_workers", [])) == 1, 20)
+        else:
+            gates[1].set()
+            wait_until(lambda: len(getattr(dlg, "_workers", [])) == 1, 20)
+        old_result_none = dlg.result is None
+        if order == "old_first":
+            gates[1].set()
+        else:
+            gates[0].set()
+
+        closed = wait_until(lambda: win._agent_dialog is None, 30)
+        after = snapshot(root)
+        batch_count = len(batches(root))
+
+        # 重新打开管家，按最新保护设置应仍能出正常方案。
+        win.on_agent()
+        new_dlg = win._agent_dialog
+        new_dlg.set_instruction("帮我找这学期的数据结构实验报告")
+        new_dlg.start_search()
+        wait_until(lambda: new_dlg._searching is False, 90)
+        reopen_rels = [item.file.rel_path for item in
+                       (new_dlg.result.plan.items
+                        if new_dlg.result and new_dlg.result.plan else [])]
+        new_dlg.reject()
+        process(0.05)
+        return {
+            "closed": closed,
+            "old_result_none": old_result_none,
+            "snapshot_same": after == before,
+            "batch_count": batch_count,
+            "reopen_rels": reopen_rels,
+        }
+    finally:
+        agent.run_agent = real_run_agent
+        for gate in gates:
+            gate.set()
+        close_window(win)
+
+
 def batches(root):
     storage = Storage(root)
     try:
@@ -796,6 +866,27 @@ def main():
     fdlg.reject()
     process(0.05)
     close_window(fwin)
+
+    # ---------------- 11. 两次查找中取消：旧/新先结束都不能销毁仍在跑的窗口 ----------------
+    for order, tid in (("old_first", "S637"), ("new_first", "S638")):
+        race_root = space(f"cancel_race_{order}")
+        for rel in ("大二上/数据结构/实验/报告", "大二上/待整理",
+                    "大二上/受保护的实验"):
+            os.makedirs(os.path.join(race_root, rel), exist_ok=True)
+        race_normal = "大二上/待整理/数据结构实验报告.md"
+        race_protected = "大二上/受保护的实验/数据结构实验报告.md"
+        write(race_root, race_normal, "数据结构 实验 普通报告\n")
+        write(race_root, race_protected, "数据结构 实验 受保护报告\n")
+        case = cancel_race_case(race_root, order)
+        rec(tid,
+            ("旧查找先结束" if order == "old_first" else "新查找先结束")
+            + "时程序不崩溃，旧结果不回，取消后还能按最新保护重新出方案",
+            case["closed"] and case["old_result_none"]
+            and case["snapshot_same"] and case["batch_count"] == 0
+            and case["reopen_rels"] == [race_normal],
+            f"窗口已关={case['closed']} 旧结果为空={case['old_result_none']} "
+            f"文件一致={case['snapshot_same']} 历史={case['batch_count']} "
+            f"重开方案={case['reopen_rels']}")
 
     # ---------------- 汇总 ----------------
     failed = [c for c in CHECKS if not c[2]]

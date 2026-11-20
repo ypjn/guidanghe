@@ -6645,7 +6645,11 @@ class MainWindow(QMainWindow):
         ]
         agent_dialog = getattr(self, "_agent_dialog", None)
         if agent_dialog is not None:
-            candidates.append(getattr(agent_dialog, "_worker", None))
+            getter = getattr(agent_dialog, "running_workers", None)
+            if callable(getter):
+                candidates.extend(getter())
+            else:
+                candidates.append(getattr(agent_dialog, "_worker", None))
         candidates.extend(getattr(self, "_plan_workers", []) or [])
         candidates.extend(getattr(self, "_rule_preview_workers", []) or [])
         out, seen = [], set()
