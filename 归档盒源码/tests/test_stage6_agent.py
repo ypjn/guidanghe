@@ -487,13 +487,14 @@ def main():
 
     # ---------------- 6. 手动保护目录：AI 管家与普通扫描一致 ----------------
     protect_root = space("manual_protect")
-    for rel in ("大二上/数据结构/实验/报告", "大二上/待整理", "受保护的实验"):
+    for rel in ("大二上/数据结构/实验/报告", "大二上/待整理",
+                "大二上/受保护的实验"):
         os.makedirs(os.path.join(protect_root, rel), exist_ok=True)
     normal_rel = "大二上/待整理/数据结构实验报告.md"
-    protected_rel = "受保护的实验/数据结构实验报告.md"
+    protected_rel = "大二上/受保护的实验/数据结构实验报告.md"
     write(protect_root, normal_rel, "数据结构 实验 正常报告\n")
     write(protect_root, protected_rel, "数据结构 实验 受保护报告\n")
-    save_manual_protect(protect_root, ["受保护的实验"])
+    save_manual_protect(protect_root, ["大二上/受保护的实验"])
     before_protect = snapshot(protect_root)
     protected_sha = sha256(os.path.join(protect_root, protected_rel))
 

@@ -17,7 +17,7 @@ This plugin does not support propagateSizeHints()
 状态：待确认
 触发条件：文件名关键词：归档盒课程项目第
 建议去向：项目 / 归档盒课程项目
-适用范围：当前整理空间（/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage5_learning__5oe_vvf/learning）
+适用范围：当前整理空间（/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage5_learning_dxx168bx/learning）
 来源样本：
   - 归档盒课程项目第1次.txt → _已整理/项目/归档盒课程项目
   - 归档盒课程项目第2次.txt → _已整理/项目/归档盒课程项目
@@ -32,7 +32,7 @@ This plugin does not support propagateSizeHints()
 整空间=状态：暂不可确认
 触发条件：整个整理空间（无法用文件名关键词或目录范围明确）
 建议去向：项目 / 整空间
-适用范围：当前整理空间（/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage5_learning__5oe_vvf/learning）
+适用范围：当前整理空间（/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage5_learning_dxx168bx/learning）
 来源样本：
   - 深/alpha.txt → _已整理/项目/整空间
   - 远/beta.txt → _已整理/项目/整空间
@@ -44,7 +44,7 @@ This plugin does not support propagateSizeHints()
 相似样本=状态：暂不可确认
 触发条件：文件名关键词：相似样本_周报
 建议去向：项目 / 相似去向
-适用范围：当前整理空间（/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage5_learning__5oe_vvf/learning）
+适用范围：当前整理空间（/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage5_learning_dxx168bx/learning）
 来源样本：
   - 相似样本_周报1.txt → _已整理/项目/相似去向
   - 相似样本_周报2.txt → _已整理/项目/相似去向
@@ -57,7 +57,7 @@ This plugin does not support propagateSizeHints()
 状态：条件冲突（不可确认）
 触发条件：文件名关键词：冲突样本_记录
 建议去向：项目 / 冲突A
-适用范围：当前整理空间（/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage5_learning__5oe_vvf/learning）
+适用范围：当前整理空间（/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage5_learning_dxx168bx/learning）
 来源样本：
   - 冲突样本_记录1.txt → _已整理/项目/冲突A
   - 冲突样本_记录2.txt → _已整理/项目/冲突A
@@ -68,12 +68,12 @@ This plugin does not support propagateSizeHints()
 说明：同一条件会命中不同去向，按冲突展示；不会静默取第一条，也不会写入偏好。
 [PASS] S508 「跳过，保持原位」重启后仍可读回，且被显示为相反证据而不是样本
 跳过=[('相似样本_周报草稿.txt', True)]
-相反证据=[{'source_rel': '相似样本_周报草稿.txt', 'reason': '同一条件会命中「保持原位」', 'feedback_id': 'fb-86adcfc089c8b84c'}]
+相反证据=[{'source_rel': '相似样本_周报草稿.txt', 'reason': '同一条件会命中「保持原位」', 'feedback_id': 'fb-91be5a5125a52db8'}]
 [PASS] S509 未确认候选时，评分样本预览与阶段四基线一致（命中文件仍不是候选去向）
 阶段四基线={'评分样本/冲突样本_记录9.txt': '_已整理/待定/评分样本/冲突样本_记录9.txt', '评分样本/同名A/笔记.txt': '_已整理/待定/评分样本/同名A/笔记.txt', '评分样本/同名B/笔记.txt': '_已整理/待定/评分样本/同名B/笔记.txt', '评分样本/周报/weekA.txt': '_已整理/校园事务/周报/文档/weekA.txt', '评分样本/周报/weekB.txt': '_已整理/校园事务/周报/文档/weekB.txt', '评分样本/归档盒课程项目第4次.txt': '_已整理/待定/评分样本/归档盒课程项目第4次.txt', '评分样本/归档盒课程项目草稿.txt': '_已整理/待定/评分样本/归档盒课程项目草稿.txt'}
 [PASS] S510 确认后下一次预览采用偏好；文件仍未移动；同一候选确认两次只有一行偏好
 偏好 0→1→1
-候选状态=confirmed preference_id=lc-b68cebeeabe8260e
+候选状态=confirmed preference_id=lc-556133b0c0cb3014
 文件仍在=True
 确认后预览={'冲突样本_记录1.txt': '_已整理/待定/冲突样本_记录1.txt', '冲突样本_记录2.txt': '_已整理/待定/冲突样本_记录2.txt', '冲突样本_记录3.txt': '_已整理/待定/冲突样本_记录3.txt', '同名A/笔记.txt': '_已整理/课程/未识别学期/离散数学/文档/笔记.txt', '同名B/笔记.txt': '_已整理/课程/未识别学期/大学英语/文档/笔记.txt', '周报/week1.txt': '_已整理/校园事务/周报/文档/week1.txt', '周报/week2.txt': '_已整理/校园事务/周报/文档/week2.txt', '归档盒课程项目第1次.txt': '_已整理/项目/归档盒课程项目/归档盒课程项目第1次.txt', '归档盒课程项目第2次.txt': '_已整理/项目/归档盒课程项目/归档盒课程项目第2次.txt', '归档盒课程项目第3次.md': '_已整理/项目/归档盒课程项目/归档盒课程项目第3次.md', '深/alpha.txt': '_已整理/待定/深/alpha.txt', '相似样本_周报1.txt': '_已整理/校园事务/周报/文档/相似样本_周报1.txt', '相似样本_周报2.txt': '_已整理/校园事务/周报/文档/相似样本_周报2.txt', '相似样本_周报草稿.txt': '_已整理/校园事务/周报/文档/相似样本_周报草稿.txt', '评分样本/冲突样本_记录9.txt': '_已整理/待定/评分样本/冲突样本_记录9.txt', '评分样本/同名A/笔记.txt': '_已整理/待定/评分样本/同名A/笔记.txt', '评分样本/同名B/笔记.txt': '_已整理/待定/评分样本/同名B/笔记.txt', '评分样本/周报/weekA.txt': '_已整理/校园事务/周报/文档/weekA.txt', '评分样本/周报/weekB.txt': '_已整理/校园事务/周报/文档/weekB.txt', '评分样本/归档盒课程项目第4次.txt': '_已整理/项目/归档盒课程项目/归档盒课程项目第4次.txt', '评分样本/归档盒课程项目草稿.txt': '_已整理/待定/评分样本/归档盒课程项目草稿.txt', '远/beta.txt': '_已整理/待定/远/beta.txt'}
 [PASS] S511 评分空间：被候选命中的新文件变为 correct，人工改单次数下降；未命中文件逐文件与基线相同
@@ -89,7 +89,7 @@ This plugin does not support propagateSizeHints()
 改单次数：阶段四需 1 → 阶段五 0
 第三空间一致=True {'归档盒课程项目第5次.txt': '_已整理/待定/归档盒课程项目第5次.txt'}
 [PASS] S512 确认范围默认是当前空间；另一空间预览保持不变
-空间偏好=[('lc-b68cebeeabe8260e', 'space')] 全局已有=False 第三空间一致=True
+空间偏好=[('lc-556133b0c0cb3014', 'space')] 全局已有=False 第三空间一致=True
 [PASS] S513 只有显式选择全局时，另一空间的相同文件才发生变化
 全局确认前=_已整理/待定/全局学习第9次.txt 确认后=_已整理/项目/全局学习/全局学习第9次.txt
 [PASS] S514 拒绝后重启、重复导入相同证据，候选仍被拒绝且预览回到拒绝前基线

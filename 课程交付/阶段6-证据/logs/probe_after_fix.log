@@ -1,0 +1,15 @@
+qt.qpa.fonts: Populating font family aliases took 47 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+A_PROTECT_PLAN ['大二上/待整理/数据结构实验报告.md']
+A_PROTECT_HAS_PROTECTED False
+B_QUESTION ('semester_missing', '整理空间里没有「大一上」目录，只有：大二上。要改成在这些范围里找吗？确认后才会生成方案：')
+B_PLAN []
+C_PLAN ['大二上/待整理/数据结构实验代码.py', '大二上/待整理/数据结构实验报告.md']
+C_HAS_NOTES False

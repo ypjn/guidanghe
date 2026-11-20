@@ -416,14 +416,30 @@ def _requested_kinds(instruction: str) -> List[str]:
     return kinds
 
 
+def _normalize_protect_dirs(protect_dirs: Optional[Sequence]) -> List[Tuple[str, str, str]]:
+    """统一保护目录为真实绝对路径，避免 /var 与 /private/var 前缀不一致。"""
+    out: List[Tuple[str, str, str]] = []
+    for item in protect_dirs or []:
+        if isinstance(item, (tuple, list)):
+            path = item[0] if item else ""
+            kind = item[1] if len(item) > 1 and item[1] else "manual"
+            label = item[2] if len(item) > 2 and item[2] else "用户手动保护"
+        else:
+            path, kind, label = item, "manual", "用户手动保护"
+        if not path:
+            continue
+        out.append((
+            os.path.realpath(os.path.abspath(str(path))),
+            str(kind),
+            str(label),
+        ))
+    return out
+
+
 def _protected_roots(protect_dirs: Optional[Sequence]) -> List[str]:
     """把 scan_directory 的保护参数统一成真实绝对路径。"""
-    out = []
-    for item in protect_dirs or []:
-        path = item[0] if isinstance(item, (tuple, list)) else item
-        if path:
-            out.append(os.path.realpath(os.path.abspath(str(path))))
-    return out
+    return [path for path, _kind, _label in
+            _normalize_protect_dirs(protect_dirs)]
 
 
 def _is_within_path(path: str, parent: str) -> bool:
@@ -711,6 +727,7 @@ def run_agent(root: str, instruction: str,
         raise ValueError("请先输入一句要查找或整理的话")
     if not os.path.isdir(root):
         raise ValueError("整理空间不存在，请重新选择文件夹")
+    protect_specs = _normalize_protect_dirs(protect_dirs)
 
     semester, question = _resolve_semester(
         root, instruction, semester_choice, now)
@@ -733,7 +750,7 @@ def run_agent(root: str, instruction: str,
         scan_progress = None
         if progress_cb is not None:
             scan_progress = lambda cur, name: progress_cb(cur, 0, name)
-        scan = scan_directory(root, protect_dirs=list(protect_dirs or []),
+        scan = scan_directory(root, protect_dirs=protect_specs,
                               cancel_event=cancel_event,
                               progress_cb=scan_progress)
     if texts is None:
@@ -771,7 +788,7 @@ def run_agent(root: str, instruction: str,
                 []),
             semester=semester, course=None)
 
-    dirs = _discover_existing_dirs(root, protect_dirs)
+    dirs = _discover_existing_dirs(root, protect_specs)
     hits = _find_hits(scan, texts, aliases, course, semester,
                       instruction, dirs, now)
     if not hits:
