@@ -33,6 +33,7 @@ from PySide6.QtWidgets import QApplication, QDialog, QMessageBox  # noqa: E402
 
 import agent  # noqa: E402
 import main as main_mod  # noqa: E402
+from protect_config import save_manual_protect  # noqa: E402
 from storage import Storage  # noqa: E402
 
 APP = QApplication.instance() or QApplication([])
@@ -483,6 +484,157 @@ def main():
     sdlg.reject()
     process(0.05)
     close_window(swin)
+
+    # ---------------- 6. 手动保护目录：AI 管家与普通扫描一致 ----------------
+    protect_root = space("manual_protect")
+    for rel in ("大二上/数据结构/实验/报告", "大二上/待整理", "受保护的实验"):
+        os.makedirs(os.path.join(protect_root, rel), exist_ok=True)
+    normal_rel = "大二上/待整理/数据结构实验报告.md"
+    protected_rel = "受保护的实验/数据结构实验报告.md"
+    write(protect_root, normal_rel, "数据结构 实验 正常报告\n")
+    write(protect_root, protected_rel, "数据结构 实验 受保护报告\n")
+    save_manual_protect(protect_root, ["受保护的实验"])
+    before_protect = snapshot(protect_root)
+    protected_sha = sha256(os.path.join(protect_root, protected_rel))
+
+    pwin = open_window(protect_root)
+    pdlg = ask(pwin, "帮我找这学期的数据结构实验报告")
+    protected_hits = [hit for hit in pdlg.result.hits
+                      if "受保护的实验" in hit.file.rel_path]
+    rec("S620",
+        "手动保护目录里的报告不进入查找结果和方案",
+        pdlg.result.question is None and pdlg.result.plan is not None
+        and len(pdlg.result.plan.items) == 1
+        and pdlg.result.plan.items[0].file.rel_path == normal_rel
+        and not protected_hits,
+        f"方案={[(i.file.rel_path, i.target_rel_path) for i in (pdlg.result.plan.items if pdlg.result.plan else [])]} "
+        f"受保护命中={[h.file.rel_path for h in protected_hits]}")
+
+    pdlg.apply_plan()
+    process(0.05)
+    confirm(pwin, True)
+    process(0.1)
+    normal_target = os.path.join(
+        protect_root, "大二上/数据结构/实验/报告/数据结构实验报告.md")
+    p_batches = batches(protect_root)
+    p_actions = actions(protect_root, p_batches[-1].batch_id) if p_batches else []
+    rec("S621",
+        "确认整理后只移动正常报告，受保护报告留在原位，历史里没有它的移动记录",
+        os.path.isfile(normal_target)
+        and os.path.isfile(os.path.join(protect_root, protected_rel))
+        and sha256(os.path.join(protect_root, protected_rel)) == protected_sha
+        and len(p_actions) == 1
+        and p_actions[0].source_rel == normal_rel
+        and not any("受保护的实验" in a.source_rel for a in p_actions),
+        f"正常目标={os.path.isfile(normal_target)} "
+        f"受保护仍在={os.path.isfile(os.path.join(protect_root, protected_rel))} "
+        f"动作={[(a.source_rel, a.target_rel, a.status) for a in p_actions]}")
+
+    pwin.on_undo()
+    wait_until(lambda: not pwin._working and not pwin._plan_working, 60)
+    process(0.05)
+    rec("S622",
+        "撤销只恢复正常报告，受保护目录始终未被触碰",
+        os.path.isfile(os.path.join(protect_root, normal_rel))
+        and not os.path.exists(normal_target)
+        and snapshot(protect_root) == before_protect,
+        f"撤销后一致={snapshot(protect_root) == before_protect}")
+    close_window(pwin)
+
+    # ---------------- 7. 指定学期不存在：先告知并确认，不拿别的学期顶替 ----------------
+    sem_root = space("missing_semester")
+    for rel in ("大二上/数据结构/实验/报告", "大二上/待整理"):
+        os.makedirs(os.path.join(sem_root, rel), exist_ok=True)
+    write(sem_root, "大二上/待整理/数据结构实验报告.md", "数据结构 实验 报告\n")
+    sem_before = snapshot(sem_root)
+
+    mwin = open_window(sem_root)
+    mdlg = ask(mwin, "帮我找大一上的数据结构实验报告")
+    rec("S623",
+        "指定「大一上」但空间只有「大二上」时，先说明并提问，不出方案",
+        mdlg.result.question is not None
+        and mdlg.result.question.kind == "semester_missing"
+        and mdlg.result.plan is None
+        and "大一上" in mdlg.result.question.text
+        and "大二上" in mdlg.result.question.text
+        and not mdlg.btn_apply.isEnabled(),
+        f"问题={mdlg.result.question.text if mdlg.result.question else None} "
+        f"选项={[o['value'] for o in (mdlg.result.question.options if mdlg.result.question else [])]}")
+
+    choose(mdlg, "大二上")
+    rec("S624",
+        "用户确认改在「大二上」后，才生成指向该学期的方案",
+        mdlg.result.question is None and mdlg.result.plan is not None
+        and len(mdlg.result.plan.items) == 1
+        and mdlg.result.plan.items[0].target_dir_rel.replace("\\", "/")
+        == "大二上/数据结构/实验/报告",
+        f"方案={[(i.file.rel_path, i.target_rel_path) for i in (mdlg.result.plan.items if mdlg.result.plan else [])]}")
+
+    mdlg.reject()
+    process(0.05)
+    rec("S625",
+        "未确认前取消，指定学期场景也不移动文件、不写历史",
+        mwin.current_plan is None and snapshot(sem_root) == sem_before
+        and len(batches(sem_root)) == 0,
+        f"当前计划={mwin.current_plan} 历史={len(batches(sem_root))}")
+    close_window(mwin)
+
+    # ---------------- 8. 实验材料：复习笔记不默认搬进实验目录 ----------------
+    notes_root = space("experiment_vs_notes")
+    for rel in ("大二上/数据结构/实验/报告", "大二上/数据结构/实验/代码",
+                "大二上/数据结构/复习", "大二上/待整理"):
+        os.makedirs(os.path.join(notes_root, rel), exist_ok=True)
+    report_rel = "大二上/待整理/数据结构实验报告.md"
+    code_rel = "大二上/待整理/数据结构实验代码.py"
+    notes_rel = "大二上/待整理/数据结构期末复习笔记.md"
+    write(notes_root, report_rel, "数据结构 实验 链表 实验报告\n")
+    write(notes_root, code_rel, "# 数据结构 实验 链表\ndef build():\n    return []\n")
+    write(notes_root, notes_rel, "数据结构 期末复习 笔记；往年实验题整理\n")
+    notes_before = snapshot(notes_root)
+    notes_sha = sha256(os.path.join(notes_root, notes_rel))
+
+    nwin = open_window(notes_root)
+    ndlg = ask(nwin, "帮我找数据结构的实验材料")
+    plan_rels = ([item.file.rel_path for item in ndlg.result.plan.items]
+                 if ndlg.result.plan else [])
+    note_hits = [hit for hit in ndlg.result.hits
+                 if hit.file.rel_path == notes_rel]
+    rec("S626",
+        "「实验材料」只把实验报告和实验代码放进方案；复习笔记标为归属不确定",
+        ndlg.result.question is None and set(plan_rels) == {report_rel, code_rel}
+        and len(plan_rels) == 2
+        and note_hits and note_hits[0].uncertain
+        and notes_rel not in plan_rels
+        and "归属不确定" in note_hits[0].evidence,
+        f"方案={plan_rels} 笔记命中={[(h.uncertain, h.evidence) for h in note_hits]}")
+
+    ndlg.apply_plan()
+    process(0.05)
+    confirm(nwin, True)
+    process(0.1)
+    n_batches = batches(notes_root)
+    n_actions = actions(notes_root, n_batches[-1].batch_id) if n_batches else []
+    rec("S627",
+        "确认整理后报告和代码移动，复习笔记留在原位，历史只记录两项",
+        os.path.isfile(os.path.join(
+            notes_root, "大二上/数据结构/实验/报告/数据结构实验报告.md"))
+        and os.path.isfile(os.path.join(
+            notes_root, "大二上/数据结构/实验/代码/数据结构实验代码.py"))
+        and os.path.isfile(os.path.join(notes_root, notes_rel))
+        and sha256(os.path.join(notes_root, notes_rel)) == notes_sha
+        and len(n_actions) == 2
+        and not any(a.source_rel == notes_rel for a in n_actions),
+        f"动作={[(a.source_rel, a.target_rel, a.status) for a in n_actions]} "
+        f"笔记仍在={os.path.isfile(os.path.join(notes_root, notes_rel))}")
+
+    nwin.on_undo()
+    wait_until(lambda: not nwin._working and not nwin._plan_working, 60)
+    process(0.05)
+    rec("S628",
+        "撤销后报告和代码回原位，复习笔记内容与位置始终未变",
+        snapshot(notes_root) == notes_before,
+        f"撤销后一致={snapshot(notes_root) == notes_before}")
+    close_window(nwin)
 
     # ---------------- 汇总 ----------------
     failed = [c for c in CHECKS if not c[2]]

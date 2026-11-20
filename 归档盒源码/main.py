@@ -3269,7 +3269,10 @@ class MainWindow(QMainWindow):
             self._agent_dialog.raise_()
             self._agent_dialog.activateWindow()
             return
-        dlg = AgentDialog(self, root, parent=self)
+        # 与普通扫描使用同一套保护规则：默认保护源码目录 + 用户手动保护目录
+        protect = [(DEFAULT_PROTECT_APP_SRC, "default", "默认保护（归档盒源码）")]
+        protect.extend(manual_scan_specs(root, self.manual_protect))
+        dlg = AgentDialog(self, root, protect, parent=self)
         dlg.finished.connect(lambda _=0, d=dlg: self._clear_agent_dialog_ref(d))
         self._agent_dialog = dlg
         dlg.show()

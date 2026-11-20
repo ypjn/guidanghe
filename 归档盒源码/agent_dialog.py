@@ -36,10 +36,12 @@ class AgentWorker(QThread):
     failed = Signal(str)
     progress = Signal(int, int, str)
 
-    def __init__(self, root: str, instruction: str, parent=None):
+    def __init__(self, root: str, instruction: str,
+                 protect_dirs=None, parent=None):
         super().__init__(parent)
         self.root = root
         self.instruction = instruction
+        self.protect_dirs = list(protect_dirs or [])
         self.cancel_event = threading.Event()
 
     def request_cancel(self):
@@ -50,6 +52,7 @@ class AgentWorker(QThread):
             result = agent.run_agent(
                 self.root,
                 self.instruction,
+                protect_dirs=self.protect_dirs,
                 progress_cb=lambda cur, total, name: self.progress.emit(
                     cur, total, name),
                 cancel_event=self.cancel_event,
@@ -64,10 +67,11 @@ class AgentWorker(QThread):
 class AgentDialog(QDialog):
     """非模态：主窗口仍可查看，但查找结果不会直接移动文件。"""
 
-    def __init__(self, main_window, root: str, parent=None):
+    def __init__(self, main_window, root: str, protect_dirs=None, parent=None):
         super().__init__(parent or main_window)
         self.main_window = main_window
         self.root = root
+        self.protect_dirs = list(protect_dirs or [])
         self.result: agent.AgentResult | None = None
         self._worker: AgentWorker | None = None
         self._searching = False
@@ -200,7 +204,7 @@ class AgentDialog(QDialog):
         self._course_choice = None
         self._searching = True
         self._set_busy(True, "正在扫描并查找相关文件……")
-        worker = AgentWorker(self.root, instruction, self)
+        worker = AgentWorker(self.root, instruction, self.protect_dirs, self)
         self._worker = worker
         worker.progress.connect(self._on_progress)
         worker.done.connect(self._on_done)
@@ -282,6 +286,8 @@ class AgentDialog(QDialog):
         for row, hit in enumerate(result.hits):
             if hit.already:
                 status = "已在目标目录"
+            elif hit.uncertain:
+                status = "归属不确定，保持原位"
             elif hit.conflict:
                 status = "目标同名，将改名"
             else:
@@ -327,7 +333,7 @@ class AgentDialog(QDialog):
             return
         value = self.question_combo.currentData()
         kind = self.result.question.kind
-        if kind == "semester":
+        if kind in ("semester", "semester_missing"):
             self._semester_choice = value
         elif kind == "course":
             self._course_choice = value
@@ -344,6 +350,7 @@ class AgentDialog(QDialog):
                 texts=self.result.texts,
                 semester_choice=self._semester_choice,
                 course_choice=self._course_choice,
+                protect_dirs=self.protect_dirs,
             )
         except Exception as exc:
             QMessageBox.warning(self, "AI 管家", f"重新生成方案失败：\n{exc}")

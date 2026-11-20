@@ -20,6 +20,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from classification_config import (
     DEFAULT_KEYWORD_TO_COURSE,
+    DEFAULT_SEMESTER_MAP,
     default_config,
     load_config,
 )
@@ -57,6 +58,9 @@ DOMAIN_TERMS = (
     "源码", "程序", "文档", "习题", "期末", "期中", "项目",
 )
 
+# 用户没有点名这些用途时，命中它们只能算「归属不确定」，不能默认搬走。
+NEGATIVE_TERMS = ("复习", "笔记", "习题", "答案", "提纲", "总结", "往年")
+
 REPORT_ALIASES = ("报告", "文档", "实验报告", "report", "docs", "doc")
 CODE_ALIASES = ("代码", "源码", "程序", "实现", "code", "src", "source")
 
@@ -89,6 +93,7 @@ class AgentHit:
     target_rel_path: str = ""
     conflict: bool = False
     already: bool = False          # 已经在目标目录，不需要移动
+    uncertain: bool = False        # 归属不确定，只展示、不默认进方案
 
 
 @dataclass
@@ -127,6 +132,20 @@ def discover_semesters(root: str) -> List[str]:
     return [name for name in _list_dirs(root) if SEMESTER_RE.match(name)]
 
 
+def _known_semester_labels(root: str) -> List[str]:
+    """用户可能说出口的学期名，不要求目录真的存在。"""
+    labels = set(DEFAULT_SEMESTER_MAP.values())
+    try:
+        config, _source = load_config(root)
+    except Exception:
+        config = default_config()
+    for rule in getattr(config, "semester_rules", []) or []:
+        if getattr(rule, "enabled", True):
+            labels.add(rule.source)
+            labels.add(rule.semester)
+    return sorted(labels, key=len, reverse=True)
+
+
 def _term_window(now: Optional[_dt.datetime] = None) -> Tuple[_dt.datetime, _dt.datetime, str]:
     """当前学期的大致时间窗，用于没有学期目录时按修改时间筛选。"""
     now = now or _dt.datetime.now()
@@ -163,13 +182,53 @@ def _resolve_semester(root: str, instruction: str,
                       ) -> Tuple[Optional[str], Optional[AgentQuestion]]:
     """返回学期值（目录名 / __date__ / None）或澄清问题。"""
     available = discover_semesters(root)
-    explicit = next((name for name in available if name in instruction), "")
+    known = _known_semester_labels(root)
+    explicit = next((name for name in known if name in instruction), "")
     if choice == "__all__":
         return None, None
     if choice:
         return choice, None
     if explicit:
-        return explicit, None
+        if explicit in available:
+            return explicit, None
+        # 用户明确说了某个学期，但空间里没有这个目录：先问，不拿别的学期顶替。
+        options = []
+        for name in available:
+            count = sum(1 for _dirpath, _dirnames, files in
+                        os.walk(os.path.join(root, name))
+                        for fname in files if not fname.startswith("."))
+            options.append({
+                "value": name,
+                "label": f"改在「{name}」里找",
+                "detail": f"这个学期目录下有 {count} 个文件",
+            })
+        if available:
+            options.append({
+                "value": "__all__",
+                "label": "不限学期",
+                "detail": "在整理空间的所有学期目录里查找",
+            })
+            hint = f"，只有：{'、'.join(available)}"
+        else:
+            options = [
+                {
+                    "value": "__date__",
+                    "label": "按当前学期的时间范围查找",
+                    "detail": "按文件修改时间筛选当前学期",
+                },
+                {
+                    "value": "__all__",
+                    "label": "不限学期",
+                    "detail": "在整理空间的所有文件里查找",
+                },
+            ]
+            hint = "，当前也没有可用的学期目录"
+        return None, AgentQuestion(
+            "semester_missing",
+            f"整理空间里没有「{explicit}」目录{hint}。"
+            "要改成在这些范围里找吗？确认后才会生成方案：",
+            options,
+        )
 
     mentions_current = any(word in instruction for word in
                            ("这学期", "本学期", "当前学期"))
@@ -357,15 +416,41 @@ def _requested_kinds(instruction: str) -> List[str]:
     return kinds
 
 
+def _protected_roots(protect_dirs: Optional[Sequence]) -> List[str]:
+    """把 scan_directory 的保护参数统一成真实绝对路径。"""
+    out = []
+    for item in protect_dirs or []:
+        path = item[0] if isinstance(item, (tuple, list)) else item
+        if path:
+            out.append(os.path.realpath(os.path.abspath(str(path))))
+    return out
+
+
+def _is_within_path(path: str, parent: str) -> bool:
+    try:
+        return os.path.commonpath(
+            [os.path.realpath(os.path.abspath(path)), parent]) == parent
+    except ValueError:
+        return False
+
+
 def _discover_existing_dirs(root: str,
+                            protect_dirs: Optional[Sequence] = None,
                             limit: int = 4000) -> List[str]:
-    """收集整理空间内已存在的目录相对路径，跳过保留目录与隐藏目录。"""
+    """收集整理空间内已存在的目录相对路径，跳过保留目录、隐藏目录与保护目录。"""
     out: List[str] = []
     root_abs = os.path.abspath(root)
+    protected = _protected_roots(protect_dirs)
     for dirpath, dirnames, _ in os.walk(root_abs):
-        dirnames[:] = sorted(
-            name for name in dirnames
-            if not name.startswith(".") and name not in SKIP_DIR_NAMES)
+        keep = []
+        for name in dirnames:
+            if name.startswith(".") or name in SKIP_DIR_NAMES:
+                continue
+            full = os.path.join(dirpath, name)
+            if any(_is_within_path(full, p) for p in protected):
+                continue
+            keep.append(name)
+        dirnames[:] = sorted(keep)
         rel = os.path.relpath(dirpath, root_abs)
         if rel in (".", ""):
             continue
@@ -446,6 +531,7 @@ def _find_hits(scan: ScanResult, texts: Dict[str, str],
     category_aliases = [a.lower() for a in _aliases_for_category(aliases, course)]
     domain_terms = [term for term in DOMAIN_TERMS if term in instruction]
     requested = _requested_kinds(instruction)
+    experiment_intent = "实验" in instruction
     hits: List[AgentHit] = []
 
     for entry in scan.files:
@@ -454,6 +540,7 @@ def _find_hits(scan: ScanResult, texts: Dict[str, str],
         name = entry.filename.lower()
         rel = entry.rel_path.replace("\\", "/")
         path = rel.lower()
+        name_path = name + " " + path
         content = (texts.get(entry.rel_path) or "").lower()
 
         course_in_name = any(alias in name for alias in category_aliases)
@@ -463,27 +550,43 @@ def _find_hits(scan: ScanResult, texts: Dict[str, str],
             continue
 
         kind = _file_kind(entry)
-        term_hits = [term for term in domain_terms if term in name or term in content]
-        if requested:
-            if kind not in requested:
-                # 指令明确要报告/代码时，不能把另一类也带进来。
-                if not (kind == "other" and term_hits):
-                    continue
-        elif not term_hits and not course_in_name:
-            # 没写类型时，至少要文件名或正文能说明和课程有关。
-            continue
-
         if kind == "other":
             if any(word in name for word in ("报告", "文档")):
                 kind = "report"
             elif any(word in name for word in ("代码", "程序", "源码")):
                 kind = "code"
 
-        target_dir = _choose_target_dir(dirs, semester, course, aliases, kind)
-        if not target_dir:
-            target_dir = _fallback_target(semester, course, entry.file_type)
-        already = (os.path.dirname(rel).replace("\\", "/")
-                   == target_dir.replace("\\", "/"))
+        term_hits = [term for term in domain_terms
+                     if term in name or term in path or term in content]
+        if requested and kind not in requested:
+            # 指令明确要报告/代码时，不能把另一类也默认带进来。
+            if not (kind == "other" and term_hits):
+                continue
+        elif not requested and not term_hits and not course_in_name:
+            # 没写类型时，至少要文件名或正文能说明和课程有关。
+            continue
+
+        # 只按「实验材料」找时，名字/路径没有实验、或明显是复习资料，
+        # 不能默认搬进实验目录；只展示给用户确认。
+        uncertain_reasons = []
+        negative_hits = [term for term in NEGATIVE_TERMS if term in name_path]
+        if negative_hits and not any(term in instruction for term in negative_hits):
+            uncertain_reasons.append("文件名/路径含「" + "」「".join(negative_hits) + "」")
+        if experiment_intent and "实验" not in name_path:
+            uncertain_reasons.append("文件名/路径没有「实验」")
+        if requested and kind not in requested:
+            uncertain_reasons.append("文件类型与本次要求不一致")
+
+        uncertain = bool(uncertain_reasons)
+        if uncertain:
+            target_dir = ""
+        else:
+            target_dir = _choose_target_dir(dirs, semester, course, aliases, kind)
+            if not target_dir:
+                target_dir = _fallback_target(semester, course, entry.file_type)
+        already = bool(target_dir) and (
+            os.path.dirname(rel).replace("\\", "/")
+            == target_dir.replace("\\", "/"))
 
         parts = []
         if course_in_name:
@@ -494,9 +597,11 @@ def _find_hits(scan: ScanResult, texts: Dict[str, str],
         if course_in_content:
             parts.append(f"正文含「{course}」")
         if term_hits:
-            parts.append("正文/文件名含「" + "」「".join(term_hits[:3]) + "」")
+            parts.append("文件名/路径/正文含「" + "」「".join(term_hits[:3]) + "」")
         parts.append(f"类型：{entry.file_type}")
-        if already:
+        if uncertain:
+            parts.append("归属不确定（" + "；".join(uncertain_reasons) + "），保持原位")
+        elif already:
             parts.append("已在目标目录，无需移动")
         else:
             parts.append(f"归入现有目录「{target_dir}」")
@@ -509,12 +614,14 @@ def _find_hits(scan: ScanResult, texts: Dict[str, str],
             evidence="；".join(parts),
             kind=kind,
             target_dir_rel=target_dir,
-            target_rel_path=os.path.join(target_dir, entry.filename),
+            target_rel_path=(os.path.join(target_dir, entry.filename)
+                             if target_dir else ""),
             already=already,
+            uncertain=uncertain,
         ))
 
     hits.sort(key=lambda h: (
-        0 if not h.already else 1,
+        0 if not h.already and not h.uncertain else 1,
         -h.score,
         h.file.rel_path.lower(),
     ))
@@ -588,12 +695,14 @@ def run_agent(root: str, instruction: str,
               texts: Optional[Dict[str, str]] = None,
               semester_choice: Optional[str] = None,
               course_choice: Optional[str] = None,
+              protect_dirs: Optional[Sequence] = None,
               now: Optional[_dt.datetime] = None,
               progress_cb: Optional[Callable[[int, int, str], None]] = None,
               cancel_event=None) -> AgentResult:
     """执行一次自然语言查找并给出方案。
 
     semester_choice / course_choice 是用户回答澄清问题后的选择；
+    protect_dirs 与普通扫描使用同一套手动/默认保护规则；
     传回同一份 scan/texts 时不会重新扫描。
     """
     root = os.path.realpath(os.path.abspath(root))
@@ -624,7 +733,8 @@ def run_agent(root: str, instruction: str,
         scan_progress = None
         if progress_cb is not None:
             scan_progress = lambda cur, name: progress_cb(cur, 0, name)
-        scan = scan_directory(root, cancel_event=cancel_event,
+        scan = scan_directory(root, protect_dirs=list(protect_dirs or []),
+                              cancel_event=cancel_event,
                               progress_cb=scan_progress)
     if texts is None:
         extraction = extract_contents(
@@ -661,7 +771,7 @@ def run_agent(root: str, instruction: str,
                 []),
             semester=semester, course=None)
 
-    dirs = _discover_existing_dirs(root)
+    dirs = _discover_existing_dirs(root, protect_dirs)
     hits = _find_hits(scan, texts, aliases, course, semester,
                       instruction, dirs, now)
     if not hits:
@@ -676,7 +786,7 @@ def run_agent(root: str, instruction: str,
 
     items: List[PlanItem] = []
     for hit in hits:
-        if hit.already:
+        if hit.already or hit.uncertain:
             continue
         items.append(PlanItem(
             file=hit.file,
@@ -699,11 +809,19 @@ def run_agent(root: str, instruction: str,
 
     notes: List[str] = []
     if not items:
+        already_only = any(hit.already for hit in hits)
+        uncertain_only = any(hit.uncertain for hit in hits)
+        if uncertain_only and not already_only:
+            message = "找到的文件归属不确定，已保持原位，没有放入方案。"
+        elif uncertain_only:
+            message = "找到的文件都已在目标目录，或归属不确定，没有需要移动的文件。"
+        else:
+            message = "找到的文件都已经在目标目录里，不需要移动。"
         return AgentResult(
             root, instruction, scan, texts, hits=hits,
             question=None, plan=None,
             semester=semester, course=course,
-            summary="找到的文件都已经在目标目录里，不需要移动。",
+            summary=message,
             notes=notes)
 
     _apply_preference_evidence(root, items, notes)
@@ -728,6 +846,7 @@ def run_agent(root: str, instruction: str,
     plan.ai_note = "；本次按课程关键词与文件名/正文查找，未调用外部模型"
 
     already = sum(1 for hit in hits if hit.already)
+    uncertain = sum(1 for hit in hits if hit.uncertain)
     conflicts = sum(1 for item in items if item.conflict_with_existing)
     reports = sum(1 for item in items if _file_kind(item.file) == "report")
     codes = sum(1 for item in items if _file_kind(item.file) == "code")
@@ -737,6 +856,8 @@ def run_agent(root: str, instruction: str,
     )
     if already:
         summary += f"；{already} 个已在目标目录"
+    if uncertain:
+        summary += f"；{uncertain} 个归属不确定，保持原位"
     if conflicts:
         summary += f"；{conflicts} 个目标同名，将自动改名"
     if notes:

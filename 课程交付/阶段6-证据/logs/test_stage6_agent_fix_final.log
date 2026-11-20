@@ -1,0 +1,86 @@
+qt.qpa.fonts: Populating font family aliases took 47 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+[PASS] S601 一句话找到报告和代码，并解释命中原因；无关课程不进入结果
+学期=大二上 课程=数据结构 命中=[('大二上/待整理/数据结构实验一报告.md', '文件名含「数据结构」；路径含「数据结构」；正文含「数据结构」；文件名/路径/正文含「实验」「报告」；类型：文档；归入现有目录「大二上/数据结构/实验/报告」'), ('大二上/待整理/数据结构实验二报告.md', '文件名含「数据结构」；路径含「数据结构」；正文含「数据结构」；文件名/路径/正文含「实验」「报告」；类型：文档；归入现有目录「大二上/数据结构/实验/报告」'), ('大二上/待整理/线性表实验代码.py', '正文含「数据结构」；文件名/路径/正文含「实验」「代码」；类型：代码；归入现有目录「大二上/数据结构/实验/代码」'), ('大二上/数据结构/实验/报告/数据结构实验二报告.md', '文件名含「数据结构」；路径含「数据结构」；文件名/路径/正文含「实验」「报告」；类型：文档；已在目标目录，无需移动')]
+[PASS] S602 报告与代码分别归入已有的实验报告/代码目录，方案显示源和目标
+目标={'大二上/待整理/数据结构实验一报告.md': '大二上/数据结构/实验/报告/数据结构实验一报告.md', '大二上/待整理/数据结构实验二报告.md': '大二上/数据结构/实验/报告/数据结构实验二报告 (1).md', '大二上/待整理/线性表实验代码.py': '大二上/数据结构/实验/代码/线性表实验代码.py'}
+方案行=3 命中行=4
+[PASS] S603 目标已有同名文件时保留原文件，计划自动改名并标记冲突
+目标=大二上/数据结构/实验/报告/数据结构实验二报告 (1).md 冲突=True
+[PASS] S604 方案进入主界面现有预览，旧确认作废，执行按钮可用
+行数=3 确认版本=None 执行可用=True
+[PASS] S605 方案改动后旧确认失效，必须重新确认最终批次
+确认版本=None
+[PASS] S606 确认后走现有执行入口：文件移动到现有目录，同名文件另存，原文件不动
+报告=True 代码=True 改名=True 原文件SHA不变=True
+[PASS] S607 执行写入可追溯历史：一个批次、三条动作、目标为实际落点
+批次=[(1, 'done')] 动作=[('大二上/待整理/数据结构实验一报告.md', '大二上/数据结构/实验/报告/数据结构实验一报告.md', 'moved'), ('大二上/待整理/数据结构实验二报告.md', '大二上/数据结构/实验/报告/数据结构实验二报告 (1).md', 'moved'), ('大二上/待整理/线性表实验代码.py', '大二上/数据结构/实验/代码/线性表实验代码.py', 'moved')]
+[PASS] S608 从历史撤销后文件回到原位，内容与整理前逐字节一致
+撤销前={'大二上/数据结构/实验/报告/数据结构实验二报告.md': '212597a616611287bf46b949a222429470001cbb6b950c162d2019219de9317e', '大二上/待整理/数据结构实验二报告.md': 'a7f0c1b707387cc5f593e50a9794db2f51e5b787e2cd93189c9309ca08ebe59c', '大二上/待整理/高等数学作业.md': '47c028be20d874ba700938cf1981030f165c7cfb2eb0a11dbd4a5dc16edb5382', '大二上/待整理/线性表实验代码.py': 'c3d07297a9aee189c8040dd334992141dd98210c22b7930350f0fd373d26970e', '大二上/待整理/数据结构实验一报告.md': 'da946b00e710e009412bfb0ff9f3ff189a0407d322e74cbf36a1f830a3983da6'}
+撤销后={'大二上/数据结构/实验/报告/数据结构实验二报告.md': '212597a616611287bf46b949a222429470001cbb6b950c162d2019219de9317e', '大二上/待整理/数据结构实验二报告.md': 'a7f0c1b707387cc5f593e50a9794db2f51e5b787e2cd93189c9309ca08ebe59c', '大二上/待整理/高等数学作业.md': '47c028be20d874ba700938cf1981030f165c7cfb2eb0a11dbd4a5dc16edb5382', '大二上/待整理/线性表实验代码.py': 'c3d07297a9aee189c8040dd334992141dd98210c22b7930350f0fd373d26970e', '大二上/待整理/数据结构实验一报告.md': 'da946b00e710e009412bfb0ff9f3ff189a0407d322e74cbf36a1f830a3983da6'}
+[PASS] S609 撤销后批次状态为已撤销，历史仍保留
+批次=[(1, 'undone')]
+[PASS] S610 「这学期」对应多个学期目录时先提问，不直接生成方案
+问题=semester 选项=['大一下', '大二上', '__all__']
+[PASS] S611 回答学期后仍有多门课程时继续问课程，不猜课程
+问题=course 选项=['数据结构', '操作系统']
+[PASS] S612 回答课程后才生成方案，且只包含该学期该课程的文件
+方案=[('大二上/待整理/数据结构实验报告.md', '大二上/数据结构/实验/报告/数据结构实验报告.md')]
+[PASS] S613 澄清过程中取消不移动文件、不写历史批次
+当前计划=None 历史批次=0 文件一致=True
+[PASS] S614 取消方案后主界面没有新计划，文件位置与内容完全不变
+有方案=True 当前计划=None 文件一致=True
+[PASS] S615 确认前改过的文件执行时被识别为内容变化并跳过，未移动
+报告动作=('skipped', '源文件内容已变化') 报告仍在原处=True
+[PASS] S616 同一批次里未变化的代码正常移动，历史分别记录 moved / skipped
+代码动作=('moved', '大二上/数据结构/实验/代码/数据结构实验代码A.py')
+[PASS] S617 撤销只恢复实际移动的文件；被改过的文件保持用户改后的内容
+代码回原位=True 报告SHA保持改动后=True
+[PASS] S618 主界面 AI 管家入口可打开非模态窗口，并显示输入框与两个结果表
+窗口=AgentDialog 命中列=4 方案列=4
+[PASS] S619 窗口里能读到每个文件的命中理由，并在未确认前禁用应用按钮之外的写操作
+命中行=4 首行理由='文件名含「数据结构」；路径含「数据结构」；正文含「数据结构」；文件名/路径/正文含「实验」「报告」；类型：文档；归入现有目录「大二上/数据结构/实验/报告」'
+[PASS] S620 手动保护目录里的报告不进入查找结果和方案
+方案=[('大二上/待整理/数据结构实验报告.md', '大二上/数据结构/实验/报告/数据结构实验报告.md')] 受保护命中=[]
+[PASS] S621 确认整理后只移动正常报告，受保护报告留在原位，历史里没有它的移动记录
+正常目标=True 受保护仍在=True 动作=[('大二上/待整理/数据结构实验报告.md', '大二上/数据结构/实验/报告/数据结构实验报告.md', 'moved')]
+[PASS] S622 撤销只恢复正常报告，受保护目录始终未被触碰
+撤销后一致=True
+[PASS] S623 指定「大一上」但空间只有「大二上」时，先说明并提问，不出方案
+问题=整理空间里没有「大一上」目录，只有：大二上。要改成在这些范围里找吗？确认后才会生成方案： 选项=['大二上', '__all__']
+[PASS] S624 用户确认改在「大二上」后，才生成指向该学期的方案
+方案=[('大二上/待整理/数据结构实验报告.md', '大二上/数据结构/实验/报告/数据结构实验报告.md')]
+[PASS] S625 未确认前取消，指定学期场景也不移动文件、不写历史
+当前计划=None 历史=0
+[PASS] S626 「实验材料」只把实验报告和实验代码放进方案；复习笔记标为归属不确定
+方案=['大二上/待整理/数据结构实验代码.py', '大二上/待整理/数据结构实验报告.md'] 笔记命中=[(True, '文件名含「数据结构」；路径含「数据结构」；正文含「数据结构」；文件名/路径/正文含「实验」；类型：文档；归属不确定（文件名/路径含「复习」「笔记」；文件名/路径没有「实验」），保持原位')]
+[PASS] S627 确认整理后报告和代码移动，复习笔记留在原位，历史只记录两项
+动作=[('大二上/待整理/数据结构实验代码.py', '大二上/数据结构/实验/代码/数据结构实验代码.py', 'moved'), ('大二上/待整理/数据结构实验报告.md', '大二上/数据结构/实验/报告/数据结构实验报告.md', 'moved')] 笔记仍在=True
+[PASS] S628 撤销后报告和代码回原位，复习笔记内容与位置始终未变
+撤销后一致=True
+
+未实测：真实 DeepSeek 调用、Windows 原生窗口、跨卷移动、NAS/移动端、Mac 系统辅助功能点击。
+合计 28 项：通过 28 / 未通过 0 / 未测 5
+退出码: 0
