@@ -5407,10 +5407,14 @@ class MainWindow(QMainWindow):
         except Exception:
             can_undo = False
         if can_undo:
+            # 多批次时主界面「撤销上一次」总是指向最近批次，不能用来撤旧批次。
+            # 核对窗口明确引导到历史页的指定批次，避免确认框对准别的批次。
             msg += (f"\n如需把批次 #{result.batch_id} 已移动的文件放回原位置，"
-                    "请使用「撤销该批次」（主界面或历史页）。")
+                    f"请在「操作历史」中选中批次 #{result.batch_id}，"
+                    "再点击「撤销该批次」。")
         else:
-            msg += "\n如需把已移动的文件放回原位置，请使用「撤销该批次」。"
+            msg += ("\n如需处理已移动的文件，请在「操作历史」中选中对应批次，"
+                    "再点击「撤销该批次」。")
         QMessageBox.information(self, "归档盒", msg)
         self._refresh_history_if_open()
 

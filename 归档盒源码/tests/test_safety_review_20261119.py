@@ -957,7 +957,11 @@ def t13_ui_wiring():
             and 'attention = "⚠ 需核对" if b.batch_id in self._needs_check'
                 in text
             and "如需把批次 #{result.batch_id} 已移动的文件放回原位置"
-                in text)
+                in text
+            # 多批次时主界面总指向最近批次，核对结果必须引导到历史页指定批次
+            and "请在「操作历史」中选中批次 #{result.batch_id}，"
+                in text
+            and "主界面或历史页" not in text)
     ok_ = a_ok and b_ok and c_ok
     ok("13", "主界面撤销传参、首开按钮刷新、历史/弹窗提示同源", ok_,
        f"撤销按钮不再直连 on_undo 且忽略 clicked(bool)={a_ok}\n"
