@@ -362,6 +362,130 @@ def import_with_concurrent_live(root, history_path, rel, after, category):
     return result, learning.list_feedback(root)
 
 
+_TWO_PROC_USER = r'''
+import os, sys, time
+sys.path.insert(0, os.environ["STAGE5_SRC"])
+import learning
+
+mode = os.environ["STAGE5_MODE"]
+root = os.environ["STAGE5_ROOT"]
+rel = os.environ["STAGE5_REL"]
+gap = os.environ["STAGE5_GAP"]
+release = os.environ["STAGE5_RELEASE"]
+paused = {"done": False}
+
+class CurProxy:
+    def __init__(self, cur, watched):
+        self._cur = cur
+        self._watched = watched
+    def fetchone(self):
+        row = self._cur.fetchone()
+        if self._watched and not paused["done"]:
+            paused["done"] = True
+            with open(gap, "w", encoding="utf-8") as f:
+                f.write("ready")
+            deadline = time.time() + 60
+            while not os.path.exists(release) and time.time() < deadline:
+                time.sleep(0.01)
+        return row
+    def __getattr__(self, name):
+        return getattr(self._cur, name)
+
+class ConnProxy:
+    def __init__(self, conn):
+        self._conn = conn
+    def execute(self, sql, params=()):
+        watched = ("SELECT * FROM learning_feedback WHERE evidence_key"
+                   in sql)
+        return CurProxy(self._conn.execute(sql, params), watched)
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+_orig_open = learning._open
+learning._open = lambda root: ConnProxy(_orig_open(root))
+try:
+    if mode == "override":
+        added = learning.record_override(
+            root, rel, "_已整理/待定", "_已整理/项目/现场目录",
+            "项目", "", "现场类别")
+    else:
+        added = learning.record_skip(root, rel, before_target="_已整理/待定")
+    print("USER_SAVE_OK", added)
+    sys.exit(0)
+except Exception as exc:
+    print("USER_SAVE_ERROR", type(exc).__name__, str(exc))
+    sys.exit(2)
+'''
+
+_TWO_PROC_HISTORY = r'''
+import os, sys
+sys.path.insert(0, os.environ["STAGE5_SRC"])
+import learning
+res = learning.import_history_feedback(
+    os.environ["STAGE5_ROOT"], history_db_path=os.environ["STAGE5_HISTDB"])
+print("HISTORY_IMPORT_OK", res.judgments_added)
+sys.exit(0)
+'''
+
+
+def _run_child(code: str, env: dict) -> subprocess.CompletedProcess:
+    return subprocess.run([sys.executable, "-c", code], capture_output=True,
+                          text=True, env={**os.environ, **env}, timeout=120)
+
+
+def run_two_process_decision(root, history_path, rel, action, order):
+    """两个独立进程写同一文件的判断。
+
+    history_first：用户进程在读到「无行」后暂停，历史进程先提交，
+                   再让用户进程继续保存。
+    user_first：用户进程先提交，历史导入随后运行。
+    """
+    stem = os.path.basename(root)
+    gap = os.path.join(BASE, f"gap_{stem}")
+    release = os.path.join(BASE, f"release_{stem}")
+    user_env = {
+        "STAGE5_SRC": SRC, "STAGE5_MODE": action, "STAGE5_ROOT": root,
+        "STAGE5_REL": rel, "STAGE5_GAP": gap, "STAGE5_RELEASE": release,
+    }
+    hist_env = {
+        "STAGE5_SRC": SRC, "STAGE5_ROOT": root,
+        "STAGE5_HISTDB": history_path,
+    }
+    user = subprocess.Popen([sys.executable, "-c", _TWO_PROC_USER],
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, env={**os.environ, **user_env})
+    deadline = time.time() + 30
+    while not os.path.exists(gap) and time.time() < deadline:
+        time.sleep(0.01)
+    if not os.path.exists(gap):
+        user.kill()
+        user.communicate()
+        return None
+    if order == "history_first":
+        hist = _run_child(_TWO_PROC_HISTORY, hist_env)
+        with open(release, "w", encoding="utf-8") as f:
+            f.write("go")
+    else:
+        with open(release, "w", encoding="utf-8") as f:
+            f.write("go")
+    user_out = user.communicate(timeout=60)[0]
+    if order == "user_first":
+        hist = _run_child(_TWO_PROC_HISTORY, hist_env)
+    return user.returncode, user_out, hist.returncode, hist.stdout
+
+
+def read_feedback_fresh(root):
+    """重新打开数据库读最终行，校验落盘结果。"""
+    path = P.space_db_path(root)
+    conn = sqlite3.connect(path)
+    try:
+        return conn.execute(
+            "SELECT origin, kind, after_target, keep_in_place, category, "
+            "batch_id, active FROM learning_feedback").fetchall()
+    finally:
+        conn.close()
+
+
 def execute_and_import(root, plan):
     storage = Storage(root)
     try:
@@ -1199,6 +1323,57 @@ def main():
         and rows4[0].batch_id == 2,
         f"旧批次导入新增={old_again.judgments_added} "
         f"记录={[(f.origin, f.after_target, f.batch_id) for f in rows4]}")
+
+    # ---------- 双进程：历史先写 / 用户先写 × 仅改本次 / 保持原位 ----------
+    for action in ("override", "skip"):
+        for order in ("history_first", "user_first"):
+            tag = f"two_proc_{action}_{order}"
+            tp_root = space(tag)
+            tp_rel = f"{tag}.txt"
+            write(tp_root, tp_rel, f"{tag}\n")
+            tp_hist = os.path.join(BASE, f"history_{tag}.db")
+            make_history_db(tp_hist, tp_root, [
+                (1, 0, tp_rel, "_已整理/项目/历史目录",
+                 "_已整理/待定", "历史类别")])
+            outcome = run_two_process_decision(
+                tp_root, tp_hist, tp_rel, action, order)
+            rows_tp = read_feedback_fresh(tp_root)
+            rows_tp_again = read_feedback_fresh(tp_root)
+            if action == "override":
+                expected = (
+                    len(rows_tp) == 1 and rows_tp == rows_tp_again
+                    and rows_tp[0][0] == "live"
+                    and rows_tp[0][2] == os.path.join(
+                        "_已整理", "项目", "现场目录")
+                    and rows_tp[0][4] == "现场类别"
+                    and rows_tp[0][5] is None
+                    and bool(rows_tp[0][6]))
+                label = "仅改本次"
+            else:
+                expected = (
+                    len(rows_tp) == 1 and rows_tp == rows_tp_again
+                    and rows_tp[0][0] == "skip"
+                    and rows_tp[0][2] == ""
+                    and bool(rows_tp[0][3])
+                    and rows_tp[0][5] is None
+                    and bool(rows_tp[0][6]))
+                label = "保持原位"
+            ok = (outcome is not None and outcome[0] == 0
+                  and "USER_SAVE_OK" in (outcome[1] or "")
+                  and "USER_SAVE_ERROR" not in (outcome[1] or "")
+                  and outcome[2] == 0 and expected)
+            tid = {"history_first": {"override": "S529", "skip": "S530"},
+                   "user_first": {"override": "S531", "skip": "S532"}}[
+                       order][action]
+            order_label = "历史先写" if order == "history_first" else "用户先写"
+            rec(tid,
+                f"双进程{order_label}：「{label}」保存成功，"
+                f"重开库仍是用户选择",
+                ok,
+                f"用户进程={None if outcome is None else outcome[0]} "
+                f"历史进程={None if outcome is None else outcome[2]} "
+                f"用户输出={(outcome[1] or '').strip() if outcome else ''} "
+                f"重开前={rows_tp} 重开后={rows_tp_again}")
 
     # ---------- 汇总 ----------
     failed = [c for c in CHECKS if not c[2]]

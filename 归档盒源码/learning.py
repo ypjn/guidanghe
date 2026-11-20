@@ -384,23 +384,33 @@ def _write_decision(root: str, source_rel: str, *, kind: str, origin: str,
             "SELECT * FROM learning_feedback WHERE evidence_key = ?",
             (key,)).fetchone()
         if existing is None:
-            conn.execute(
+            # 不用「先查再插」：另一进程可能在查与插之间写入同一
+            # evidence_key（例如刚完成历史导入）。这里先原子占位，
+            # 冲突后就地改写成用户刚做的决定，避免保存失败后只剩历史。
+            cur = conn.execute(
                 "INSERT INTO learning_feedback("
                 "feedback_id, space_root, evidence_key, kind, origin, "
                 "source_rel, before_target, after_target, keep_in_place, "
                 "direction, semester, category, rule_key, rule_applied, "
                 "batch_id, action_index, active, created_at, updated_at) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+                "ON CONFLICT(evidence_key) DO NOTHING",
                 (_feedback_id(key), _norm_root(root), key, kind, origin,
                  _norm_rel(source_rel), before_target or "", after_target or "",
                  1 if keep_in_place else 0, direction or "", semester or "",
                  category or "", rule_key or "", rule_applied or "",
                  batch_id, action_index, 1, now, now))
-            conn.commit()
-            return True
-        if not reactivate and not bool(existing["active"]):
+            if cur.rowcount > 0:
+                conn.commit()
+                return True
+            if not reactivate:
+                conn.commit()
+                return False
+        elif not reactivate and not bool(existing["active"]):
             return False
-        # 新的现场决定尚未执行：清掉旧批次身份，只保留最终去向这一条。
+        # 用户现场决定优先：无论该行刚被插入成历史还是本就存在，
+        # 都改写成当前选择（新的现场决定尚未执行，清掉旧批次身份）。
+        # 占位与改写放在同一事务里，避免两步之间再被历史进程插入。
         conn.execute(
             "UPDATE learning_feedback SET kind=?, origin=?, source_rel=?, "
             "before_target=?, after_target=?, keep_in_place=?, direction=?, "
