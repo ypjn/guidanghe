@@ -107,12 +107,6 @@ BATCH_STATUS_LABELS = {
     "partial_failed_undone": "部分撤销（有失败）",
 }
 
-# 这些批次状态表示存在需要核对或人工处理的情况
-BATCH_NEEDS_ATTENTION = {
-    "partial", "recovered_partial", "partial_undone",
-    "partial_failed_undone", "executing", "planning",
-}
-
 ACTION_STATUS_LABELS = {
     "planned": "未执行",
     "moved": "已移动",
@@ -841,6 +835,7 @@ class HistoryDialog(QDialog):
         self._batches = []                         # BatchRecord（不含动作）
         self._counts = {}                          # {batch_id: {status: n}}
         self._source_counts = {}                   # {batch_id: {"手动"/"长期规则"/"自动": n}}
+        self._needs_check = set()                  # 真正需要核对的批次 id
         self._selected_batch_id = None
         self._items_cache = []                     # 选中批次的全部动作
         self._page = 0
@@ -1019,6 +1014,7 @@ class HistoryDialog(QDialog):
             self._counts = st.action_counts_by_batch()
             # 批次列表不加载逐项动作，分类来源计数用聚合查询（V1.5）
             self._source_counts = st.source_counts_by_batch()
+            self._needs_check = st.batch_ids_needing_verification()
             self.error_label.hide()
         except Exception as e:
             self._show_error(e)
@@ -1032,10 +1028,11 @@ class HistoryDialog(QDialog):
             c = self._counts.get(b.batch_id, {})
             moved = c.get("moved", 0)
             undone = c.get("undone", 0)
-            attention = "⚠ 需核对" if (
-                b.status in BATCH_NEEDS_ATTENTION
-                or c.get("paused", 0) or c.get("conflict", 0)
-            ) else ""
+            # “需核对”只跟核对入口同一判定：仍有未核对 planned / paused /
+            # restoring，或批次还在 planning/executing。普通 partial 不再误报。
+            attention = "⚠ 需核对" if b.batch_id in self._needs_check else ""
+            if c.get("conflict", 0):
+                attention = (attention + " / " if attention else "") + "⚠ 有冲突"
             sc = self._source_counts.get(b.batch_id, {})
             if sc.get("手动", 0) > 0:
                 attention += " / ⚑ 手动修正"
@@ -1836,7 +1833,7 @@ class MainWindow(QMainWindow):
         self.btn_undo = nav(QPushButton("撤销上一次"))
         self.btn_undo.setToolTip("把最近一次整理移走的文件放回原位置")
         self.btn_undo.setEnabled(False)
-        self.btn_undo.clicked.connect(self.on_undo)
+        self.btn_undo.clicked.connect(lambda _checked=False: self.on_undo())
         side_lay.addWidget(self.btn_undo)
 
         self.btn_history = nav(QPushButton("操作历史"))
@@ -2385,7 +2382,11 @@ class MainWindow(QMainWindow):
         # 检查是否有未完成的批次
         self._refresh_folder_list()
         self._update_inspector()
+        # 历史库已经打开：先让「操作历史」等只读入口可用，
+        # 再弹核对提示。用户选「否」后也保持可用，不必先重新扫描。
+        self._update_button_states()
         self._check_pending_batch()
+        self._update_button_states()
 
     def _check_pending_batch(self):
         """启动/切换目录时检查 .organizer/history.db 中的未完成批次。"""
@@ -4943,6 +4944,10 @@ class MainWindow(QMainWindow):
         QMessageBox.critical(self, "归档盒", f"执行整理时发生异常：\n{err}")
 
     def on_undo(self, batch_id=None):
+        # 防御：QPushButton.clicked 会带一个 bool（选中状态）。
+        # 批次 id 从 1 开始，任何假值都按“未指定批次”处理。
+        if not batch_id:
+            batch_id = None
         if self._close_pending or self._closing:
             return  # 关闭等待期间不启动新的撤销
         if self._working or self._plan_working:
@@ -5396,8 +5401,16 @@ class MainWindow(QMainWindow):
         if result.paused:
             msg += (f"\n\n有 {result.paused} 项状态不明确，已暂停，"
                     "请人工确认文件位置后再撤销。")
-        msg += "\n（核对恢复只核对与补记状态，不会移动文件；"
-        "把文件放回原位置请使用“撤销”。）"
+        msg += "\n\n核对恢复只核对与补记状态，不会移动文件。"
+        try:
+            can_undo = self._storage.batch_is_undoable(result.batch_id)
+        except Exception:
+            can_undo = False
+        if can_undo:
+            msg += (f"\n如需把批次 #{result.batch_id} 已移动的文件放回原位置，"
+                    "请使用「撤销该批次」（主界面或历史页）。")
+        else:
+            msg += "\n如需把已移动的文件放回原位置，请使用「撤销该批次」。"
         QMessageBox.information(self, "归档盒", msg)
         self._refresh_history_if_open()
 

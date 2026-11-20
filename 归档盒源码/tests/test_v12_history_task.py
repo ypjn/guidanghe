@@ -230,7 +230,8 @@ def main():
              and cells[5] == str(counts.get("skipped", 0))
              and cells[6] == str(counts.get("failed", 0))
              and cells[7] == str(counts.get("cancelled", 0))
-             and cells[3] == "部分完成" and cells[9] == "⚠ 需核对")
+             # 普通 partial（各项已落库）不再误报“需核对”
+             and cells[3] == "部分完成" and cells[9] == "")
     rec("H2", "多批次列表：状态与各计数来自持久化实际记录（含混合状态）",
         "通过" if h2_ok else "未通过",
         f"批次行数={rows}（表内 {ids_in_table}，目标 #{target_id}）；"

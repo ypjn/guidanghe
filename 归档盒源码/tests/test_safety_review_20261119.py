@@ -399,6 +399,7 @@ def t04_recover_states():
             and rr4.paused == 0
             and rr4.batch_status_after == "partial"
             and not st4.batch_needs_verification(bid4)
+            and bid4 not in st4.batch_ids_needing_verification()
             and st4.batch_is_undoable(bid4))
     needs_after4 = st4.batch_needs_verification(bid4)
     ur4 = executor.undo_latest_batch(st4, batch_id=bid4)
@@ -934,12 +935,43 @@ def t12_ai_cache():
        f"说明={note}")
 
 
+# ==================== 13 原生界面复核后的接线回归 ====================
+
+def t13_ui_wiring():
+    """无 PySide6 时用源码接线检查复现三个界面问题。
+
+    1) 「撤销上一次」不再把 clicked(bool) 的 False 当批次 id；
+    2) 打开空间后先刷新按钮，核对提示选「否」也能进历史；
+    3) 历史“需核对”与 batch_needs_verification 同源，弹窗保留撤销引导。
+    """
+    text = read(os.path.join(SRC, "main.py"))
+    a_ok = ("self.btn_undo.clicked.connect(self.on_undo)" not in text
+            and "lambda _checked=False: self.on_undo()" in text
+            and "if not batch_id:" in text)
+    # 打开空间流程：核对提示前后都刷新按钮状态
+    block = ("self._update_button_states()\n"
+             "        self._check_pending_batch()\n"
+             "        self._update_button_states()")
+    b_ok = block in text
+    c_ok = ("self._needs_check = st.batch_ids_needing_verification()" in text
+            and 'attention = "⚠ 需核对" if b.batch_id in self._needs_check'
+                in text
+            and "如需把批次 #{result.batch_id} 已移动的文件放回原位置"
+                in text)
+    ok_ = a_ok and b_ok and c_ok
+    ok("13", "主界面撤销传参、首开按钮刷新、历史/弹窗提示同源", ok_,
+       f"撤销按钮不再直连 on_undo 且忽略 clicked(bool)={a_ok}\n"
+       f"打开空间核对前后刷新按钮={b_ok}\n"
+       f"历史需核对/撤销引导同源={c_ok}")
+
+
 def main() -> int:
     print(f"工作目录：{WORK}\n")
     for fn in (t01_scan_readonly, t02_scan_paths_protection, t03_storage_busy,
                t04_recover_states, t05_db_failure, t06_no_overwrite_and_lock,
                t07_fingerprints, t08_undo_batch_id, t09_cleanup_dirs,
-               t10_intake_fingerprint, t11_backup_rotation, t12_ai_cache):
+               t10_intake_fingerprint, t11_backup_rotation, t12_ai_cache,
+               t13_ui_wiring):
         try:
             fn()
         except Exception:

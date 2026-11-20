@@ -562,6 +562,25 @@ class Storage:
             (batch_id, STATUS_PLANNED, STATUS_PAUSED, STATUS_RESTORING))
         return int(cur.fetchone()[0]) > 0
 
+    def batch_ids_needing_verification(self) -> set:
+        """一次查询返回所有需要核对恢复的批次 id（历史列表用）。
+
+        与 batch_needs_verification 同一判定：
+        planning/executing，或有未核对 planned、paused、restoring。
+        """
+        ids: set = set()
+        for row in self.conn.execute(
+                "SELECT id FROM batches WHERE status IN (?, ?)",
+                (BATCH_PLANNING, BATCH_EXECUTING)):
+            ids.add(row[0])
+        for row in self.conn.execute(
+                "SELECT DISTINCT batch_id FROM actions WHERE "
+                "(status = ? AND COALESCE(verified, 0) = 0) "
+                "OR status IN (?, ?)",
+                (STATUS_PLANNED, STATUS_PAUSED, STATUS_RESTORING)):
+            ids.add(row[0])
+        return ids
+
     def get_batch_needing_check(self) -> Optional[BatchRecord]:
         """最近一个需要核对恢复的批次（含 paused / 结果未落库）。"""
         candidates: List[int] = []
