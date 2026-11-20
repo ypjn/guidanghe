@@ -1,0 +1,90 @@
+qt.qpa.fonts: Populating font family aliases took 56 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
+[PASS] T01 未保存偏好时样本 A 不会进入「项目/归档盒」 — target=_已整理/待定/下载/归档盒/开发说明.md
+[PASS] T02 从界面修正入口保存空间偏好，字段与确认信息落库 — rows=1 scope=space enabled=True match=下载/归档盒 target=项目 / 归档盒
+[PASS] T03 保存对话框同时展示匹配条件、适用范围、目标 — <b>规则预览：</b>开发文档按项目归档 | <b>匹配条件：</b>来源目录 = 下载/归档盒（含子目录） | <b>适用范围：</b>当前整理空间「space」 | <b>目标：</b>→ 项目 / （无学期） / 归档盒
+[PASS] T04 空间偏好同步写入该空间 JSON 长期规则镜像 — json_ids=['lt-4bd44f0b8796']
+[PASS] T05 关闭重开后样本 B 命中偏好；对照空间 / 生效空间目标不同 — control=_已整理/待定/下载/归档盒/接口草稿.md | space=_已整理/项目/归档盒/接口草稿.md | 依据=长期偏好「开发文档按项目归档」(lt-4bd44f0b8796)：来源目录「下载/归档盒」（含子目录） → 项目/归档盒
+[PASS] T06 预览依据同时包含偏好名称与 preference_id — 长期偏好「开发文档按项目归档」(lt-4bd44f0b8796)：来源目录「下载/归档盒」（含子目录） → 项目/归档盒
+[PASS] T07 「仅改本次」立即生效且不写偏好库 — target=_已整理/课程/2026秋-大二上/高等数学/文档/临时稿.md rows 1->1
+[PASS] T08 重新生成预览后本次临时修正消失，已保存偏好仍生效 — target=_已整理/项目/归档盒/临时稿.md
+[PASS] T09 对照空间「仅改本次」重启后回到无偏好结果 — one_off=_已整理/课程/2026秋-大二上/高等数学/文档/说明.md auto_again=_已整理/待定/下载/归档盒/说明.md auto=_已整理/待定/下载/归档盒/说明.md rows=0
+[PASS] T10 取消 / 直接关闭保存对话框都不增加偏好行 — rows=1/1/1
+[PASS] T11 AI 回退候选不写偏好库 — rows=0->0 target=_已整理/课程/未识别学期/高等数学/文档/未知.md
+[PASS] T12 配置页修改目标后新预览使用新目标 — target=_已整理/项目/课程设计/接口草稿.md
+[PASS] T13 停用后新预览不再命中；偏好行保留但 enabled=false — enabled=False target=_已整理/待定/下载/归档盒/接口草稿.md
+[PASS] T14 重启后仍停用且不新增偏好行 — rows=1 enabled=False
+[PASS] T20 「仅改本次」覆盖已保存偏好并在依据里说明 — target=_已整理/课程/2026秋-大二上/高等数学/文档/接口草稿.md 依据=手动修正：方向「课程」 / 学期「2026秋-大二上」 / 类别「高等数学」；已覆盖本次预览采用的长期偏好「开发文档按项目归档」(lt-4bd44f0b8796)：来源目录「下载/归档盒」（含子目录） → 项目/课程设计
+[PASS] T15 旧 JSON 只迁一次；停用规则迁入后仍停用 — rows=1 enabled=False kind=migrated_json marker=True
+[PASS] T16 JSON 改回 enabled=true 不会重新启用或重复插入 — rows=1 enabled=False target=_已整理/待定/下载/归档盒/旧稿.md
+[PASS] T17 另一整理空间相同相对路径不命中空间偏好 — control=_已整理/待定/下载/归档盒/接口草稿.md space2=_已整理/待定/下载/归档盒/接口草稿.md
+[PASS] T18 只有点选「全局」才写入全局库，且不写任何空间 JSON — global_ids=['lt-910f125851cd'] json_ids=[]
+[PASS] T19 已启用全局偏好在第二空间生效，依据含 preference_id — target=_已整理/项目/全局归档/说明.md 依据=长期偏好「全局说明归档」(lt-910f125851cd)：来源目录「下载/其它」（含子目录） → 项目/全局归档
+[PASS] T21 同等级同匹配/不同目标生成歧义且默认不勾选 — selected=False candidates=3 ids=['lt-a', 'lt-b']
+[PASS] T22 歧义改选后勾选且不新写偏好 — selected=True target=_已整理/项目/课程设计/冲突.md rows 2->2
+[PASS] T23 已有 long_term: 历史行在打开偏好库后保持不变 — rule_key=long_term:lt-history source=长期规则
+[PASS] T24 撤销 long_term 批次后路径与 SHA-256 恢复 — restored=1 conflicts=0 sha_ok=True
+[PASS] T25 取消执行确认框后源文件路径与 SHA-256 不变 — exists=True sha_ok=True
+[PASS] T26 明确命中偏好且无歧义时预览默认勾选 — rule_key=long_term:lt-selected target=_已整理/项目/归档盒/一样.md ambiguity=False selected=True
+[PASS] T27 直接点「恢复自动分类」仍回到这条偏好 — target=_已整理/项目/归档盒/恢复.md rule_key=long_term:lt-revert selected=True manual=False
+[PASS] T28 「仅改本次」改到高等数学且不新增偏好 — target=_已整理/课程/2026秋-大二上/高等数学/文档/恢复.md rows=1
+[PASS] T29 改到高等数学后再恢复自动，回到偏好目标与 long_term 依据 — target=_已整理/项目/归档盒/恢复.md rule_key=long_term:lt-revert 依据=长期偏好「恢复到偏好」(lt-revert)：来源目录「下载/归档盒」（含子目录） → 项目/归档盒
+[PASS] T30.1 内部路径「保留」恢复后不丢失 — before=_已整理/项目/归档盒/归档盒/保留.md after=_已整理/项目/归档盒/归档盒/保留.md
+[PASS] T30.2 内部路径「替换」恢复后不丢失 — before=_已整理/项目/归档盒/专题/替换.md after=_已整理/项目/归档盒/专题/替换.md
+[PASS] T31 取消确认两个都不动；确认后只移动勾选文件 — both_selected=True uncheck=True moved=True cancel=True
+[PASS] T32 撤销后勾选文件路径与 SHA-256 恢复，未勾选文件始终原位 — restored=1 conflicts=0 sha_ok=True
+[PASS] T33 全局库损坏时已停用空间规则不从 JSON 镜像复活 — target=_已整理/待定/下载/归档盒/停用.md selected=False rule_key=fallback
+[PASS] T34 保存报错后空间库与 JSON 都保持旧目标 — raised=True db=归档盒 json=归档盒
+[PASS] T35 旧窗口保存不会删掉另一窗口刚写入的全局偏好 — global_ids=['lt-global-first', 'lt-global-second']
+[PASS] T36 应用含新长期规则的方案后正式预览使用新目标 — db=新方案目标 target=_已整理/项目/新方案目标/方案.md
+[PASS] T37 「按类型」「按课程再按类型」不被长期偏好改到项目目录 — by_type=_已整理/文档 course_then_type=_已整理/未分类课程/文档
+[PASS] T38 同级偏好冲突仍保留 AIGC 正文去向 — selected=False body_kept=True ids=['lt-body-a', 'lt-body-b'] 候选=['正文', '正文关键词「aigc」', '长期偏好「冲突 A」(lt-body-a)：来源目录「下载」（含子目录）', '长期偏好「冲突 B」(lt-body-b)：来源目录「下载」（含子目录）']
+[PASS] T39 单条保存失败不写 JSON，重开仍按库里的旧目标 — raised=True json=归档盒 target=_已整理/项目/归档盒/样本.md rule_key=long_term:lt-old selected=True
+[PASS] T39.2 没有旧规则时，失败的保存也不得让预览采用 JSON 新规则 — raised=True json_ids=[] target=_已整理/待定/下载/归档盒/新样本.md rule_key=fallback
+[PASS] T40 空间库打不开时只用全局偏好，不回退 JSON 空间规则 — target=_已整理/项目/全局目标/样本.md rule_key=long_term:lt-global selected=True note=本空间偏好库不可用：file is not a database
+[PASS] T41 旧窗口不覆盖另一窗口对同一条偏好的修改 — unchanged={'lt-global': '全局目标', 'lt-global-first': 'A', 'lt-shared': '另一窗口新目标', 'lt-shared-new': '新增目标', 'lt-global-second': 'B'} conflict={'lt-global': '全局目标', 'lt-global-first': 'A', 'lt-shared': '另一窗口新目标', 'lt-shared-new': '新增目标', 'lt-global-second': 'B'} raised=True
+[PASS] T42 恢复备份同步失败时 JSON 回到恢复前，且不提示已恢复 — raised=True json=新方案目标 db=新方案目标 status='请先选择文件夹，再重新扫描。'
+[PASS] T42.2 恢复成功时 JSON 与库一起回到备份目标 — message='已恢复上一次应用的配置。\n恢复前的当前配置已备份为 config-backup-20261120-110447-940024.json；本次使用的备份 config-backup-20261120-110447-748934.json 已保留。' json=归档盒 db=归档盒 target=_已整理/项目/归档盒/恢复.md
+[PASS] T43 全局库提交失败后空间库/全局库/JSON 都回到保存前 — space=归档盒 global=全局旧目标 json=归档盒 target=_已整理/项目/归档盒/样本.md rule_key=long_term:lt-space selected=True msg=偏好库写入失败，已整体回滚：database is locked
+
+已生效的规则和偏好保持不变，配置文件与偏好库都没有被改写。
+[PASS] T44 配置页一项不改保存时保留 reason 且不误报并发冲突 — unchanged=True reason1=由手动修正生成 json1=由手动修正生成 concurrent=True cat2=另一窗口新目标 reason2=由手动修正生成 errors=[]
+[PASS] T45 改作用范围会搬迁原行；原行被别处改过时整次取消 — global=True preview=_已整理/项目/归档盒/迁移.md space=True conflict=True errors=['偏好「迁移规则3」(lt-move3) 已在其他窗口被修改，本次保存已取消。请重新打开配置页后再修改。\n\n已生效的规则和偏好保持不变，配置文件与偏好库都没有被改写。']
+[PASS] T46 配置 JSON 损坏时仍可从配置页保存修好 — had_error=True accepted=True cfg_ok=True errors=[]
+[PASS] T46.2 偏好库失败时把损坏的原文件字节放回，不留半份新配置 — raw_same=True still_corrupt=True msg=偏好库写入失败，已整体回滚：database is locked
+
+已生效的规则和偏好保持不变，配置文件与偏好库都没有被改写。
+[PASS] T47 恢复失败删掉本次新备份，修好库后重试恢复原目标 — json1=当前目标 db1=当前目标 backups=1->1 status1='请先选择文件夹，再重新扫描。' json2=归档盒 db2=归档盒 target=_已整理/项目/归档盒/重试.md message='已恢复上一次应用的配置。'
+[PASS] T48 单条偏好命中时保留高等数学与 AIGC 正文候选且不勾选 — selected=True candidates=[('归档盒', 'lt-body-single'), ('高等数学', None), ('AIGC（生成式人工智能）', None)] auto=keyword_unmatched:356:高等数学 selectable=True
+[PASS] T49 失败回滚保留另一窗口已保存的空间目标与 JSON — space=B 已保存的空间目标 json=B 已保存的空间目标 global=全局旧目标 target=_已整理/项目/B 已保存的空间目标/样本.md rule_key=long_term:lt-space selected=True b_ok=True b_error=None msg=偏好库写入失败；空间偏好库与 JSON 镜像保留了其他窗口的较新内容（lt-space）；全局偏好库已恢复：database is locked
+
+已生效的规则和偏好保持不变，配置文件与偏好库都没有被
+[PASS] T50 写入前重读发现较新保存时整次取消并保留 B 的目标 — global=B 已确认的新目标 b_ok=True target=_已整理/项目/B 已确认的新目标/样本.md selected=True msg=偏好「全局共享」(lt-g) 已在其他窗口被修改，本次保存已取消。请重新打开配置页后再修改。
+
+已生效的规则和偏好保持不变，配置文件与偏好库都没有被改写。
+[PASS] T51 目标库不可用时改范围整次失败，范围与预览保持保存前 — space=原目标 json=原目标 target=_已整理/项目/原目标/样本.md selected=True msg=全局偏好库不可用，无法把偏好「范围规则」(lt-u) 保存为「全局（所有整理空间）」；本次保存已取消，范围和目标保持保存前。
+
+已生效的规则和偏好保持不变，配置 reverse=True
+[PASS] T52.2 全局提交失败时普通分类映射也恢复，保留 B 的空间偏好 — target=_已整理/待定/独立归档源/普通笔记.md selected=False B=B 已保存的空间目标
+[PASS] T52 多规则失败补偿时 JSON 与空间库逐条一致，恢复备份后不复活被取消目标 — space1=B 已保存的空间目标 space2=空间二旧目标 json1=B 已保存的空间目标 json2=空间二旧目标 global=全局旧目标 preview2=_已整理/项目/空间二旧目标/另一份.md dry=_已整理/项目/空间二旧目标/另一份.md restored=_已整理/项目/空间二旧目标/另一份.md b_ok=True msg=偏好库写入失败；空间偏好库与 JSON 镜像保留了其他窗口的较新内容（lt-space-1），其余本次改动的规则已恢复为保存前（lt-space-2）；全局偏好库已恢复：database is locked
+
+已生效的规则和偏好保持不变，配
+[PASS] T53 全局改当前空间失败后空间 JSON 不残留全局规则 — space=['lt-space-1'] global=['lt-global'] json={'lt-space-1': 'B 已保存的空间目标'} export_lt_global=False preview=_已整理/项目/全局旧目标/另一份.md rule=long_term:lt-global restored_space=['lt-space-1'] disabled=True b_ok=True msg=偏好库写入失败；空间偏好库与 JSON 镜像保留了其他窗口的较新内容（lt-space-1），其余本次改动的规则已恢复为保存前（lt-global）；全局偏好库已恢复：database is locked
+
+已生效的规则
+[PASS] T53.2 空间改全局失败后原行回到空间库与 JSON，不留在全局库 — space={'lt-move': '保存前目标', 'lt-space-2': 'B 的新目标'} global=['lt-global'] json={'lt-move': '保存前目标', 'lt-space-2': 'B 的新目标'} preview=_已整理/项目/保存前目标/迁移.md restored=_已整理/项目/保存前目标/迁移.md b_ok=True msg=偏好库写入失败；空间偏好库与 JSON 镜像保留了其他窗口的较新内容（lt-space-2），其余本次改动的规则已恢复为保存前（lt-move）；全局偏好库已恢复：database is locked
+
+已生效的规则和偏
+[PASS] T53.3 无其他窗口时全局改当前空间失败仍整份回到保存前 — space=[] json=[] global={'lt-global': 'global'} msg=偏好库写入失败，已整体回滚：database is locked
+
+已生效的规则和偏好保持不变，配置文件与偏好库都没有被改写。
+[PASS] T55 A 失败保存期间的备份不含未提交偏好，恢复后不复活 — backup={'lt-space-a': '空间保存前目标'} space=[] global=全局保存前目标 before=(_已整理/待定/下载/归档盒/样本.md,fallback,False) after=(_已整理/项目/空间保存前目标/样本.md,long_term:lt-space-a,True) restored_cat=空间保存前目标 b_ok=True b_error=None msg=偏好库写入失败；空间偏好库与 JSON 镜像保留了其他窗口的较新内容（lt-space-a）；全局偏好库已恢复：database is locked
+
+已生效的规则和偏好保持不变，
+[PASS] T56 B 先保存再应用方案，备份仍不含 A 失败的偏好 — live={'lt-space-a': '空间保存前目标', 'lt-space-b': 'B 自己确认的目标'} backup={'lt-space-a': '空间保存前目标', 'lt-space-b': 'B 自己确认的目标'} space=[] after=(_已整理/项目/空间保存前目标/样本.md,long_term:lt-space-a,True) restored={'lt-space-a': '空间保存前目标', 'lt-space-b': 'B 自己确认的目标'} b_ok=True b_error=None msg=偏好库写入失败；空间偏好库与 JSON 镜像保留了其他窗口的较新内容（lt-space-a）；全局偏好库已恢复：database is locked
+
+已生效的规则和偏好保持不变，
+[PASS] T57 单条保存遇镜像写入故障时库与 JSON 都回到调用前 — raised=偏好库写入失败，已回滚：验收注入：配置 JSON 写入失败 space={} json={} after=(_已整理/待定/下载/归档盒/样本.md,fallback,False)
+[PASS] T57.2 单条删除遇镜像写入故障时库与 JSON 都回到调用前 — raised=偏好库删除失败，已回滚：验收注入：配置 JSON 写入失败 before={'lt-retain': '已保存的目标'} after={'lt-retain': '已保存的目标'} json_before={'lt-retain': '已保存的目标'} json_after={'lt-retain': '已保存的目标'}
+[PASS] T54 两次成功确认都进入空间库、JSON 和恢复后的预览 — SQLite=['lt-window-a', 'lt-window-b'] JSON=['lt-window-a', 'lt-window-b'] restored=_已整理/项目/B 确认的目标/普通笔记.md
+
+合计 65 项：通过 65 / 未通过 0

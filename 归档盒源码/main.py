@@ -80,6 +80,7 @@ from duplicate_report import csv_safe
 from config_transfer import create_backup, restore_latest_backup
 from intake_model import IntakeList, is_within, normalize_path
 import recent_spaces
+import learning
 from executor import (
     execute_plan, undo_latest_batch, undo_is_available,
     recover_batch, interrupted_batch_id, acknowledge_batch_handled,
@@ -2127,6 +2128,13 @@ class MainWindow(QMainWindow):
         self.btn_edit_config.clicked.connect(self.on_edit_config)
         side_lay.addWidget(self.btn_edit_config)
 
+        self.btn_learning = nav(QPushButton("学习建议"))
+        self.btn_learning.setToolTip(
+            "根据最近的改单归纳候选偏好；确认前不会写入偏好表，"
+            "也不会移动文件")
+        self.btn_learning.clicked.connect(self.on_learning_suggestions)
+        side_lay.addWidget(self.btn_learning)
+
         self.btn_scheme_center = nav(QPushButton("导入或保存方案"))
         self.btn_scheme_center.setToolTip(
             "把当前分类规则保存成方案，或把已有方案应用到这个文件夹")
@@ -2809,6 +2817,8 @@ class MainWindow(QMainWindow):
             append_startup_log(self._storage.recovery_note)
             QMessageBox.warning(self, "整理记录已重建",
                                 self._storage.recovery_note)
+        # 阶段 5：打开整理空间时把历史里可复用的分类决定导入一次。
+        self._import_learning_feedback(root)
         # S2 F-05/F-06：目录改名/移动后历史与撤销仍然可用，但要说清楚
         mismatch = self._storage.root_mismatch_note()
         if mismatch and not self._closing:
@@ -3809,6 +3819,23 @@ class MainWindow(QMainWindow):
             text += extra
         self.statusBar().showMessage(text)
 
+    def _import_learning_feedback(self, root: str):
+        """打开空间 / 执行 / 撤销后，把历史里可复用的记录导入学习反馈。
+
+        只用只读连接；旧库没有学习表或历史库不可读时不影响打开空间、
+        读取偏好与生成预览。
+        """
+        if not root or not os.path.isdir(root):
+            return None
+        try:
+            result = learning.import_history_feedback(root)
+        except Exception as e:
+            append_startup_log(f"学习反馈暂不可用，已跳过历史导入：{e}")
+            return None
+        if result.note:
+            append_startup_log(result.note)
+        return result
+
     def _load_root_config(self, root: str):
         """按根目录加载分类配置。
 
@@ -4051,6 +4078,54 @@ class MainWindow(QMainWindow):
         self._preference_note = ""
         self._invalidate_for_config_change()
         return self.classification_config
+
+    # ============== 学习建议（阶段 5） ==============
+
+    def on_learning_suggestions(self):
+        """展示由历史改单归纳出的候选；确认前不写偏好表、不移动文件。"""
+        if self._close_pending or self._closing:
+            return
+        root = self.path_edit.text().strip()
+        if not root or not os.path.isdir(root):
+            QMessageBox.warning(self, "归档盒", "请先选择一个有效的文件夹。")
+            return
+        self._import_learning_feedback(root)
+        try:
+            learning.build_candidates(root)
+        except Exception as e:
+            QMessageBox.warning(self, "学习建议", f"读取学习候选失败：\n{e}")
+            return
+        from learning_dialog import LearningCandidatesDialog
+        dlg = LearningCandidatesDialog(
+            root,
+            lambda: learning.list_candidates(root),
+            self._confirm_learning_candidate,
+            lambda cid: learning.reject_candidate(root, cid),
+            lambda cid: self._disable_learning_candidate(root, cid),
+            parent=self)
+        dlg.exec()
+
+    def _confirm_learning_candidate(self, candidate_id: str, scope: str):
+        root = self.path_edit.text().strip()
+        if not root or not os.path.isdir(root):
+            raise learning.LearningError("当前没有有效的整理空间，未保存。")
+        # 复用现有单条保存：校验、路径约束、JSON 镜像与失败回滚都不另写一套。
+        learning.confirm_candidate(
+            root, candidate_id, scope,
+            saver=lambda pref: self._save_preference(root, pref))
+        self.statusBar().showMessage(
+            "学习建议已保存为偏好；下一次预览生效，文件仍要勾选并确认后才会移动。")
+
+    def _disable_learning_candidate(self, root: str, candidate_id: str):
+        learning.disable_candidate(root, candidate_id)
+        try:
+            self._load_root_config(root)
+            if self._plan_valid:
+                self._invalidate_for_config_change()
+        except Exception as e:
+            append_startup_log(f"停用学习偏好后刷新配置失败：{e}")
+        self.statusBar().showMessage(
+            "已停用该学习偏好；偏好行仍保留，下一次预览不再采用。")
 
     # ============== 整理方案：导入 / 导出 / 方案库 / 回退（V1.6） ==============
 
@@ -5069,9 +5144,21 @@ class MainWindow(QMainWindow):
                          if i.file.rel_path == source_rel), None)
         if item is None or not item.ambiguity:
             return False
+        before_target = item.target_dir_rel
         updated = skip_plan_item(plan, item.file.rel_path)
         if updated is None:
             return False
+        # 阶段 5：「跳过，保持原位」是用户明确决定；记录后不再被候选归入。
+        root = self.path_edit.text().strip()
+        if root and os.path.isdir(root):
+            try:
+                learning.record_skip(
+                    root, updated.file.rel_path,
+                    before_target=before_target or "",
+                    rule_key=updated.rule_key or "",
+                    rule_applied=updated.rule_applied or "")
+            except Exception as e:
+                append_startup_log(f"记录学习反馈失败：{e}")
         self._after_plan_mutation(
             f"已跳过 {updated.file.rel_path}，源文件保持原位")
         return True
@@ -5861,6 +5948,9 @@ class MainWindow(QMainWindow):
             return
         # 文件已移动：旧重复核对结果与目标位置均失效
         self._invalidate_duplicate_cache(close=True)
+        # 阶段 5：现场记下的改单与执行历史合并成同一条判断。
+        if self._storage is not None:
+            self._import_learning_feedback(self._storage.display_root)
         self._discard_plan("整理已结束，本次预览已失效；如需再次整理请重新扫描生成预览")
         # 刷新按钮状态（撤销现在应该可用）
         self._update_button_states()
@@ -6003,6 +6093,9 @@ class MainWindow(QMainWindow):
             return
         # 撤销后路径变化：旧重复核对结果失效
         self._invalidate_duplicate_cache(close=True)
+        # 阶段 5：撤销不是分类决定；只把「无逐文件原因」记为一条待核对线索。
+        if self._storage is not None:
+            self._import_learning_feedback(self._storage.display_root)
         self._update_button_states()
 
         self.statusBar().showMessage(
@@ -6187,6 +6280,10 @@ class MainWindow(QMainWindow):
                     "该文件没有可用的自动分类快照（可能是旧历史里恢复的），"
                     "无法恢复自动分类。")
                 return
+            try:
+                learning.withdraw_decision(root, source_rel)
+            except Exception as e:
+                append_startup_log(f"撤回学习反馈失败：{e}")
             self._populate_table(self.current_plan)
             n, _ = summarize_manual_overrides(self.current_plan)
             self.statusBar().showMessage(
@@ -6197,12 +6294,33 @@ class MainWindow(QMainWindow):
             return
 
         # 应用手动修正
+        before_target = next(
+            (i.target_dir_rel for i in self.current_plan.items
+             if i.file.rel_path == source_rel), "")
         try:
             applied = apply_override_to_plan(
                 self.current_plan, source_rel, dlg.params)
         except OverrideValidationError as e:
             QMessageBox.warning(self, "归档盒", str(e))
             return
+
+        # 阶段 5：只在结果与自动快照不同（真正的「仅改本次」）时记一条判断；
+        # 改回自动快照则撤回该文件的判断。对话框取消、取消勾选都不写。
+        try:
+            if applied.is_manual_overridden:
+                learning.record_override(
+                    root, source_rel,
+                    before_target=before_target or "",
+                    after_target=applied.target_dir_rel,
+                    direction=applied.direction or "",
+                    semester=applied.semester or "",
+                    category=applied.category or "",
+                    rule_key=applied.rule_key or "",
+                    rule_applied=applied.rule_applied or "")
+            else:
+                learning.withdraw_decision(root, source_rel)
+        except Exception as e:
+            append_startup_log(f"记录学习反馈失败：{e}")
 
         self._populate_table(self.current_plan)
         n, lines = summarize_manual_overrides(self.current_plan)

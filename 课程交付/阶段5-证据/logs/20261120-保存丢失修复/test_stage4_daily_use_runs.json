@@ -1,0 +1,23 @@
+{
+  "script": "/Users/ypjn/Desktop/NEU/大二上/aigc2/guidanghe-stage5/归档盒源码/tests/test_stage4_daily_use.py",
+  "repeat": 1,
+  "runs": [
+    {
+      "run": 1,
+      "os_exit_code": 0,
+      "elapsed_s": 8.59,
+      "log": "../课程交付/阶段5-证据/logs/20261120-保存丢失修复/test_stage4_daily_use_run1.log",
+      "summary": {
+        "total": 13,
+        "pass": 13,
+        "fail": 0,
+        "untested": 0,
+        "reported_exit_code": null
+      },
+      "crash_at_exit": false
+    }
+  ],
+  "all_os_exit_zero": true,
+  "all_assertions_pass": true,
+  "overall_exit_code": 0
+}

@@ -1,0 +1,23 @@
+{
+  "script": "/Users/ypjn/Desktop/NEU/大二上/aigc2/guidanghe-stage5/归档盒源码/tests/test_stage5_active_learning.py",
+  "repeat": 1,
+  "runs": [
+    {
+      "run": 1,
+      "os_exit_code": 0,
+      "elapsed_s": 13.94,
+      "log": "../课程交付/阶段5-证据/logs/test_stage5_active_learning_run1.log",
+      "summary": {
+        "total": 28,
+        "pass": 28,
+        "fail": 0,
+        "untested": 4,
+        "reported_exit_code": 0
+      },
+      "crash_at_exit": false
+    }
+  ],
+  "all_os_exit_zero": true,
+  "all_assertions_pass": true,
+  "overall_exit_code": 0
+}
