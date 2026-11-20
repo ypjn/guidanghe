@@ -1,0 +1,10 @@
+[2026-11-20 22:22:26] 归档盒已启动，进入事件循环
+[2026-11-20 22:22:45] 归档盒已启动，进入事件循环
+[2026-11-20 22:25:10] 归档盒已启动，进入事件循环
+增量缓存写入失败，本次计划不受影响：[Errno 13] Permission denied: 'C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261120_01\\round2\\samples\\课程 资料\\.organizer'
+增量缓存写入失败，本次计划不受影响：[Errno 13] Permission denied: 'C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261120_01\\round2\\samples\\课程 资料\\.organizer'
+增量缓存写入失败，本次计划不受影响：[Errno 13] Permission denied: 'C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261120_01\\round2\\samples\\课程 资料\\.organizer'
+[2026-11-20 22:36:50] 归档盒已启动，进入事件循环
+[2026-11-20 22:41:17] 归档盒已启动，进入事件循环
+增量缓存写入失败，本次计划不受影响：[Errno 13] Permission denied: 'C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261120_01\\round2\\samples\\课程 资料\\.organizer'
+增量缓存写入失败，本次计划不受影响：[Errno 13] Permission denied: 'C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261120_01\\round2\\samples\\课程 资料\\.organizer'

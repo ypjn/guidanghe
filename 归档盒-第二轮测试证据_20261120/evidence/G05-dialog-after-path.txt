@@ -1,0 +1,46 @@
+﻿ControlType.ToolBar | 命令模块 | en=True off=False | 331,342,1259,48 | auto=FolderBandModuleInner
+ControlType.Button | 帮助(&H) | en=True off=False | 1534,345,42,40 | auto=HelpButton
+ControlType.SplitButton | 详细信息 | en=True off=False | 1445,345,77,40 | auto=ViewControl
+ControlType.Button | 视图滑块 | en=True off=False | 1486,345,21,40 | auto=SplitMenuButton
+ControlType.Button | 组织​​ | en=True off=False | 336,345,97,40 | auto={7DDC1264-7E4D-4F74-BBC0-D191987C8D0F}
+ControlType.Button | 新建​​文件夹​​ | en=True off=False | 433,345,136,40 | auto={E44616AD-6DF1-4B94-85A4-E465AE8A19DB}
+ControlType.Pane | 控制项宿主 | en=True off=False | 334,390,231,491 | auto=ProperTreeHost
+ControlType.Pane | 导航窗格 | en=True off=False | 334,390,231,491 | auto=100
+ControlType.Pane | Shell 文件夹视图 | en=True off=False | 571,390,1019,491 | auto=listview
+ControlType.List | 项目视图 | en=True off=False | 571,390,1019,491 | auto=
+ControlType.Pane | 水平 | en=True off=False | 571,855,1019,26 | auto=HorizontalScrollBar
+ControlType.Header | 标题 | en=True off=False | 571,390,1055,40 | auto=
+ControlType.SplitButton | 名称 | en=True off=False | 571,390,459,40 | auto=System.ItemNameDisplay
+ControlType.Button | 筛选器下拉列表 | en=True off=False | 1005,390,23,40 | auto=DropDown
+ControlType.SplitButton | 修改日期 | en=True off=False | 1030,390,243,40 | auto=System.DateModified
+ControlType.Button | 筛选器下拉列表 | en=True off=False | 1248,390,23,40 | auto=DropDown
+ControlType.SplitButton | 类型 | en=True off=False | 1273,390,203,40 | auto=System.ItemTypeText
+ControlType.Button | 筛选器下拉列表 | en=True off=False | 1451,390,23,40 | auto=DropDown
+ControlType.SplitButton | 大小 | en=True off=False | 1476,390,135,40 | auto=System.Size
+ControlType.Button | 筛选器下拉列表 | en=True off=False | 1586,390,23,40 | auto=DropDown
+ControlType.ListItem | 课程 | en=True off=False | 592,439,1013,37 | auto=0
+ControlType.Edit | 名称 | en=True off=False | 625,444,405,29 | auto=System.ItemNameDisplay
+ControlType.Edit | 修改日期 | en=True off=False | 1030,444,243,29 | auto=System.DateModified
+ControlType.Edit | 类型 | en=True off=False | 1273,444,203,29 | auto=System.ItemTypeText
+ControlType.Edit | 大小 | en=True off=False | 1476,444,135,29 | auto=System.Size
+ControlType.ListItem | 其他 | en=True off=False | 592,482,1013,37 | auto=1
+ControlType.Edit | 名称 | en=True off=False | 625,487,405,29 | auto=System.ItemNameDisplay
+ControlType.Edit | 修改日期 | en=True off=False | 1030,487,243,29 | auto=System.DateModified
+ControlType.Edit | 类型 | en=True off=False | 1273,487,203,29 | auto=System.ItemTypeText
+ControlType.Edit | 大小 | en=True off=False | 1476,487,135,29 | auto=System.Size
+ControlType.ListItem | 下载 | en=True off=False | 592,525,1013,37 | auto=2
+ControlType.Edit | 名称 | en=True off=False | 625,530,405,29 | auto=System.ItemNameDisplay
+ControlType.Edit | 修改日期 | en=True off=False | 1030,530,243,29 | auto=System.DateModified
+ControlType.Edit | 类型 | en=True off=False | 1273,530,203,29 | auto=System.ItemTypeText
+ControlType.Edit | 大小 | en=True off=False | 1476,530,135,29 | auto=System.Size
+ControlType.Tree | 应用程序控件 | en=True off=True | ?,?,?,? | auto=AppControlsModuleInner
+ControlType.Pane | 文件夹: | en=True off=False | 535,911,58,24 | auto=1090
+ControlType.Pane | 课程 资料 | en=True off=False | 601,905,962,36 | auto=1152
+ControlType.Pane | 选择文件夹 | en=True off=False | 1267,949,146,39 | auto=1
+ControlType.Pane | 取消 | en=True off=False | 1431,949,132,39 | auto=2
+ControlType.Pane | 导航按钮 | en=True off=False | 337,281,146,48 | auto=
+ControlType.Pane | 上区段 | en=True off=False | 483,281,55,55 | auto=
+ControlType.Pane | 地址: C:\Users\Lenovo\Documents\Trae-CN\temp_20261120_01\round2\samples\课程 资料 | en=True off=False | 549,279,612,52 | auto=1001
+ControlType.Pane | 地址区段 | en=True off=False | 1161,279,100,52 | auto=
+ControlType.Edit | 搜索框 | en=True off=False | 1280,293,242,24 | auto=SearchEditBox
+ControlType.Button | 搜索 | en=True off=False | 1526,278,45,54 | auto=SearchBoxSearchButton

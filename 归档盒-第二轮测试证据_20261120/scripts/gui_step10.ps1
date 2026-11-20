@@ -1,0 +1,27 @@
+﻿$ErrorActionPreference = "Stop"
+$base = "C:\Users\Lenovo\Documents\Trae-CN\temp_20261120_01\round2"
+. (Join-Path $base "gui_lib.ps1")
+$proc = Get-Process python* | Where-Object { $_.MainWindowTitle -like "*归档盒*" } | Select-Object -First 1
+$w = [System.Windows.Automation.AutomationElement]::FromHandle([IntPtr]$proc.MainWindowHandle)
+[UiNative]::SetForegroundWindow([IntPtr]$proc.MainWindowHandle) | Out-Null
+Start-Sleep -Milliseconds 300
+$ok = Find-NameType $w "确认开始整理" "Button"
+Click-Element $ok
+Start-Sleep -Seconds 5
+Shot (Join-Path $base "shots\G14-整理结果.png")
+"----after execute----"
+foreach($e in (Find-All-Type $w "Text")){ try { $n=$e.Current.Name; if($n -and ($n -match "整理|成功|失败|跳过|批次|撤销|已扫")){ "TXT|$n" } } catch {} }
+$rows = Find-All-Type $w "DataItem"
+"rowcells=$($rows.Count)"
+"----undo----"
+$u = Find-NameType $w "撤销上一次" "Button"
+if($null -eq $u){ "undo button missing"; exit 0 }
+"undo_enabled=$($u.Current.IsEnabled) rect=$(Safe-Rect $u.Current.BoundingRectangle)"
+try { $u.GetCurrentPattern([System.Windows.Automation.ScrollItemPattern]::Pattern).ScrollIntoView() } catch { "scrollIntoView failed: $($_.Exception.Message)" }
+Start-Sleep -Milliseconds 600
+Click-Element $u
+Start-Sleep -Seconds 2
+Shot (Join-Path $base "shots\G15-撤销确认.png")
+foreach($e in (Find-All-Type $w "Button")){ try { "BTN|$($e.Current.Name)|$(Safe-Rect $e.Current.BoundingRectangle)" } catch {} }
+foreach($e in (Find-All-Type $w "Text")){ try { $n=$e.Current.Name; if($n -and ($n -match "撤销|恢复|批次|确认|结果")){ "TXT|$n" } } catch {} }
+Dump-Uia $w 400 | Out-File -Encoding utf8 (Join-Path $base "evidence\G15-uia.txt")

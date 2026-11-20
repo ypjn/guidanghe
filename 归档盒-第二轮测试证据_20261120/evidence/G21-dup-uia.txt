@@ -1,0 +1,52 @@
+﻿ControlType.Text | 范围：整个整理空间：当前扫描纳入 8 个文件
+根目录：C:\Users\Lenovo\Documents\Trae-CN\temp_20261120_01\round2\samples\课程 资料
+核对时间：2026-11-20T22:35:10
+统计：内容重复 1 组 / 2 份；同名不同内容 1 组 / 2 份；已核对 8
+只读视图：不会删除、合并或移动文件；大小合计不代表可回收磁盘空间。 | en=True off=False | 493,285,1542,138 | auto=QApplication.DuplicateDialog.QLabel
+ControlType.Button | 展开全部 | en=True off=False | 1804,465,111,63 | auto=QApplication.DuplicateDialog.QPushButton
+ControlType.Button | 折叠全部 | en=True off=False | 1924,465,111,63 | auto=QApplication.DuplicateDialog.QPushButton
+ControlType.Header | 分组 / 文件名 | en=True off=False | 495,538,244,49 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.Header | 源相对路径 | en=True off=False | 739,538,480,49 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.Header | 大小 | en=True off=False | 1219,538,66,49 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.Header | 核对状态 | en=True off=False | 1285,538,117,49 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.Header | 指纹 | en=True off=False | 1402,538,153,49 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.Header | 计划目标 | en=True off=False | 1555,538,478,49 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 内容重复 #1（2 份） | en=True off=False | 525,588,214,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 2 份 | en=True off=False | 1219,588,66,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 内容重复 | en=True off=False | 1285,588,117,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | SHA-256 一致：5521cc236acf807c… | en=True off=False | 1555,588,478,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 重复1.txt | en=True off=False | 555,612,184,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 下载\重复1.txt | en=True off=False | 739,612,480,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 1.2 KB | en=True off=False | 1219,612,66,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 已核对 | en=True off=False | 1285,612,117,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 5521cc236acf… | en=True off=False | 1402,612,153,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | _已整理\文档\重复1.txt | en=True off=False | 1555,612,478,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 重复2.txt | en=True off=False | 555,636,184,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 下载\重复2.txt | en=True off=False | 739,636,480,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 1.2 KB | en=True off=False | 1219,636,66,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 已核对 | en=True off=False | 1285,636,117,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 5521cc236acf… | en=True off=False | 1402,636,153,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | _已整理\文档\重复2.txt | en=True off=False | 1555,636,478,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 同名不同内容 #1（2 份） | en=True off=False | 525,660,214,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 2 份 | en=True off=False | 1219,660,66,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 同名不同内容 | en=True off=False | 1285,660,117,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 名称相同，但已核对出 2 种不同内容 | en=True off=False | 1555,660,478,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 课堂笔记.txt | en=True off=False | 555,684,184,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 下载\课堂笔记.txt | en=True off=False | 739,684,480,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 23 B | en=True off=False | 1219,684,66,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 已核对 | en=True off=False | 1285,684,117,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | be6da5883d30… | en=True off=False | 1402,684,153,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | _已整理\文档\课堂笔记.txt | en=True off=False | 1555,684,478,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 课堂笔记.txt | en=True off=False | 555,708,184,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 其他\课堂笔记.txt | en=True off=False | 739,708,480,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 23 B | en=True off=False | 1219,708,66,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | 已核对 | en=True off=False | 1285,708,117,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | d60e6c1b1cdf… | en=True off=False | 1402,708,153,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.TreeItem | _已整理\文档\课堂笔记 (1).txt | en=True off=False | 1555,708,478,24 | auto=QApplication.DuplicateDialog.QTreeWidget
+ControlType.Button | 打开文件 | en=True off=False | 493,1167,111,63 | auto=QApplication.DuplicateDialog.QPushButton
+ControlType.Button | 在文件管理器中定位 | en=True off=False | 613,1167,201,63 | auto=QApplication.DuplicateDialog.QPushButton
+ControlType.Button | 复制路径 | en=True off=False | 823,1167,111,63 | auto=QApplication.DuplicateDialog.QPushButton
+ControlType.Button | 重新核对 | en=True off=False | 943,1167,111,63 | auto=QApplication.DuplicateDialog.QPushButton
+ControlType.Button | 导出 CSV… | en=True off=False | 1063,1167,127,63 | auto=QApplication.DuplicateDialog.QPushButton
+ControlType.Button | 导出 JSON… | en=True off=False | 1200,1167,142,63 | auto=QApplication.DuplicateDialog.QPushButton
+ControlType.Button | 关闭 | en=True off=False | 1960,1239,75,63 | auto=QApplication.DuplicateDialog.QDialogButtonBox.QPushButton

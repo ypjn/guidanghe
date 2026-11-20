@@ -1,0 +1,9 @@
+﻿ControlType.Text | 当前整理空间：C:/Users/Lenovo/Documents/Trae-CN/temp_20261120_01/round2/samples/课程 资料
+清单：0 项
+范围说明：清单 0 项 → 纳入 0 个文件
+拖入/添加只登记范围；不移动文件、不写执行历史。扫描仍经过保护与排除机制。 | en=True off=False | 666,390,1197,114 | auto=QApplication.IntakeDialog.QLabel
+ControlType.Button | 添加文件… | en=True off=False | 666,1062,126,63 | auto=QApplication.IntakeDialog.QPushButton
+ControlType.Button | 添加文件夹… | en=True off=False | 801,1062,144,63 | auto=QApplication.IntakeDialog.QPushButton
+ControlType.Button | 移除所选 | en=False off=False | 954,1062,111,63 | auto=QApplication.IntakeDialog.QPushButton
+ControlType.Button | 清空清单 | en=False off=False | 1074,1062,111,63 | auto=QApplication.IntakeDialog.QPushButton
+ControlType.Button | 关闭 | en=True off=False | 1788,1134,75,63 | auto=QApplication.IntakeDialog.QDialogButtonBox.QPushButton

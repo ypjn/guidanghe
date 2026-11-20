@@ -1,0 +1,139 @@
+﻿ControlType.Window | 推荐模式分类配置 — 课程 资料 | en=True off=False | 454,253,1620,1080 | auto=QApplication.ClassificationConfigDialog
+ControlType.Text | 本配置只影响「按方向/学期/类别（推荐）」模式。「按类型」「按课程再按类型」不使用这里的映射；课程关键词规则请用主窗口的「课程关键词」（只影响「按课程再按类型」）。
+匹配顺序：临时手动修正（仅当前计划）→ 长期修正规则（从上到下取第一条）→ 学期映射 → 顶层方向 → 学期内目录（类别留空时用关键词细分）→ 通用目录前缀 → 未匹配关键词（竞赛名单、各专业课程、校园事务）→ 未登记目录锚定 → 待定。
+每张表中，启用勾选与从上到下的行顺序就是实际匹配优先级。 | en=True off=False | 471,270,1587,120 | auto=QApplication.ClassificationConfigDialog.QLabel
+ControlType.Header | 启用 | en=True off=False | 489,456,66,49 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_stackedwidget.QWidget.QTableWidget
+ControlType.Header | 来源目录名 | en=True off=False | 555,456,742,49 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_stackedwidget.QWidget.QTableWidget
+ControlType.Header | 学期标签 | en=True off=False | 1297,456,742,49 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_stackedwidget.QWidget.QTableWidget
+ControlType.DataItem | 大一上 | en=True off=False | 555,505,741,43 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_stackedwidget.QWidget.QTableWidget
+ControlType.DataItem | 大一上 | en=True off=False | 1297,505,741,43 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_stackedwidget.QWidget.QTableWidget
+ControlType.DataItem | 大一下 | en=True off=False | 555,550,741,43 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_stackedwidget.QWidget.QTableWidget
+ControlType.DataItem | 大一下 | en=True off=False | 1297,550,741,43 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_stackedwidget.QWidget.QTableWidget
+ControlType.DataItem | 大二上 | en=True off=False | 555,595,741,43 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_stackedwidget.QWidget.QTableWidget
+ControlType.DataItem | 大二上 | en=True off=False | 1297,595,741,43 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_stackedwidget.QWidget.QTableWidget
+ControlType.DataItem | 大二下 | en=True off=False | 555,640,741,43 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_stackedwidget.QWidget.QTableWidget
+ControlType.DataItem | 大二下 | en=True off=False | 1297,640,741,43 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_stackedwidget.QWidget.QTableWidget
+ControlType.DataItem | 大三上 | en=True off=False | 555,685,741,43 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_stackedwidget.QWidget.QTableWidget
+ControlType.DataItem | 大三上 | en=True off=False | 1297,685,741,43 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_stackedwidget.QWidget.QTableWidget
+ControlType.DataItem | 大三下 | en=True off=False | 555,730,741,43 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_stackedwidget.QWidget.QTableWidget
+ControlType.DataItem | 大三下 | en=True off=False | 1297,730,741,43 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_stackedwidget.QWidget.QTableWidget
+ControlType.DataItem | 大四上 | en=True off=False | 555,775,741,43 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_stackedwidget.QWidget.QTableWidget
+ControlType.DataItem | 大四上 | en=True off=False | 1297,775,741,43 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_stackedwidget.QWidget.QTableWidget
+ControlType.DataItem | 大四下 | en=True off=False | 555,820,741,43 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_stackedwidget.QWidget.QTableWidget
+ControlType.DataItem | 大四下 | en=True off=False | 1297,820,741,43 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_stackedwidget.QWidget.QTableWidget
+ControlType.Button | 添加一行 | en=True off=False | 487,1165,111,63 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_stackedwidget.QWidget.QPushButton
+ControlType.Button | 删除选中 | en=True off=False | 607,1165,111,63 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_stackedwidget.QWidget.QPushButton
+ControlType.Button | 上移 | en=True off=False | 727,1165,75,63 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_stackedwidget.QWidget.QPushButton
+ControlType.Button | 下移 | en=True off=False | 811,1165,75,63 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_stackedwidget.QWidget.QPushButton
+ControlType.Tab | 学期映射 | en=True off=False | 471,399,756,42 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_tabbar
+ControlType.TabItem | 学期映射 | en=True off=False | 471,399,108,42 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_tabbar
+ControlType.TabItem | 顶层方向 | en=True off=False | 579,399,108,42 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_tabbar
+ControlType.TabItem | 学期内目录 | en=True off=False | 687,399,126,42 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_tabbar
+ControlType.TabItem | 通用目录前缀 | en=True off=False | 813,399,144,42 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_tabbar
+ControlType.TabItem | 关键词兜底 | en=True off=False | 957,399,126,42 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_tabbar
+ControlType.TabItem | 长期修正规则 | en=True off=False | 1083,399,144,42 | auto=QApplication.ClassificationConfigDialog.QTabWidget.qt_tabwidget_tabbar
+ControlType.Button | 恢复默认 | en=True off=False | 471,1254,111,63 | auto=QApplication.ClassificationConfigDialog.QPushButton
+ControlType.Button | 试运行／查看影响… | en=True off=False | 591,1254,198,63 | auto=QApplication.ClassificationConfigDialog.QPushButton
+ControlType.Text | 当前使用内置默认配置 | en=True off=False | 798,1254,1038,63 | auto=QApplication.ClassificationConfigDialog.QLabel
+ControlType.Button | 保存并应用 | en=True off=False | 1845,1254,129,63 | auto=QApplication.ClassificationConfigDialog.QDialogButtonBox.QPushButton
+ControlType.Button | 取消 | en=True off=False | 1983,1254,75,63 | auto=QApplication.ClassificationConfigDialog.QDialogButtonBox.QPushButton
+ControlType.Window | 归档盒 | en=True off=False | 1081,705,367,177 | auto=QApplication.QMessageBox
+ControlType.Text | 请先选择一个有效的文件夹。 | en=True off=False | 1198,721,234,31 | auto=QApplication.QMessageBox.qt_msgbox_label
+ControlType.Button | 确定 | en=True off=False | 1357,802,75,63 | auto=QApplication.QMessageBox.qt_msgbox_buttonbox.QPushButton
+ControlType.Text | 归档盒 | en=True off=False | 340,267,54,24 | auto=QApplication.MainWindow.QWidget.QLabel
+ControlType.Text | 选中一行后，右侧说明这个文件 | en=True off=False | 1966,267,252,24 | auto=QApplication.MainWindow.QWidget.QLabel
+ControlType.Button | 选择文件夹 | en=True off=False | 1969,322,129,63 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QPushButton
+ControlType.Button | 重新扫描 | en=True off=False | 2110,322,111,63 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QPushButton
+ControlType.Text | 筛选： | en=True off=False | 685,397,54,24 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QLabel
+ControlType.ComboBox | 类型筛选 | en=True off=False | 1087,397,150,48 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QComboBox
+ControlType.ComboBox | 分类目录筛选 | en=True off=False | 1246,397,150,48 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QComboBox
+ControlType.ComboBox | 分类来源筛选 | en=True off=False | 1405,397,186,48 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QComboBox
+ControlType.CheckBox | 待定 | en=True off=False | 1606,402,76,30 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QCheckBox
+ControlType.CheckBox | 将改名 | en=True off=False | 1699,402,94,30 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QCheckBox
+ControlType.Button | 清除 | en=True off=False | 1804,397,75,63 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QPushButton
+ControlType.Text | 正在使用内置默认的学期和目录规则。 | en=True off=False | 685,472,1536,24 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QLabel
+ControlType.Text | 本次范围：整个整理空间（扫描纳入 8 个文件） | en=True off=False | 685,508,1536,24 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QLabel
+ControlType.Text | 未分类 6，已选 2 / 8。未勾选的不会移动。 | en=True off=False | 685,544,1536,42 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QLabel
+ControlType.Header | 勾选 | en=True off=False | 687,600,66,49 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.Header | 原位置 | en=True off=False | 753,600,508,49 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.Header | 目标位置 | en=True off=False | 1261,600,508,49 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.Header | 分类依据 | en=True off=False | 1770,600,300,49 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.Header | 状态 | en=True off=False | 2070,600,66,49 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.Header | 大小 | en=True off=False | 2136,600,84,49 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 下载\截图.png | en=True off=False | 753,649,508,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | _已整理\待定\下载\截图.png | en=True off=False | 1261,649,508,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 未登记顶层目录「下载」；相对路径：父目录「下载」 | en=True off=False | 1770,649,300,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 待定 | en=True off=False | 2070,649,66,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 149.2 KB | en=True off=False | 2136,649,84,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 下载\空文件.txt | en=True off=False | 753,694,508,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | _已整理\待定\下载\空文件.txt | en=True off=False | 1261,694,508,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 未登记顶层目录「下载」；相对路径：父目录「下载」 | en=True off=False | 1770,694,300,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 待定 | en=True off=False | 2070,694,66,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 5 B | en=True off=False | 2136,694,84,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 下载\课堂笔记.txt | en=True off=False | 753,739,508,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | _已整理\待定\下载\课堂笔记.txt | en=True off=False | 1261,739,508,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 未登记顶层目录「下载」；相对路径：父目录「下载」 | en=True off=False | 1770,739,300,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 待定 | en=True off=False | 2070,739,66,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 23 B | en=True off=False | 2136,739,84,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 下载\重复1.txt | en=True off=False | 753,784,508,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | _已整理\待定\下载\重复1.txt | en=True off=False | 1261,784,508,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 未登记顶层目录「下载」；相对路径：父目录「下载」 | en=True off=False | 1770,784,300,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 待定 | en=True off=False | 2070,784,66,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 1.2 KB | en=True off=False | 2136,784,84,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 下载\重复2.txt | en=True off=False | 753,829,508,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | _已整理\待定\下载\重复2.txt | en=True off=False | 1261,829,508,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 未登记顶层目录「下载」；相对路径：父目录「下载」 | en=True off=False | 1770,829,300,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 待定 | en=True off=False | 2070,829,66,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 1.2 KB | en=True off=False | 2136,829,84,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 其他\课堂笔记.txt | en=True off=False | 753,874,508,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | _已整理\待定\其他\课堂笔记.txt | en=True off=False | 1261,874,508,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 未登记顶层目录「其他」；相对路径：父目录「其他」 | en=True off=False | 1770,874,300,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 待定 | en=True off=False | 2070,874,66,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 23 B | en=True off=False | 2136,874,84,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 课程\数据结构\数据结构笔记.txt | en=True off=False | 753,919,508,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | _已整理\课程\未识别学期\数据结构\文档\数据结构笔记.txt | en=True off=False | 1261,919,508,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 目录「数据结构」与已登记目录「数据结构」相同，按该目录归类，文件名不再改判；相对路径：父目录「课程\数据结构」 | en=True off=False | 1770,919,300,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 将移动 | en=True off=False | 2070,919,66,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 27 B | en=True off=False | 2136,919,84,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 课程\高等数学\高数作业.txt | en=True off=False | 753,964,508,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | _已整理\课程\未识别学期\高等数学\文档\高数作业.txt | en=True off=False | 1261,964,508,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 目录「高等数学」含课程关键词「高等数学」，按该目录归类，文件名不再改判；相对路径：父目录「课程\高等数学」 | en=True off=False | 1770,964,300,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 将移动 | en=True off=False | 2070,964,66,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.DataItem | 34 B | en=True off=False | 2136,964,84,45 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QTableWidget
+ControlType.Text | 计划 8｜可见 8｜已勾选 2｜隐藏但仍勾选 0 | en=True off=False | 685,1285,1263,60 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QLabel
+ControlType.Text | 将移动 2｜跳过 6 | en=True off=False | 1960,1285,141,60 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QLabel
+ControlType.Button | 开始整理 | en=True off=False | 2113,1285,108,60 | auto=QApplication.MainWindow.QWidget.mainSplit.QWidget.QPushButton
+ControlType.Text | 文件夹 | en=True off=False | 331,313,301,43 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.QLabel
+ControlType.Tree | 计算机文件夹 | en=True off=False | 331,360,301,240 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.StorageTree
+ControlType.TreeItem | round2 | en=True off=False | 453,322,157,39 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.StorageTree
+ControlType.TreeItem | app | en=True off=False | 477,361,133,39 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.StorageTree
+ControlType.TreeItem | config | en=True off=False | 477,400,133,39 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.StorageTree
+ControlType.TreeItem | evidence | en=True off=False | 477,439,133,39 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.StorageTree
+ControlType.TreeItem | logs | en=True off=False | 477,478,133,39 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.StorageTree
+ControlType.TreeItem | samples | en=True off=False | 477,517,133,39 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.StorageTree
+ControlType.TreeItem | 课程 资料 | en=True off=False | 501,556,109,39 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.StorageTree
+ControlType.TreeItem | shots | en=True off=False | 477,595,133,39 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.StorageTree
+ControlType.Text | 双击文件夹，设为这次要整理的位置 | en=True off=False | 331,603,301,37 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.QLabel
+ControlType.Text | 分类 | en=True off=False | 331,643,301,43 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.QLabel
+ControlType.CheckBox | 识别图片文字 | en=True off=False | 337,745,148,30 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.QCheckBox
+ControlType.CheckBox | 待定或识别失败时问 DeepSeek | en=True off=False | 337,787,294,30 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.QCheckBox
+ControlType.Button | 课程关键词 | en=False off=False | 331,825,301,63 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.QPushButton
+ControlType.Button | 学期和目录规则 | en=True off=False | 331,891,301,63 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.QPushButton
+ControlType.Button | 导入或保存方案 | en=True off=False | 331,957,301,63 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.QPushButton
+ControlType.Button | 重新生成预览 | en=True off=False | 331,1023,301,63 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.QPushButton
+ControlType.Text | 勾选 | en=True off=False | 331,1089,301,43 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.QLabel
+ControlType.Button | 勾选看到的文件 | en=True off=False | 331,1135,301,63 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.QPushButton
+ControlType.Button | 取消这些勾选 | en=True off=False | 331,1201,301,63 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.QPushButton
+ControlType.Button | 对调这些勾选 | en=True off=False | 331,1267,301,63 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.QPushButton
+ControlType.Button | 最近打开 | en=True off=False | 331,1333,301,63 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.QPushButton
+ControlType.Text | 这次 | en=True off=False | 331,1399,301,43 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.QLabel
+ControlType.Button | 待整理清单 | en=True off=False | 331,1446,301,63 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.QPushButton
+ControlType.Button | 只扫描清单 | en=False off=False | 331,1512,301,63 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.QPushButton
+ControlType.Button | 查看重复文件 | en=True off=False | 331,1578,301,63 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.QPushButton
+ControlType.Text | 整理 | en=True off=False | 331,1644,301,43 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.QLabel
+ControlType.Button | 撤销上一次 | en=False off=False | 331,1690,301,63 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.QPushButton
+ControlType.Button | 操作历史 | en=True off=False | 331,1756,301,63 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.QPushButton
+ControlType.Button | 将生成的目录 | en=True off=False | 331,1822,301,63 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.QPushButton
+ControlType.Button | 不整理的目录 | en=True off=False | 331,1888,301,63 | auto=QApplication.MainWindow.QWidget.mainSplit.QScrollArea.qt_scrollarea_viewport.sideInner.QPushButton
+ControlType.StatusBar | ✓ 计划 8 个文件，已选 2 | 类型分布：图片 1，文档 7（仍可更改，点击「开始整理」才会移动文件） | en=True off=False | 319,1360,1920,33 | auto=QApplication.MainWindow.QStatusBar
+ControlType.MenuItem | 帮助 | en=True off=False | 328,223,48,31 | auto=QApplication.MainWindow.QMenuBar.QAction

@@ -1,0 +1,2 @@
+batches=[(1, 'undone', '撤销 恢复 8 / 冲突 0 / 错误 0')]
+actions=[('undone', 8)]

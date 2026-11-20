@@ -1,0 +1,312 @@
+{
+  "generated_at": "2026-11-20T22:21:50",
+  "work_dir": "C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261120_01\\round2\\work\\engine_20261120_222146",
+  "summary": {
+    "PASS": 39,
+    "INFO": 4,
+    "FAIL": 5,
+    "UNTESTED": 2
+  },
+  "checks": [
+    {
+      "id": "A1",
+      "title": "扫描排除 .organizer / .git",
+      "status": "PASS",
+      "detail": "共 10 个文件；样例=['下载/只读.txt', '下载/同名.txt', '下载/很深的目录名称一二三四五六/很深的目录名称一二三四五六/很深的目录名称一二三四五六/很深的目录名称一二三四五六/很深的目录名称一二三四五六/很深的目录名称一二三四五六/很深的目录名称一二三四五六/很深的目录名称一二三四五六/很深的目录名称一二三四五六/很深的目录名称一二三四五六/很深的目录名称一二三四五六/很深的目录名称一二三四五六/很深的目录名称一二三四五六/很深的目录名称一二三四五六/长路径笔记.txt', '下载/无扩展名', '下载/空文件.txt', '下载/重复A.txt']"
+    },
+    {
+      "id": "A2",
+      "title": "隐藏文件扫描行为（记录现状）",
+      "status": "INFO",
+      "detail": "隐藏文件 .隐藏.txt 是否被扫描：False"
+    },
+    {
+      "id": "A3",
+      "title": "超过 260 字符的长路径被扫描",
+      "status": "PASS",
+      "detail": "命中 1 个，绝对路径长度 304"
+    },
+    {
+      "id": "A4",
+      "title": "目录联接不越出整理根",
+      "status": "PASS",
+      "detail": "根外文件出现在扫描结果：[]；junction 计数=0；跳过目录=['.git', '.organizer']"
+    },
+    {
+      "id": "A5",
+      "title": "含 requirements.txt 的项目目录整体保护",
+      "status": "PASS",
+      "detail": "项目甲文件进入扫描：[]；保护项=['项目甲']；保护文件数=3"
+    },
+    {
+      "id": "A6",
+      "title": "空文件/无扩展名/只读/图片都进入扫描",
+      "status": "INFO",
+      "detail": "扩展名集合=['', '.png', '.txt']；无扩展名=True；空文件=True；只读=True"
+    },
+    {
+      "id": "B1",
+      "title": "按类型计划全部落到 _已整理/",
+      "status": "PASS",
+      "detail": "示例=['_已整理/文档/只读.txt', '_已整理/文档/同名.txt', '_已整理/文档/长路径笔记.txt', '_已整理/其他/无扩展名', '_已整理/文档/空文件.txt']"
+    },
+    {
+      "id": "B2",
+      "title": "按课程模式用所在目录名作为分类证据",
+      "status": "FAIL",
+      "detail": "课程/高等数学/作业.txt 的目标=[('课程\\\\高等数学\\\\作业.txt', '_已整理\\\\未分类课程\\\\文档\\\\作业.txt')]"
+    },
+    {
+      "id": "B2b",
+      "title": "对照：文件名含「高数」可命中",
+      "status": "PASS",
+      "detail": "目标=[('高等数学', '_已整理\\\\高等数学\\\\文档\\\\高数作业.txt')]"
+    },
+    {
+      "id": "B3",
+      "title": "不同目录同名文件目标不冲突",
+      "status": "PASS",
+      "detail": "同名条目=[('下载\\\\同名.txt', '_已整理\\\\未分类课程\\\\文档\\\\同名.txt'), ('其他\\\\同名.txt', '_已整理\\\\未分类课程\\\\文档\\\\同名 (1).txt')]"
+    },
+    {
+      "id": "B4",
+      "title": "内容重复识别",
+      "status": "PASS",
+      "detail": "重复条目=[('下载\\\\重复A.txt', 'g1', 2), ('下载\\\\重复B.txt', 'g1', 2)]"
+    },
+    {
+      "id": "B5",
+      "title": "空文件不计入内容重复",
+      "status": "PASS",
+      "detail": "空文件 dup_count=1"
+    },
+    {
+      "id": "B6",
+      "title": "生成计划不改变磁盘文件",
+      "status": "PASS",
+      "detail": "变更=[]"
+    },
+    {
+      "id": "C1",
+      "title": "执行 4 项：数量/内容/源清理",
+      "status": "PASS",
+      "detail": "结果=成功 4；SHA一致=True；源已移走=True"
+    },
+    {
+      "id": "C2",
+      "title": "撤销 4 项：路径与内容恢复",
+      "status": "PASS",
+      "detail": "撤销=完整撤销：恢复 4 项；is_complete=True；SHA一致=True；目标清空=True；批次状态=undone"
+    },
+    {
+      "id": "C3",
+      "title": "单文件被占用不中断整批",
+      "status": "PASS",
+      "detail": "结果=成功 1/跳过 1；错误=['跳过（无法读取源文件内容（权限/占用），未移动）：下载\\\\文件00.txt']"
+    },
+    {
+      "id": "C4",
+      "title": "被占用文件保留原位置",
+      "status": "PASS",
+      "detail": "占用文件仍在=True"
+    },
+    {
+      "id": "C5",
+      "title": "计划后源文件变化 → 跳过该项",
+      "status": "PASS",
+      "detail": "结果=成功 1/跳过 1；错误=['跳过（源文件内容已变化）：下载\\\\文件00.txt']"
+    },
+    {
+      "id": "C6",
+      "title": "目标位置被抢占时不覆盖",
+      "status": "PASS",
+      "detail": "结果=成功 0/跳过 1；目标内容='执行前占位内容'；错误=['跳过（目标路径已被占用）：下载\\\\文件00.txt → _已整理\\\\文档\\\\文件00.txt']"
+    },
+    {
+      "id": "C7",
+      "title": "执行中取消：移走 3、其余取消",
+      "status": "PASS",
+      "detail": "结果=成功 3/取消剩余 27；batch=1；批次状态=cancelled"
+    },
+    {
+      "id": "C8",
+      "title": "取消后的批次仍可撤销已移动项",
+      "status": "PASS",
+      "detail": "撤销=完整撤销：恢复 3 项；refused=False；错误=[]"
+    },
+    {
+      "id": "D1",
+      "title": "执行中被强杀后进程确实终止",
+      "status": "PASS",
+      "detail": "returncode=1；子进程输出尾部="
+    },
+    {
+      "id": "D2",
+      "title": "中断恢复后批次可收束并允许撤销",
+      "status": "FAIL",
+      "detail": "恢复前批次=executing；核对批次 #1 | 补记已移动 10 | 仍未执行 30 | 批次状态 → 恢复后仍未确定；恢复后=recovered_partial；条目状态={'moved': 10, 'planned': 30}；撤销拒绝=True；撤销信息=['批次 #1 还有 30 个状态未确定的条目（planned/paused），撤销被拒绝：\\n  下载\\\\中断10.txt\\n  下载\\\\中断11.txt\\n  下载\\\\中断12.txt\\n  下载\\\\中断13.txt\\n  下载\\\\中断14.txt\\n  下载\\\\中断15.txt\\n  下载\\\\中断16.txt\\n  下载\\\\中断17.txt\\n  下载\\\\中断18.txt\\n  下载\\\\中断19.txt…\\n请先「核对恢复」或人工处理这些条目，再执行撤销。']"
+    },
+    {
+      "id": "E1",
+      "title": "Windows 上目录 fd 可打开（缓存写入前提）",
+      "status": "FAIL",
+      "detail": "os.open('.organizer') -> PermissionError: errno=13 [Errno 13] Permission denied: 'C:\\\\Users\\\\Lenovo\\\\Documents\\\\Trae-CN\\\\temp_20261120_01\\\\round2\\\\work\\\\engine_20261120_222146\\\\cache\\\\.organizer'"
+    },
+    {
+      "id": "E2",
+      "title": "增量扫描缓存能在 Windows 写入",
+      "status": "FAIL",
+      "detail": "scan_cache.save -> PermissionError: errno=13 [Errno 13] Permission denied: 'C:\\\\Users\\\\Lenovo\\\\Documents\\\\Trae-CN\\\\temp_20261120_01\\\\round2\\\\work\\\\engine_20261120_222146\\\\cache\\\\.organizer'；缓存文件存在=False"
+    },
+    {
+      "id": "E3",
+      "title": "缓存读回/失效/损坏回退",
+      "status": "UNTESTED",
+      "detail": "缓存无法写入，后续项无法验证"
+    },
+    {
+      "id": "E6",
+      "title": ".organizer 被换成根外联接时不写出根外",
+      "status": "PASS",
+      "detail": "OSError: 缓存目录不是目录，未写入；根外目录内容=[]"
+    },
+    {
+      "id": "F1",
+      "title": "docx/pptx/xlsx 正文解析",
+      "status": "PASS",
+      "detail": "texts={'课程\\\\报告.docx': '数据结构 实验一 线性表', '课程\\\\答辩.pptx': '高等数学 期末展示', '课程\\\\成绩.xlsx': '概率论 成绩单', '课程\\\\普通.txt': '普通正文内容'}"
+    },
+    {
+      "id": "F2",
+      "title": "损坏 Office/PDF 给原因而不是静默失败",
+      "status": "PASS",
+      "detail": "errors={'课程\\\\损坏.docx': '无法读取正文：不是有效的 Office 压缩包或文件已损坏', '课程\\\\说明.pdf': '未支持：当前版本没有 PDF 解析库，未读取正文'}"
+    },
+    {
+      "id": "F3",
+      "title": "普通 txt 仍可读取",
+      "status": "PASS",
+      "detail": "txt 摘录=['普通正文内容']"
+    },
+    {
+      "id": "F4",
+      "title": "正文读取不跟随根外链接",
+      "status": "UNTESTED",
+      "detail": "无法创建符号链接：[WinError 1314] 客户端没有所需的特权。: 'C:\\\\Users\\\\Lenovo\\\\Documents\\\\Trae-CN\\\\temp_20261120_01\\\\round2\\\\work\\\\engine_20261120_222146\\\\content_outside\\\\外部.txt' -> 'C:\\\\Users\\\\Lenovo\\\\Documents\\\\Trae-CN\\\\temp_20261120_01\\\\round2\\\\work\\\\engine_20261120_222146\\\\content\\\\课程/外链.txt'"
+    },
+    {
+      "id": "G1",
+      "title": "偏好可保存到空间偏好库",
+      "status": "PASS",
+      "detail": "已保存；库路径=C:\\Users\\Lenovo\\Documents\\Trae-CN\\temp_20261120_01\\round2\\work\\engine_20261120_222146\\prefs\\.organizer\\preferences.db"
+    },
+    {
+      "id": "G2",
+      "title": "偏好可再次读取",
+      "status": "PASS",
+      "detail": "条目=[('pref-test-1', '测试偏好')]"
+    },
+    {
+      "id": "G3",
+      "title": "停用后不出现在生效偏好里",
+      "status": "PASS",
+      "detail": "生效条目=[]"
+    },
+    {
+      "id": "G4",
+      "title": "非法方向被校验拒绝",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "id": "G5",
+      "title": "偏好可删除",
+      "status": "PASS",
+      "detail": ""
+    },
+    {
+      "id": "G6",
+      "title": "JSON 长期规则一次性迁移且保留原 JSON",
+      "status": "PASS",
+      "detail": "首次插入=1，再次=0，JSON 规则=['lt-migrate-1']，来源=custom"
+    },
+    {
+      "id": "H1",
+      "title": "内容重复分组（空文件不计）",
+      "status": "PASS",
+      "detail": "内容组=[('内容重复 #1（3 份）', ['下载\\\\乙.txt', '下载\\\\甲.txt', '其他\\\\丙.txt'])]"
+    },
+    {
+      "id": "H2",
+      "title": "同名不同内容分组",
+      "status": "PASS",
+      "detail": "同名组=[('同名不同内容 #1（2 份）', ['下载\\\\同名.txt', '其他\\\\同名.txt'])]"
+    },
+    {
+      "id": "H3",
+      "title": "导出不改变文件",
+      "status": "PASS",
+      "detail": "CSV 1167 字符 / JSON 3423 字符"
+    },
+    {
+      "id": "I1",
+      "title": "OCR 引擎可用性",
+      "status": "INFO",
+      "detail": "supported=True；label=Windows 优先用系统中文识别。其他情况用同一套本地模型，Windows 和 Linux 也能跑。图片不会上传。第一次使用本地模型时需要联网下载，之后可以离线。；候选 png=True；候选 txt=False"
+    },
+    {
+      "id": "I2",
+      "title": "Windows 原生 OCR 识别中文截图（记录原文）",
+      "status": "INFO",
+      "detail": "识别结果='高 等 数 学 作 业 第 三 章'"
+    },
+    {
+      "id": "I3",
+      "title": "OCR 识别文本能被课程关键词命中",
+      "status": "FAIL",
+      "detail": "OCR 原文→课程='未分类课程'；去空格后→课程='高等数学'；原文='高 等 数 学 作 业 第 三 章'"
+    },
+    {
+      "id": "J1",
+      "title": "AI 默认关闭且无密钥",
+      "status": "PASS",
+      "detail": "enabled=False；ready=False"
+    },
+    {
+      "id": "J2",
+      "title": "AI 关闭时不发起请求、不推翻本地分类",
+      "status": "PASS",
+      "detail": "提示=AI 未开启，或还没有 DeepSeek 密钥。；网络调用=False"
+    },
+    {
+      "id": "C9",
+      "title": "长路径（绝对路径 > 260）移动",
+      "status": "PASS",
+      "detail": "rel_len=230；结果=成功 1；错误=[]"
+    },
+    {
+      "id": "C10",
+      "title": "长路径撤销",
+      "status": "PASS",
+      "detail": "撤销=完整撤销：恢复 1 项；恢复=True"
+    },
+    {
+      "id": "C11",
+      "title": "只读文件可移动",
+      "status": "PASS",
+      "detail": "结果=成功 1；错误=[]"
+    },
+    {
+      "id": "C13",
+      "title": "撤销遇到原位置占用时不覆盖新文件",
+      "status": "PASS",
+      "detail": "撤销=部分撤销：恢复 0 / 冲突 1 / 错误 0；conflict=1；原位置内容='撤销前新写入的内容'"
+    },
+    {
+      "id": "C12",
+      "title": "ACL 拒绝读取的文件跳过并继续",
+      "status": "PASS",
+      "detail": "结果=成功 0/跳过 1；错误=['跳过（源文件无法读取，未移动）：下载\\\\拒绝读取.txt']"
+    }
+  ]
+}

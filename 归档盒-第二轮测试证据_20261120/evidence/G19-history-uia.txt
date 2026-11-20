@@ -1,0 +1,95 @@
+﻿ControlType.Text | 批次列表（按整理根目录保存，与计划数量无关，全部来自实际持久化记录） | en=True off=False | 471,270,1587,24 | auto=QApplication.HistoryDialog.QLabel
+ControlType.Header | 批次 | en=True off=False | 472,304,105,49 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.Header | 时间 | en=True off=False | 577,304,225,49 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.Header | 分类模式 | en=True off=False | 802,304,255,49 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.Header | 状态 | en=True off=False | 1057,304,165,49 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.Header | 移动 | en=True off=False | 1222,304,90,49 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.Header | 跳过 | en=True off=False | 1312,304,90,49 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.Header | 失败 | en=True off=False | 1402,304,90,49 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.Header | 取消 | en=True off=False | 1492,304,90,49 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.Header | 已撤销 | en=True off=False | 1582,304,90,49 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.Header | 注意 | en=True off=False | 1672,304,360,49 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | #1 | en=True off=False | 472,354,103,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 2026-11-20 22:33:30 | en=True off=False | 577,354,223,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 按类型 | en=True off=False | 802,354,253,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 已撤销 | en=True off=False | 1057,354,163,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 0 | en=True off=False | 1222,354,88,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 0 | en=True off=False | 1312,354,88,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 0 | en=True off=False | 1402,354,88,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 0 | en=True off=False | 1492,354,88,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 8 | en=True off=False | 1582,354,88,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.Button | 刷新 | en=True off=False | 471,552,256,63 | auto=QApplication.HistoryDialog.QPushButton
+ControlType.Button | 撤销该批次 | en=False off=False | 736,552,258,63 | auto=QApplication.HistoryDialog.QPushButton
+ControlType.Button | 核对恢复… | en=False off=False | 1003,552,256,63 | auto=QApplication.HistoryDialog.QPushButton
+ControlType.Button | 导出… | en=True off=False | 1269,552,256,63 | auto=QApplication.HistoryDialog.QPushButton
+ControlType.Text | 当前没有可撤销的批次。 | en=True off=False | 1534,552,258,63 | auto=QApplication.HistoryDialog.QLabel
+ControlType.Button | 关闭 | en=True off=False | 1801,552,256,63 | auto=QApplication.HistoryDialog.QPushButton
+ControlType.Text | 逐项明细 | en=True off=False | 471,624,1587,24 | auto=QApplication.HistoryDialog.QLabel
+ControlType.Text | 状态： | en=True off=False | 1459,657,54,63 | auto=QApplication.HistoryDialog.QLabel
+ControlType.Button | 在文件管理器中显示 | en=False off=False | 1857,657,201,63 | auto=QApplication.HistoryDialog.QPushButton
+ControlType.Header | 序号 | en=True off=False | 472,730,69,49 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.Header | 原位置（相对路径） | en=True off=False | 541,730,390,49 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.Header | 目标位置（相对路径） | en=True off=False | 931,730,390,49 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.Header | 大小 | en=True off=False | 1321,730,105,49 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.Header | 状态 | en=True off=False | 1426,730,210,49 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.Header | 原因 / 说明 | en=True off=False | 1636,730,300,49 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.Header | 分类来源 | en=True off=False | 1936,730,120,49 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 1 | en=True off=False | 472,780,67,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 下载\截图.png | en=True off=False | 541,780,388,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | _已整理\图片\截图.png | en=True off=False | 931,780,388,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 149.2 KB | en=True off=False | 1321,780,103,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 已撤销 | en=True off=False | 1426,780,208,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 自动 | en=True off=False | 1936,780,118,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 2 | en=True off=False | 472,825,67,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 下载\空文件.txt | en=True off=False | 541,825,388,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | _已整理\文档\空文件.txt | en=True off=False | 931,825,388,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 5 B | en=True off=False | 1321,825,103,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 已撤销 | en=True off=False | 1426,825,208,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 自动 | en=True off=False | 1936,825,118,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 3 | en=True off=False | 472,870,67,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 下载\课堂笔记.txt | en=True off=False | 541,870,388,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | _已整理\文档\课堂笔记.txt | en=True off=False | 931,870,388,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 23 B | en=True off=False | 1321,870,103,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 已撤销 | en=True off=False | 1426,870,208,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 自动 | en=True off=False | 1936,870,118,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 4 | en=True off=False | 472,915,67,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 下载\重复1.txt | en=True off=False | 541,915,388,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | _已整理\文档\重复1.txt | en=True off=False | 931,915,388,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 1.2 KB | en=True off=False | 1321,915,103,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 已撤销 | en=True off=False | 1426,915,208,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 自动 | en=True off=False | 1936,915,118,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 5 | en=True off=False | 472,960,67,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 下载\重复2.txt | en=True off=False | 541,960,388,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | _已整理\文档\重复2.txt | en=True off=False | 931,960,388,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 1.2 KB | en=True off=False | 1321,960,103,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 已撤销 | en=True off=False | 1426,960,208,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 自动 | en=True off=False | 1936,960,118,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 6 | en=True off=False | 472,1005,67,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 其他\课堂笔记.txt | en=True off=False | 541,1005,388,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | _已整理\文档\课堂笔记 (1).txt | en=True off=False | 931,1005,388,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 23 B | en=True off=False | 1321,1005,103,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 已撤销 | en=True off=False | 1426,1005,208,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 自动 | en=True off=False | 1936,1005,118,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 7 | en=True off=False | 472,1050,67,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 课程\数据结构\数据结构笔记.txt | en=True off=False | 541,1050,388,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | _已整理\文档\数据结构笔记.txt | en=True off=False | 931,1050,388,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 27 B | en=True off=False | 1321,1050,103,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 已撤销 | en=True off=False | 1426,1050,208,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 自动 | en=True off=False | 1936,1050,118,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 8 | en=True off=False | 472,1095,67,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 课程\高等数学\高数作业.txt | en=True off=False | 541,1095,388,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | _已整理\文档\高数作业.txt | en=True off=False | 931,1095,388,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 34 B | en=True off=False | 1321,1095,103,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 已撤销 | en=True off=False | 1426,1095,208,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.DataItem | 自动 | en=True off=False | 1936,1095,118,43 | auto=QApplication.HistoryDialog.QTableWidget
+ControlType.Button | 上一页 | en=False off=False | 471,1254,93,63 | auto=QApplication.HistoryDialog.QPushButton
+ControlType.Text | 第 1/1 页 · 共 8 项 | en=True off=False | 573,1254,148,63 | auto=QApplication.HistoryDialog.QLabel
+ControlType.Button | 下一页 | en=False off=False | 730,1254,93,63 | auto=QApplication.HistoryDialog.QPushButton
+ControlType.Button | 选择第 1 行明细 | en=True off=False | 472,780,67,63 | auto=QApplication.HistoryDialog.QPushButton
+ControlType.Button | 选择第 2 行明细 | en=True off=False | 472,825,67,63 | auto=QApplication.HistoryDialog.QPushButton
+ControlType.Button | 选择第 3 行明细 | en=True off=False | 472,870,67,63 | auto=QApplication.HistoryDialog.QPushButton
+ControlType.Button | 选择第 4 行明细 | en=True off=False | 472,915,67,63 | auto=QApplication.HistoryDialog.QPushButton
+ControlType.Button | 选择第 5 行明细 | en=True off=False | 472,960,67,63 | auto=QApplication.HistoryDialog.QPushButton
+ControlType.Button | 选择第 6 行明细 | en=True off=False | 472,1005,67,63 | auto=QApplication.HistoryDialog.QPushButton
+ControlType.Button | 选择第 7 行明细 | en=True off=False | 472,1050,67,63 | auto=QApplication.HistoryDialog.QPushButton
+ControlType.Button | 选择第 8 行明细 | en=True off=False | 472,1095,67,63 | auto=QApplication.HistoryDialog.QPushButton

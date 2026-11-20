@@ -1,0 +1,17 @@
+﻿ControlType.Text | 只显示本机最近使用过的整理空间；记录保存在系统用户配置目录。
+移除记录只删除记录，不会删除真实目录、配置或历史；不存在的目录不会被自动创建。 | en=True off=False | 606,420,1317,66 | auto=QApplication.RecentSpacesDialog.QLabel
+ControlType.Header | 名称 | en=True off=False | 607,496,88,49 | auto=QApplication.RecentSpacesDialog.QTableWidget
+ControlType.Header | 完整路径 | en=True off=False | 696,496,742,49 | auto=QApplication.RecentSpacesDialog.QTableWidget
+ControlType.Header | 最近打开 | en=True off=False | 1438,496,261,49 | auto=QApplication.RecentSpacesDialog.QTableWidget
+ControlType.Header | 固定 | en=True off=False | 1699,496,66,49 | auto=QApplication.RecentSpacesDialog.QTableWidget
+ControlType.Header | 状态 | en=True off=False | 1765,496,66,49 | auto=QApplication.RecentSpacesDialog.QTableWidget
+ControlType.DataItem | 课程 资料 | en=True off=False | 607,546,87,43 | auto=QApplication.RecentSpacesDialog.QTableWidget
+ControlType.DataItem | C:\Users\Lenovo\Documents\Trae-CN\temp_20261120_01\round2\samples\课程 资料 | en=True off=False | 696,546,741,43 | auto=QApplication.RecentSpacesDialog.QTableWidget
+ControlType.DataItem | 2026-11-20T22:30:21.379787 | en=True off=False | 1438,546,259,43 | auto=QApplication.RecentSpacesDialog.QTableWidget
+ControlType.DataItem | 否 | en=True off=False | 1699,546,64,43 | auto=QApplication.RecentSpacesDialog.QTableWidget
+ControlType.DataItem | 可用 | en=True off=False | 1765,546,64,43 | auto=QApplication.RecentSpacesDialog.QTableWidget
+ControlType.Button | 打开空间 | en=False off=False | 606,1032,111,63 | auto=QApplication.RecentSpacesDialog.QPushButton
+ControlType.Button | 固定 / 取消固定 | en=False off=False | 726,1032,166,63 | auto=QApplication.RecentSpacesDialog.QPushButton
+ControlType.Button | 从记录中移除 | en=False off=False | 901,1032,147,63 | auto=QApplication.RecentSpacesDialog.QPushButton
+ControlType.Button | 刷新 | en=True off=False | 1057,1032,75,63 | auto=QApplication.RecentSpacesDialog.QPushButton
+ControlType.Button | 关闭 | en=True off=False | 1848,1104,75,63 | auto=QApplication.RecentSpacesDialog.QDialogButtonBox.QPushButton
