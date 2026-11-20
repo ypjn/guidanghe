@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import hashlib
 import os
+import sqlite3
+import subprocess
 import sys
 import tempfile
 import threading
@@ -263,6 +265,101 @@ def stage4_baseline(root, prefix):
     return {item.file.rel_path: item.target_rel_path
             for item in plan.items
             if item.file.rel_path.startswith(prefix)}
+
+
+def make_history_db(path, root, entries):
+    """按当前 history.db 结构生成独立历史库，供导入交错测试使用。"""
+    conn = sqlite3.connect(path)
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS batches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            root TEXT NOT NULL,
+            mode TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            finished_at TEXT DEFAULT '',
+            rules_json TEXT DEFAULT '',
+            summary TEXT DEFAULT '',
+            config_json TEXT DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS actions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id INTEGER NOT NULL,
+            action_index INTEGER NOT NULL,
+            source_rel TEXT NOT NULL,
+            target_rel TEXT NOT NULL,
+            source_size INTEGER NOT NULL,
+            source_sha256 TEXT NOT NULL,
+            status TEXT NOT NULL,
+            error TEXT DEFAULT '',
+            executed_at TEXT DEFAULT '',
+            undone_at TEXT DEFAULT '',
+            temp_rel TEXT DEFAULT '',
+            auto_target_rel TEXT DEFAULT '',
+            auto_rule_applied TEXT DEFAULT '',
+            override_note TEXT DEFAULT '',
+            rule_key TEXT DEFAULT '',
+            rule_applied TEXT DEFAULT '',
+            UNIQUE(batch_id, action_index)
+        );
+        CREATE TABLE IF NOT EXISTS created_dirs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id INTEGER NOT NULL,
+            rel_path TEXT NOT NULL
+        );
+    """)
+    now = "2026-01-01T00:00:00"
+    for batch_id, action_index, rel, after, before, category in entries:
+        conn.execute(
+            "INSERT OR REPLACE INTO batches("
+            "id, root, mode, status, created_at, finished_at, rules_json, "
+            "summary, config_json) VALUES(?,?,?,?,?,'','','','')",
+            (batch_id, root, MODE_BY_DIRECTION_SEMESTER, "done", now))
+        name = os.path.basename(rel)
+        conn.execute(
+            "INSERT INTO actions(batch_id, action_index, source_rel, "
+            "target_rel, source_size, source_sha256, status, error, "
+            "executed_at, undone_at, temp_rel, auto_target_rel, "
+            "auto_rule_applied, override_note, rule_key, rule_applied) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (batch_id, action_index, rel, os.path.join(after, name), 1,
+             "abc", "moved", "", now, "", "",
+             os.path.join(before, name), "", "",
+             "manual_override:" + rel,
+             f"手动修正：方向「项目」 / 类别「{category}」"))
+    conn.commit()
+    conn.close()
+
+
+def import_with_concurrent_live(root, history_path, rel, after, category):
+    """在导入的读与写之间，用另一个进程提交一条现场判断。"""
+    code = (
+        "import sys; sys.path.insert(0, {src!r}); import learning; "
+        "learning.record_override({root!r}, {rel!r}, {before!r}, "
+        "{after!r}, '项目', '', {category!r})"
+    ).format(src=SRC, root=root, rel=rel, before="_已整理/待定",
+             after=after, category=category)
+    started = {"done": False}
+
+    def hook(hook_root, source_rel):
+        if started["done"]:
+            return
+        started["done"] = True
+        learning._IMPORT_READ_HOOK = None
+        proc = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True,
+            env=os.environ.copy(), timeout=60)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"交错写入进程失败：{proc.returncode}\n{proc.stderr}")
+
+    learning._IMPORT_READ_HOOK = hook
+    try:
+        result = learning.import_history_feedback(
+            root, history_db_path=history_path)
+    finally:
+        learning._IMPORT_READ_HOOK = None
+    return result, learning.list_feedback(root)
 
 
 def execute_and_import(root, plan):
@@ -1019,6 +1116,89 @@ def main():
             "_已整理", "项目", "现场一致去向")
         and live2_rows[0].batch_id == 1,
         f"记录={[(f.after_target, f.batch_id, f.origin) for f in live2_rows]}")
+
+    # ---------- 另一进程在读与写之间提交：现场判断不能被历史覆盖 ----------
+    c1 = space("concurrent_mismatch")
+    rel1 = "并发一.txt"
+    write(c1, rel1, "并发一\n")
+    hist1 = os.path.join(BASE, "history_concurrent_1.db")
+    make_history_db(hist1, c1, [
+        (1, 0, rel1, "_已整理/项目/旧目录", "_已整理/待定", "旧类别"),
+        (2, 0, rel1, "_已整理/项目/新目录", "_已整理/待定", "新类别"),
+    ])
+    res1, rows1 = import_with_concurrent_live(
+        c1, hist1, rel1, "_已整理/项目/现场目录", "现场类别")
+    again1 = learning.import_history_feedback(c1, history_db_path=hist1)
+    rec("S525",
+        "批次 2 新目录已存在时，另一进程读后写出现场判断：保留 live/现场目录/batch 空",
+        res1.judgments_added == 0 and again1.judgments_added == 0
+        and len(rows1) == 1
+        and rows1[0].origin == "live"
+        and rows1[0].after_target == os.path.join("_已整理", "项目", "现场目录")
+        and rows1[0].category == "现场类别"
+        and rows1[0].batch_id is None,
+        f"导入新增={res1.judgments_added}/{again1.judgments_added} "
+        f"记录={[(f.origin, f.after_target, f.category, f.batch_id) for f in rows1]}")
+
+    c2 = space("concurrent_same_target")
+    rel2 = "并发二.txt"
+    write(c2, rel2, "并发二\n")
+    hist2 = os.path.join(BASE, "history_concurrent_2.db")
+    make_history_db(hist2, c2, [
+        (1, 0, rel2, "_已整理/项目/旧目录", "_已整理/待定", "旧类别"),
+        (2, 0, rel2, "_已整理/项目/现场目录", "_已整理/待定", "历史类别"),
+    ])
+    res2, rows2 = import_with_concurrent_live(
+        c2, hist2, rel2, "_已整理/项目/现场目录", "现场类别")
+    rec("S526",
+        "交错写入的现场去向与批次 2 一致：保留现场类别，只回填 batch_id=2",
+        res2.judgments_added == 0 and len(rows2) == 1
+        and rows2[0].origin == "live"
+        and rows2[0].after_target == os.path.join("_已整理", "项目", "现场目录")
+        and rows2[0].category == "现场类别"
+        and rows2[0].batch_id == 2,
+        f"记录={[(f.origin, f.after_target, f.category, f.batch_id) for f in rows2]}")
+
+    c3 = space("concurrent_no_row")
+    rel3 = "并发三.txt"
+    write(c3, rel3, "并发三\n")
+    hist3 = os.path.join(BASE, "history_concurrent_3.db")
+    make_history_db(hist3, c3, [
+        (2, 0, rel3, "_已整理/项目/新目录", "_已整理/待定", "新类别"),
+    ])
+    res3, rows3 = import_with_concurrent_live(
+        c3, hist3, rel3, "_已整理/项目/现场目录", "现场类别")
+    rec("S527",
+        "导入读到没有这行后另一进程写现场判断：保留现场去向，新增条数为 0",
+        res3.judgments_added == 0 and len(rows3) == 1
+        and rows3[0].origin == "live"
+        and rows3[0].after_target == os.path.join("_已整理", "项目", "现场目录")
+        and rows3[0].batch_id is None,
+        f"导入新增={res3.judgments_added} "
+        f"记录={[(f.origin, f.after_target, f.batch_id) for f in rows3]}")
+
+    c4 = space("concurrent_old_back")
+    rel4 = "并发四.txt"
+    write(c4, rel4, "并发四\n")
+    hist_new = os.path.join(BASE, "history_concurrent_new.db")
+    make_history_db(hist_new, c4, [
+        (2, 0, rel4, "_已整理/项目/新目录", "_已整理/待定", "新类别"),
+    ])
+    learning.import_history_feedback(c4, history_db_path=hist_new)
+    hist_old = os.path.join(BASE, "history_concurrent_old.db")
+    make_history_db(hist_old, c4, [
+        (1, 0, rel4, "_已整理/项目/旧目录", "_已整理/待定", "旧类别"),
+    ])
+    old_again = learning.import_history_feedback(c4, history_db_path=hist_old)
+    rows4 = learning.list_feedback(c4)
+    rec("S528",
+        "批次 2 新目录已导入后，只持有批次 1 旧目录的导入不得写回去向和 batch_id",
+        old_again.judgments_added == 0 and len(rows4) == 1
+        and rows4[0].origin == "history"
+        and rows4[0].after_target == os.path.join("_已整理", "项目", "新目录")
+        and rows4[0].batch_id == 2,
+        f"旧批次导入新增={old_again.judgments_added} "
+        f"记录={[(f.origin, f.after_target, f.batch_id) for f in rows4]}")
 
     # ---------- 汇总 ----------
     failed = [c for c in CHECKS if not c[2]]

@@ -56,6 +56,9 @@ STATUS_LABELS = {
 CONFIRMABLE_STATUSES = (STATUS_PENDING,)
 KEEP_STATUSES = (STATUS_CONFIRMED, STATUS_REJECTED, STATUS_DISABLED)
 
+# 测试注入点：历史导入「先读、后写」之间调用。生产环境为 None。
+_IMPORT_READ_HOOK = None
+
 _LEARNING_SCHEMA = """
 CREATE TABLE IF NOT EXISTS learning_feedback (
     feedback_id TEXT PRIMARY KEY,
@@ -347,15 +350,36 @@ def _write_decision(root: str, source_rel: str, *, kind: str, origin: str,
                     semester: str = "", category: str = "",
                     rule_key: str = "", rule_applied: str = "",
                     batch_id=None, action_index=None,
-                    reactivate: bool = True) -> bool:
+                    reactivate: bool = True,
+                    history_alternates: Optional[Sequence[dict]] = None) -> bool:
     """写入一条用户决定；同一文件只保留一条（最终去向）。
 
     返回是否新增了行（更新已有行不算新增）。
+    历史导入不走无条件覆盖：先插入，冲突后在同一个连接里重读并只做
+    条件更新，避免覆盖导入期间另一进程刚写下的现场判断。
     """
     key = _decision_key(root, source_rel)
     now = _now()
     conn = _open(root)
     try:
+        if origin == "history":
+            payload = {
+                "ident": (batch_id if batch_id is not None else -1,
+                          action_index if action_index is not None else -1),
+                "source_rel": _norm_rel(source_rel),
+                "before_target": before_target or "",
+                "after_target": after_target or "",
+                "direction": direction or "",
+                "semester": semester or "",
+                "category": category or "",
+                "rule_key": rule_key or "",
+                "rule_applied": rule_applied or "",
+                "batch_id": batch_id,
+                "action_index": action_index,
+            }
+            return _write_history_decision(
+                conn, root, key, payload, now,
+                list(history_alternates or []))
         existing = conn.execute(
             "SELECT * FROM learning_feedback WHERE evidence_key = ?",
             (key,)).fetchone()
@@ -376,30 +400,17 @@ def _write_decision(root: str, source_rel: str, *, kind: str, origin: str,
             return True
         if not reactivate and not bool(existing["active"]):
             return False
-        if origin == "live":
-            # 新的现场决定尚未执行：清掉旧批次身份，只保留最终去向这一条。
-            conn.execute(
-                "UPDATE learning_feedback SET kind=?, origin=?, source_rel=?, "
-                "before_target=?, after_target=?, keep_in_place=?, direction=?, "
-                "semester=?, category=?, rule_key=?, rule_applied=?, "
-                "batch_id=?, action_index=?, active=1, updated_at=? "
-                "WHERE evidence_key=?",
-                (kind, origin, _norm_rel(source_rel), before_target or "",
-                 after_target or "", 1 if keep_in_place else 0, direction or "",
-                 semester or "", category or "", rule_key or "",
-                 rule_applied or "", batch_id, action_index, now, key))
-        else:
-            conn.execute(
-                "UPDATE learning_feedback SET kind=?, origin=?, source_rel=?, "
-                "before_target=?, after_target=?, keep_in_place=?, direction=?, "
-                "semester=?, category=?, rule_key=?, rule_applied=?, "
-                "batch_id=COALESCE(?, batch_id), "
-                "action_index=COALESCE(?, action_index), active=1, updated_at=? "
-                "WHERE evidence_key=?",
-                (kind, origin, _norm_rel(source_rel), before_target or "",
-                 after_target or "", 1 if keep_in_place else 0, direction or "",
-                 semester or "", category or "", rule_key or "",
-                 rule_applied or "", batch_id, action_index, now, key))
+        # 新的现场决定尚未执行：清掉旧批次身份，只保留最终去向这一条。
+        conn.execute(
+            "UPDATE learning_feedback SET kind=?, origin=?, source_rel=?, "
+            "before_target=?, after_target=?, keep_in_place=?, direction=?, "
+            "semester=?, category=?, rule_key=?, rule_applied=?, "
+            "batch_id=?, action_index=?, active=1, updated_at=? "
+            "WHERE evidence_key=?",
+            (kind, origin, _norm_rel(source_rel), before_target or "",
+             after_target or "", 1 if keep_in_place else 0, direction or "",
+             semester or "", category or "", rule_key or "",
+             rule_applied or "", batch_id, action_index, now, key))
         conn.commit()
         return False
     finally:
@@ -575,7 +586,7 @@ def import_history_feedback(root: str,
             "ORDER BY batch_id ASC, action_index ASC").fetchall()
         undone_batches = set()
         # 同一 source_rel 只保留 batch_id、action_index 最大的那条去向；
-        # 另按目标目录记录最新批次，供「已有现场判断」时补一致的历史身份。
+        # 另按目标目录保留各去向的最新批次，供现场判断按目标补齐身份。
         choices: Dict[str, dict] = {}
         by_target: Dict[str, Dict[str, dict]] = {}
         for row in rows:
@@ -623,50 +634,27 @@ def import_history_feedback(root: str,
                 choices[normalized] = payload
             bucket = by_target.setdefault(normalized, {})
             target_key = _target_key(after_target)
-            same_target = bucket.get(target_key)
-            if same_target is None or ident > same_target["ident"]:
+            seen = bucket.get(target_key)
+            if seen is None or ident > seen["ident"]:
                 bucket[target_key] = payload
-        for payload in choices.values():
-            source_rel = payload["source_rel"]
-            key = _decision_key(root, source_rel)
-            existing = _find_feedback_by_key(root, key)
-            if existing is None:
-                added = _write_decision(
-                    root, source_rel, kind=KIND_JUDGMENT, origin="history",
-                    before_target=payload["before_target"],
-                    after_target=payload["after_target"],
-                    keep_in_place=False,
-                    direction=payload["direction"],
-                    semester=payload["semester"],
-                    category=payload["category"],
-                    rule_key=payload["rule_key"],
-                    rule_applied=payload["rule_applied"],
-                    batch_id=payload["batch_id"],
-                    action_index=payload["action_index"],
-                    reactivate=False)
-                if added:
-                    result.judgments_added += 1
-                continue
-            if not existing.active:
-                continue
-            if existing.origin == "history":
-                old_ident = (existing.batch_id if existing.batch_id is not None else -1,
-                             existing.action_index if existing.action_index is not None else -1)
-                if payload["ident"] > old_ident:
-                    _replace_history_decision(root, key, payload)
-                continue
-            # 已有现场判断：保留现场去向，只补目标一致的历史批次身份。
-            if existing.kind == KIND_JUDGMENT and not existing.keep_in_place:
-                match = by_target.get(
-                    _norm_rel(source_rel), {}).get(
-                        _target_key(existing.after_target))
-                if match is not None:
-                    old_ident = (
-                        existing.batch_id if existing.batch_id is not None else -1,
-                        existing.action_index if existing.action_index is not None else -1)
-                    if match["ident"] > old_ident:
-                        _set_batch_identity(root, key, match["batch_id"],
-                                            match["action_index"])
+        for normalized, payload in choices.items():
+            added = _write_decision(
+                root, payload["source_rel"], kind=KIND_JUDGMENT,
+                origin="history",
+                before_target=payload["before_target"],
+                after_target=payload["after_target"],
+                keep_in_place=False,
+                direction=payload["direction"],
+                semester=payload["semester"],
+                category=payload["category"],
+                rule_key=payload["rule_key"],
+                rule_applied=payload["rule_applied"],
+                batch_id=payload["batch_id"],
+                action_index=payload["action_index"],
+                reactivate=False,
+                history_alternates=list(by_target.get(normalized, {}).values()))
+            if added:
+                result.judgments_added += 1
         done_clues = set()
         pending_clues = []
         for batch_id in sorted(undone_batches):
@@ -685,51 +673,125 @@ def import_history_feedback(root: str,
     return result
 
 
-def _find_feedback_by_key(root: str, key: str) -> Optional[Feedback]:
-    path = preferences.space_db_path(root)
-    if not os.path.isfile(path):
-        return None
-    conn = _open(root)
-    try:
+def _history_insert_values(root: str, key: str, payload: dict,
+                           now: str) -> tuple:
+    return (
+        _feedback_id(key), _norm_root(root), key, KIND_JUDGMENT, "history",
+        payload["source_rel"], payload["before_target"],
+        payload["after_target"], 0, payload["direction"],
+        payload["semester"], payload["category"], payload["rule_key"],
+        payload["rule_applied"], payload["batch_id"],
+        payload["action_index"], 1, now, now)
+
+
+def _insert_history_row(conn: sqlite3.Connection, root: str, key: str,
+                        payload: dict, now: str):
+    return conn.execute(
+        "INSERT INTO learning_feedback("
+        "feedback_id, space_root, evidence_key, kind, origin, "
+        "source_rel, before_target, after_target, keep_in_place, "
+        "direction, semester, category, rule_key, rule_applied, "
+        "batch_id, action_index, active, created_at, updated_at) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+        "ON CONFLICT(evidence_key) DO NOTHING",
+        _history_insert_values(root, key, payload, now))
+
+
+def _write_history_decision(conn: sqlite3.Connection, root: str, key: str,
+                            payload: dict, now: str,
+                            alternates: Sequence[dict]) -> bool:
+    """历史导入写入：先读后写，冲突时在同一连接里重读并条件合并。"""
+    conn.execute(
+        "SELECT 1 FROM learning_feedback WHERE evidence_key = ?",
+        (key,)).fetchone()
+    hook = _IMPORT_READ_HOOK
+    if hook is not None:
+        # 测试用：在读写之间让另一个进程提交，验证不会覆盖现场判断。
+        hook(root, payload["source_rel"])
+    cur = _insert_history_row(conn, root, key, payload, now)
+    conn.commit()
+    if cur.rowcount > 0:
+        return True
+    _merge_history_into_existing(conn, root, key, payload, now, alternates)
+    return False
+
+
+def _merge_history_into_existing(conn: sqlite3.Connection, root: str,
+                                 key: str, payload: dict, now: str,
+                                 alternates: Sequence[dict]) -> None:
+    """插入冲突后重读同一行，只做允许的条件更新。"""
+    for _attempt in range(4):
         row = conn.execute(
             "SELECT * FROM learning_feedback WHERE evidence_key = ?",
             (key,)).fetchone()
-        return _row_to_feedback(row) if row is not None else None
-    finally:
-        conn.close()
-
-
-def _set_batch_identity(root: str, key: str, batch_id: int,
-                        action_index: int) -> None:
-    conn = _open(root)
-    try:
-        conn.execute(
-            "UPDATE learning_feedback SET batch_id=?, action_index=?, "
-            "updated_at=? WHERE evidence_key=?",
-            (batch_id, action_index, _now(), key))
+        if row is None:
+            cur = _insert_history_row(conn, root, key, payload, now)
+            conn.commit()
+            if cur.rowcount > 0:
+                return
+            continue
+        if not bool(row["active"]):
+            return
+        origin = row["origin"] or ""
+        if origin == "history":
+            changed = _replace_history_decision(conn, key, payload, now)
+            conn.commit()
+            if changed:
+                return
+            continue
+        if origin != "live" or bool(row["keep_in_place"]):
+            # skip 或未知来源：整行不动，绝不把撤回的判断重新激活。
+            return
+        target_key = _target_key(row["after_target"])
+        matching = [
+            item for item in list(alternates) + [payload]
+            if _target_key(item["after_target"]) == target_key]
+        if not matching:
+            # 现场去向与历史不一致：保留现场去向和类别。
+            return
+        best = max(matching, key=lambda item: item["ident"])
+        changed = _set_batch_identity(
+            conn, key, "live", row["after_target"],
+            best["batch_id"], best["action_index"], now)
         conn.commit()
-    finally:
-        conn.close()
+        if changed:
+            return
 
 
-def _replace_history_decision(root: str, key: str, payload: dict) -> None:
-    """纯历史判断：用更新批次的目标替换旧行的去向与批次身份。"""
-    conn = _open(root)
-    try:
-        conn.execute(
-            "UPDATE learning_feedback SET origin='history', source_rel=?, "
-            "before_target=?, after_target=?, keep_in_place=0, direction=?, "
-            "semester=?, category=?, rule_key=?, rule_applied=?, "
-            "batch_id=?, action_index=?, active=1, updated_at=? "
-            "WHERE evidence_key=?",
-            (payload["source_rel"], payload["before_target"],
-             payload["after_target"], payload["direction"],
-             payload["semester"], payload["category"], payload["rule_key"],
-             payload["rule_applied"], payload["batch_id"],
-             payload["action_index"], _now(), key))
-        conn.commit()
-    finally:
-        conn.close()
+def _set_batch_identity(conn: sqlite3.Connection, key: str,
+                        expected_origin: str, expected_after: str,
+                        batch_id: int, action_index: int,
+                        now: str) -> int:
+    """只回填批次身份：仍是指定来源/目标、仍启用、且身份仍更旧或为空。"""
+    cur = conn.execute(
+        "UPDATE learning_feedback SET batch_id=?, action_index=?, "
+        "updated_at=? "
+        "WHERE evidence_key=? AND active=1 AND origin=? AND after_target=? "
+        "AND (batch_id IS NULL OR batch_id < ? "
+        "     OR (batch_id = ? AND COALESCE(action_index, -1) < ?))",
+        (batch_id, action_index, now, key, expected_origin,
+         expected_after, batch_id, batch_id, action_index))
+    return cur.rowcount
+
+
+def _replace_history_decision(conn: sqlite3.Connection, key: str,
+                              payload: dict, now: str) -> int:
+    """纯历史判断：只在仍启用、仍为 history、且批次身份更旧时替换。"""
+    cur = conn.execute(
+        "UPDATE learning_feedback SET origin='history', source_rel=?, "
+        "before_target=?, after_target=?, keep_in_place=0, direction=?, "
+        "semester=?, category=?, rule_key=?, rule_applied=?, "
+        "batch_id=?, action_index=?, active=1, updated_at=? "
+        "WHERE evidence_key=? AND active=1 AND origin='history' "
+        "AND (batch_id IS NULL OR batch_id < ? "
+        "     OR (batch_id = ? AND COALESCE(action_index, -1) < ?))",
+        (payload["source_rel"], payload["before_target"],
+         payload["after_target"], payload["direction"],
+         payload["semester"], payload["category"], payload["rule_key"],
+         payload["rule_applied"], payload["batch_id"],
+         payload["action_index"], now, key, payload["batch_id"],
+         payload["batch_id"], payload["action_index"]))
+    return cur.rowcount
 
 
 def _target_key(target_dir: str) -> str:
