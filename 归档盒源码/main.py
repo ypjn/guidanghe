@@ -1885,6 +1885,7 @@ class MainWindow(QMainWindow):
         self._quiet_drop_scan = False
         self._recent_dialog = None
         self._duplicate_dialog = None
+        self._agent_dialog = None
         self._duplicate_worker = None
         self._duplicate_seq = 0
         self._duplicate_cache = None
@@ -2170,6 +2171,13 @@ class MainWindow(QMainWindow):
         side_lay.addWidget(self.btn_recent)
 
         side_lay.addWidget(side_heading("这次"))
+        self.btn_agent = nav(QPushButton("AI 管家"))
+        self.btn_agent.setToolTip(
+            "用一句话查找文件并生成整理方案。\n"
+            "先给你看命中的文件和理由；确认后仍走主界面的预览与「开始整理」")
+        self.btn_agent.clicked.connect(self.on_agent)
+        side_lay.addWidget(self.btn_agent)
+
         self.btn_intake = nav(QPushButton("待整理清单"))
         self.btn_intake.setToolTip(
             "登记这次要整理的文件和文件夹。这里只登记，不移动文件")
@@ -3241,6 +3249,73 @@ class MainWindow(QMainWindow):
         self._touch_recent_space(path)
         self.statusBar().showMessage(f"已打开整理空间：{path}")
         self._mark_next_action()
+        return True
+
+    def on_agent(self):
+        """阶段 6：打开 AI 管家，用一句话查找并生成方案。"""
+        if self._close_pending or self._closing:
+            return
+        if self._working or self._plan_working:
+            QMessageBox.information(
+                self, "归档盒", "当前有后台任务运行，请稍后再用 AI 管家。")
+            return
+        root = self._current_root()
+        if not root or not os.path.isdir(root):
+            QMessageBox.warning(
+                self, "归档盒", "请先选择一个文件夹，再用 AI 管家查找。")
+            return
+        from agent_dialog import AgentDialog
+        if self._agent_dialog is not None:
+            self._agent_dialog.raise_()
+            self._agent_dialog.activateWindow()
+            return
+        dlg = AgentDialog(self, root, parent=self)
+        dlg.finished.connect(lambda _=0, d=dlg: self._clear_agent_dialog_ref(d))
+        self._agent_dialog = dlg
+        dlg.show()
+
+    def _clear_agent_dialog_ref(self, dlg):
+        if self._agent_dialog is dlg:
+            self._agent_dialog = None
+
+    def adopt_agent_plan(self, plan, note: str = "") -> bool:
+        """把 AI 管家方案交给现有预览；执行仍走 on_execute。"""
+        if self._close_pending or self._closing:
+            return False
+        if self._working or self._plan_working:
+            QMessageBox.information(
+                self, "归档盒", "当前有后台任务运行，方案暂不能放入预览。")
+            return False
+        if plan is None or not getattr(plan, "items", None):
+            QMessageBox.information(self, "归档盒", "这个方案没有需要移动的文件。")
+            return False
+        current = self._current_root()
+        if (not current
+                or os.path.realpath(current) != os.path.realpath(plan.root)):
+            QMessageBox.warning(
+                self, "归档盒",
+                "整理空间已经切换，请重新打开 AI 管家生成方案。")
+            return False
+        if self._storage is None:
+            try:
+                self._storage = Storage(plan.root)
+            except OSError as exc:
+                QMessageBox.critical(
+                    self, "归档盒",
+                    f"无法在该目录建立整理记录（.organizer）：\n{exc}")
+                return False
+        self.current_plan = plan
+        self._plan_valid = True
+        self._plan_scope = "space"
+        self._plan_scope_note = note or "AI 管家查找结果"
+        self._populate_table(plan, reset_filters=True)
+        self._invalidate_confirmation()
+        self._update_plan_counts()
+        self._refresh_ambiguity_panel()
+        self._update_button_states()
+        self.invalid_label.hide()
+        self.statusBar().showMessage(
+            f"{self._plan_scope_note}；请核对方案后在主界面点「开始整理」。")
         return True
 
     def on_intake_dialog(self):
@@ -5538,6 +5613,7 @@ class MainWindow(QMainWindow):
             self.ai_check.setEnabled(False)
             self.btn_scheme_center.setEnabled(False)
             self.btn_recent.setEnabled(False)
+            self.btn_agent.setEnabled(False)
             self.btn_intake.setEnabled(False)
             self.btn_scan_intake.setEnabled(False)
             self.btn_duplicates.setEnabled(False)
@@ -5551,6 +5627,12 @@ class MainWindow(QMainWindow):
         # 历史页面是只读视图，有数据库即可查看；
         # 其内部的撤销/恢复/导出按钮会按任务状态自行禁用
         self.btn_history.setEnabled(self._storage is not None)
+        # AI 管家：选好文件夹且空闲时可用；查找本身不移动文件
+        self.btn_agent.setEnabled(
+            bool(self.path_edit.text().strip())
+            and not self._working and not self._plan_working
+            and not self._close_pending and not self._closing
+        )
 
         plan = self.current_plan
         has_plan = plan is not None and self._plan_valid
@@ -6517,6 +6599,9 @@ class MainWindow(QMainWindow):
             getattr(self, "_recover_worker", None),
             getattr(self, "_duplicate_worker", None),
         ]
+        agent_dialog = getattr(self, "_agent_dialog", None)
+        if agent_dialog is not None:
+            candidates.append(getattr(agent_dialog, "_worker", None))
         candidates.extend(getattr(self, "_plan_workers", []) or [])
         candidates.extend(getattr(self, "_rule_preview_workers", []) or [])
         out, seen = [], set()
@@ -6595,7 +6680,7 @@ class MainWindow(QMainWindow):
     def _close_child_windows(self):
         """S3 / guia F-19：关闭主窗口时一并关闭所有非模态子窗口。"""
         for attr in ("_history_dialog", "_intake_dialog", "_tree_dialog",
-                     "_duplicate_dialog", "_recent_dialog"):
+                     "_duplicate_dialog", "_recent_dialog", "_agent_dialog"):
             dlg = getattr(self, attr, None)
             if dlg is None:
                 continue
