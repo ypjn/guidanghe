@@ -3281,6 +3281,27 @@ class MainWindow(QMainWindow):
         if self._agent_dialog is dlg:
             self._agent_dialog = None
 
+    def _plan_touches_protected(self, plan) -> bool:
+        """方案里任一源/目标落到当前保护目录，就拒绝采用。"""
+        roots = [os.path.realpath(os.path.abspath(DEFAULT_PROTECT_APP_SRC))]
+        roots.extend(
+            os.path.realpath(os.path.abspath(path))
+            for path, _kind, _label in manual_scan_specs(
+                plan.root, self.manual_protect))
+
+        def under(path: str) -> bool:
+            real = os.path.realpath(os.path.abspath(path))
+            return any(real == root or real.startswith(root + os.sep)
+                       for root in roots)
+
+        for item in plan.items:
+            if under(item.file.abs_path):
+                return True
+            if item.target_rel_path and under(
+                    os.path.join(plan.root, item.target_rel_path)):
+                return True
+        return False
+
     def adopt_agent_plan(self, plan, note: str = "") -> bool:
         """把 AI 管家方案交给现有预览；执行仍走 on_execute。"""
         if self._close_pending or self._closing:
@@ -3298,6 +3319,14 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self, "归档盒",
                 "整理空间已经切换，请重新打开 AI 管家生成方案。")
+            return False
+        if self._plan_touches_protected(plan):
+            if self._agent_dialog is not None:
+                self._agent_dialog.invalidate_for_protect_change()
+            QMessageBox.warning(
+                self, "归档盒",
+                "保护设置已更改，这个 AI 管家方案已经失效。\n"
+                "请回到管家窗口按最新保护设置重新查找。")
             return False
         if self._storage is None:
             try:
@@ -4443,6 +4472,18 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             "保护配置已更改，旧预览已失效。请点击「重新扫描」重新生成。"
         )
+        # AI 管家镜像：旧方案与仍在后台的旧查找结果一并作废。
+        if self._agent_dialog is not None:
+            try:
+                root_now = self._current_root()
+                protect = [(DEFAULT_PROTECT_APP_SRC, "default",
+                            "默认保护（归档盒源码）")]
+                if root_now:
+                    protect.extend(
+                        manual_scan_specs(root_now, self.manual_protect))
+                self._agent_dialog.invalidate_for_protect_change(protect)
+            except RuntimeError:
+                self._agent_dialog = None
 
     def on_plan_param_changed(self, *_):
         if self.current_plan is not None:

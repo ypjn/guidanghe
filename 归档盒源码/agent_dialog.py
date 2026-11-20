@@ -76,6 +76,8 @@ class AgentDialog(QDialog):
         self._worker: AgentWorker | None = None
         self._searching = False
         self._closing = False
+        self._search_seq = 0
+        self._stale = False
         self._semester_choice: str | None = None
         self._course_choice: str | None = None
 
@@ -200,16 +202,22 @@ class AgentDialog(QDialog):
         if not os.path.isdir(self.root):
             QMessageBox.warning(self, "AI 管家", "整理空间不存在，请重新选择文件夹。")
             return
+        # 上一次查找还在跑时直接开始新查找：旧结果用序号作废。
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.request_cancel()
         self._semester_choice = None
         self._course_choice = None
+        self._stale = False
+        self._search_seq += 1
+        seq = self._search_seq
         self._searching = True
         self._set_busy(True, "正在扫描并查找相关文件……")
         worker = AgentWorker(self.root, instruction, self.protect_dirs, self)
         self._worker = worker
         worker.progress.connect(self._on_progress)
-        worker.done.connect(self._on_done)
-        worker.failed.connect(self._on_failed)
-        worker.finished.connect(self._on_worker_finished)
+        worker.done.connect(lambda result, s=seq: self._on_done(result, s))
+        worker.failed.connect(lambda message, s=seq: self._on_failed(message, s))
+        worker.finished.connect(lambda w=worker: self._on_worker_finished(w))
         worker.start()
 
     def _set_busy(self, busy: bool, message: str = ""):
@@ -226,23 +234,24 @@ class AgentDialog(QDialog):
             return
         self.hint.setText(f"正在扫描 [{cur}/{total}] {name}")
 
-    def _on_done(self, result):
-        if self._closing:
+    def _on_done(self, result, seq: int):
+        if self._closing or self._stale or seq != self._search_seq:
             return
         self._searching = False
         self._set_busy(False)
         self._render(result)
 
-    def _on_failed(self, message: str):
-        if self._closing:
+    def _on_failed(self, message: str, seq: int):
+        if self._closing or self._stale or seq != self._search_seq:
             return
         self._searching = False
         self._set_busy(False)
         self.hint.setText(f"查找失败：{message}")
         QMessageBox.warning(self, "AI 管家", f"查找失败：\n{message}")
 
-    def _on_worker_finished(self):
-        self._worker = None
+    def _on_worker_finished(self, worker):
+        if self._worker is worker:
+            self._worker = None
         if self._closing:
             self.deleteLater()
 
@@ -329,7 +338,7 @@ class AgentDialog(QDialog):
     # ---------- 澄清与落地 ----------
 
     def answer_question(self):
-        if self.result is None or self.result.question is None:
+        if self._stale or self.result is None or self.result.question is None:
             return
         value = self.question_combo.currentData()
         kind = self.result.question.kind
@@ -340,7 +349,7 @@ class AgentDialog(QDialog):
         self._rebuild()
 
     def _rebuild(self):
-        if self.result is None:
+        if self._stale or self.result is None:
             return
         try:
             new_result = agent.run_agent(
@@ -358,6 +367,9 @@ class AgentDialog(QDialog):
         self._render(new_result)
 
     def apply_plan(self):
+        if self._stale:
+            self.hint.setText("保护设置已更改，旧方案已失效；请重新查找。")
+            return
         if self.result is None or self.result.plan is None:
             return
         if self.result.question is not None:
@@ -366,6 +378,31 @@ class AgentDialog(QDialog):
         note = f"AI 管家：{self.result.summary}"
         if self.main_window.adopt_agent_plan(self.result.plan, note):
             self.accept()
+
+    def invalidate_for_protect_change(self, protect_dirs=None):
+        """保护设置变化：作废旧方案，并让晚回来的后台结果直接丢弃。"""
+        if protect_dirs is not None:
+            self.protect_dirs = list(protect_dirs)
+        self._search_seq += 1
+        self._stale = True
+        self._searching = False
+        self._semester_choice = None
+        self._course_choice = None
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.request_cancel()
+        self.result = None
+        self.hits_table.setRowCount(0)
+        self.plan_table.setRowCount(0)
+        self.question_box.hide()
+        self.summary_label.setText("保护设置已更改：旧方案已失效。")
+        self.hint.setText(
+            "保护设置已更改，旧方案和仍在后台的旧查找结果都不会再使用。"
+            "请点击「查找并给方案」按最新保护设置重新查找。")
+        self.btn_apply.setEnabled(False)
+        self.btn_find.setEnabled(True)
+        self.instruction_edit.setEnabled(True)
+        self.btn_answer.setEnabled(True)
+        self.question_combo.setEnabled(True)
 
     def reject(self):
         self._closing = True

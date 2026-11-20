@@ -18,6 +18,7 @@ import hashlib
 import os
 import sys
 import tempfile
+import threading
 import time
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -180,6 +181,27 @@ def choose(dlg, value):
             break
     dlg.answer_question()
     process(0.05)
+
+
+def set_manual_protect(win, path):
+    """从主界面真实入口修改手动保护目录。"""
+    class FakeProtectDialog:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def exec(self):
+            return QDialog.Accepted
+
+        def get_paths(self):
+            return [path]
+
+    old = main_mod.ProtectDirDialog
+    main_mod.ProtectDirDialog = FakeProtectDialog
+    try:
+        win.on_edit_protect()
+    finally:
+        main_mod.ProtectDirDialog = old
+    process(0.1)
 
 
 def batches(root):
@@ -636,6 +658,144 @@ def main():
         snapshot(notes_root) == notes_before,
         f"撤销后一致={snapshot(notes_root) == notes_before}")
     close_window(nwin)
+
+    # ---------------- 9. 改了保护设置：旧方案和后台旧结果都失效 ----------------
+    stale_root = space("protect_after_plan")
+    for rel in ("大二上/数据结构/实验/报告", "大二上/待整理",
+                "大二上/受保护的实验"):
+        os.makedirs(os.path.join(stale_root, rel), exist_ok=True)
+    stale_normal_rel = "大二上/待整理/数据结构实验报告A.md"
+    stale_protected_rel = "大二上/受保护的实验/数据结构实验报告B.md"
+    write(stale_root, stale_normal_rel, "数据结构 实验 正常报告\n")
+    write(stale_root, stale_protected_rel, "数据结构 实验 受保护报告\n")
+    stale_before = snapshot(stale_root)
+    protected_abs = os.path.join(stale_root, "大二上/受保护的实验")
+    protected_sha2 = sha256(os.path.join(stale_root, stale_protected_rel))
+
+    swin = open_window(stale_root)
+    sdlg = ask(swin, "帮我找这学期的数据结构实验报告")
+    stale_plan = sdlg.result.plan
+    rec("S629",
+        "保护设置变化前，AI 管家方案同时包含两份实验报告",
+        stale_plan is not None and len(stale_plan.items) == 2,
+        f"方案={[i.file.rel_path for i in (stale_plan.items if stale_plan else [])]}")
+
+    set_manual_protect(swin, protected_abs)
+    protect_updated = any(
+        os.path.realpath(path) == os.path.realpath(protected_abs)
+        for path, _kind, _label in sdlg.protect_dirs)
+    rec("S630",
+        "改保护设置后，管家旧方案立即失效并换成最新保护列表",
+        sdlg._stale and sdlg.result is None
+        and not sdlg.btn_apply.isEnabled()
+        and "保护设置已更改" in sdlg.hint.text()
+        and protect_updated,
+        f"stale={sdlg._stale} result={sdlg.result} "
+        f"apply可用={sdlg.btn_apply.isEnabled()} 保护已更新={protect_updated}\n"
+        f"提示={sdlg.hint.text()!r}")
+
+    accepted_stale = swin.adopt_agent_plan(stale_plan, "旧方案")
+    rec("S631",
+        "旧方案不能再放进主界面预览，主界面不会拿到可执行计划",
+        accepted_stale is False and swin.current_plan is None
+        and not swin._plan_valid,
+        f"adopt={accepted_stale} 当前计划={swin.current_plan} "
+        f"计划有效={swin._plan_valid}")
+
+    sdlg.set_instruction("帮我找这学期的数据结构实验报告")
+    sdlg.start_search()
+    assert wait_until(lambda: sdlg._searching is False, 90), "重新查找超时"
+    new_rels = [item.file.rel_path for item in
+                (sdlg.result.plan.items if sdlg.result and sdlg.result.plan else [])]
+    rec("S632",
+        "重新查找按最新保护设置出方案，只剩正常报告",
+        new_rels == [stale_normal_rel] and sdlg.btn_apply.isEnabled(),
+        f"新方案={new_rels} apply可用={sdlg.btn_apply.isEnabled()}")
+
+    sdlg.apply_plan()
+    process(0.05)
+    confirm(swin, True)
+    process(0.1)
+    stale_normal_target = os.path.join(
+        stale_root, "大二上/数据结构/实验/报告/数据结构实验报告A.md")
+    s_batches = batches(stale_root)
+    s_actions = actions(stale_root, s_batches[-1].batch_id) if s_batches else []
+    rec("S633",
+        "确认执行只移动正常报告，受保护报告原位、内容不变，历史无它的记录",
+        os.path.isfile(stale_normal_target)
+        and os.path.isfile(os.path.join(stale_root, stale_protected_rel))
+        and sha256(os.path.join(stale_root, stale_protected_rel)) == protected_sha2
+        and len(s_actions) == 1
+        and s_actions[0].source_rel == stale_normal_rel,
+        f"动作={[(a.source_rel, a.target_rel, a.status) for a in s_actions]}")
+
+    swin.on_undo()
+    wait_until(lambda: not swin._working and not swin._plan_working, 60)
+    process(0.05)
+    rec("S634",
+        "撤销后恢复原状，受保护报告始终未参与移动",
+        snapshot(stale_root) == stale_before,
+        f"撤销后一致={snapshot(stale_root) == stale_before}")
+    close_window(swin)
+
+    # ---------------- 10. 查找途中改保护：晚回来的旧结果也不能用 ----------------
+    flight_root = space("protect_inflight")
+    for rel in ("大二上/数据结构/实验/报告", "大二上/待整理",
+                "大二上/受保护的实验"):
+        os.makedirs(os.path.join(flight_root, rel), exist_ok=True)
+    flight_normal_rel = "大二上/待整理/数据结构实验报告C.md"
+    flight_protected_rel = "大二上/受保护的实验/数据结构实验报告D.md"
+    write(flight_root, flight_normal_rel, "数据结构 实验 正常报告\n")
+    write(flight_root, flight_protected_rel, "数据结构 实验 受保护报告\n")
+    flight_protected_abs = os.path.join(flight_root, "大二上/受保护的实验")
+
+    fwin = open_window(flight_root)
+    fwin.on_agent()
+    fdlg = fwin._agent_dialog
+    gate = threading.Event()
+    entered = threading.Event()
+    real_run_agent = agent.run_agent
+
+    def slow_run_agent(*args, **kwargs):
+        entered.set()
+        gate.wait(20)
+        return real_run_agent(*args, **kwargs)
+
+    agent.run_agent = slow_run_agent
+    try:
+        fdlg.set_instruction("帮我找这学期的数据结构实验报告")
+        fdlg.start_search()
+        assert wait_until(entered.is_set, 10), "后台查找没有进入"
+        set_manual_protect(fwin, flight_protected_abs)
+        stale_while_running = (fdlg._stale and fdlg.result is None
+                               and not fdlg.btn_apply.isEnabled())
+        gate.set()
+        wait_until(lambda: fdlg._worker is None
+                   or not fdlg._worker.isRunning(), 30)
+    finally:
+        agent.run_agent = real_run_agent
+        gate.set()
+
+    rec("S635",
+        "查找途中改保护设置，旧后台任务的晚到结果被丢弃",
+        stale_while_running and fdlg._stale and fdlg.result is None
+        and not fdlg.btn_apply.isEnabled()
+        and fwin.current_plan is None,
+        f"当时失效={stale_while_running} stale={fdlg._stale} "
+        f"result={fdlg.result} 当前计划={fwin.current_plan}")
+
+    fdlg.start_search()
+    assert wait_until(lambda: fdlg._searching is False, 90), "保护后重新查找超时"
+    flight_rels = [item.file.rel_path for item in
+                   (fdlg.result.plan.items
+                    if fdlg.result and fdlg.result.plan else [])]
+    rec("S636",
+        "保护后重新查找，旧后台结果不会混进来，只剩正常报告",
+        flight_rels == [flight_normal_rel],
+        f"新方案={flight_rels}")
+    fdlg.reject()
+    process(0.05)
+    close_window(fwin)
 
     # ---------------- 汇总 ----------------
     failed = [c for c in CHECKS if not c[2]]
