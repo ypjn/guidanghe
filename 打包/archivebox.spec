@@ -1,23 +1,35 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""归档盒 macOS 免安装包（Apple 芯片）。
+"""归档盒 macOS 应用（Apple 芯片）。
 
 在仓库根目录执行「打包/build_mac.sh」。
-脚本会打包、去掉旁边多出来的 archivebox 文件夹，并重新做本地签名。
-只跑 pyinstaller、不重签的话，程序会因为签名不一致而无法启动。
+脚本选择解释器、写入构建身份、打包、做本地签名并生成只读 DMG。
+只跑 PyInstaller、不重签的话，程序会因为签名不一致而无法启动。
 """
+import json
 import os
+import sys
 
 from PyInstaller.utils.hooks import collect_all
 
 SRC = os.path.abspath(os.path.join(SPECPATH, "..", "归档盒源码"))
+if SRC not in sys.path:
+    sys.path.insert(0, SRC)
+
+from app_metadata import (  # noqa: E402
+    APP_NAME, APP_VERSION, BUNDLE_ID, EXECUTABLE_NAME, MIN_SYSTEM_VERSION,
+)
 
 datas = []
 binaries = []
 hiddenimports = [
     "ai_fallback",
+    "app_metadata",
+    "agent",
+    "agent_dialog",
     "classification_config",
     "config_dialog",
     "config_transfer",
+    "content_extract",
     "contest_catalog",
     "daily_entry_dialogs",
     "duplicate_dialog",
@@ -25,16 +37,22 @@ hiddenimports = [
     "executor",
     "general_catalog",
     "intake_model",
+    "learning",
+    "learning_dialog",
     "ocr_engine",
     "plan_patch",
     "planner",
+    "preferences",
+    "product_acceptance",
     "professional_catalog",
     "protect_config",
     "recent_spaces",
     "rule_preview",
+    "scan_cache",
     "scanner",
     "scheme_store",
     "storage",
+    "storage_tree",
     "target_tree_dialog",
     "transfer_dialogs",
     "utils",
@@ -67,6 +85,18 @@ for pkg in (
     binaries += pkg_binaries
     hiddenimports += pkg_hidden
 
+commit = "unknown"
+identity_path = os.environ.get("ARCHIVEBOX_BUILD_IDENTITY", "")
+if identity_path and os.path.isfile(identity_path):
+    datas.append((identity_path, "."))
+    try:
+        with open(identity_path, encoding="utf-8") as handle:
+            commit = json.load(handle).get("commit") or commit
+    except (OSError, ValueError):
+        pass
+
+icon = os.path.join(SPECPATH, "assets", "归档盒.icns")
+
 a = Analysis(
     [os.path.join(SRC, "main.py")],
     pathex=[SRC],
@@ -87,7 +117,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="archivebox",
+    name=EXECUTABLE_NAME,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -106,23 +136,24 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name="archivebox",
+    name=EXECUTABLE_NAME,
 )
 app = BUNDLE(
     coll,
     name="归档盒.app",
-    icon=None,
-    bundle_identifier="local.ypjn.archivebox",
-    version="1.7.0",
+    icon=icon if os.path.isfile(icon) else None,
+    bundle_identifier=BUNDLE_ID,
+    version=APP_VERSION,
     info_plist={
-        "CFBundleName": "归档盒",
-        "CFBundleDisplayName": "归档盒",
-        "CFBundleExecutable": "archivebox",
-        "CFBundleIdentifier": "local.ypjn.archivebox",
-        "CFBundleShortVersionString": "1.7.0",
-        "CFBundleVersion": "1.7.0",
+        "CFBundleName": APP_NAME,
+        "CFBundleDisplayName": APP_NAME,
+        "CFBundleExecutable": EXECUTABLE_NAME,
+        "CFBundleIdentifier": BUNDLE_ID,
+        "CFBundleShortVersionString": APP_VERSION,
+        "CFBundleVersion": APP_VERSION,
         "CFBundlePackageType": "APPL",
         "NSHighResolutionCapable": True,
-        "LSMinimumSystemVersion": "12.0",
+        "LSMinimumSystemVersion": MIN_SYSTEM_VERSION,
+        "ArchiveBoxBuildCommit": commit,
     },
 )

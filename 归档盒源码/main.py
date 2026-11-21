@@ -89,9 +89,9 @@ from executor import (
 # 归档盒自身源码目录 —— 默认保护，防止程序移动自己
 DEFAULT_PROTECT_APP_SRC = os.path.dirname(os.path.abspath(__file__))
 
-# S3 / lead L-07：对外版本号统一为 V1.7（窗口标题、关于、使用说明）
-APP_VERSION = "V1.7"
-APP_TITLE = f"归档盒 {APP_VERSION}"
+# 名称、版本和构建身份集中在 app_metadata，窗口标题与关于页共用。
+from app_metadata import APP_TITLE, APP_VERSION_LABEL
+APP_VERSION = APP_VERSION_LABEL
 
 
 # ======================== 统一任务状态（V1.2） ========================
@@ -1924,15 +1924,11 @@ class MainWindow(QMainWindow):
         act_about.triggered.connect(self._show_about)
 
     def _show_about(self):
+        from app_metadata import about_html
         from scheme_store import app_data_dir
         QMessageBox.about(
             self, f"关于 {APP_TITLE}",
-            f"<b>{APP_TITLE}</b><br><br>"
-            "把散落的文件按学期、课程与类别整理到 _已整理，"
-            "并在移动前给出可核对的预览。<br><br>"
-            f"整理记录保存在：<br>{os.path.join(app_data_dir(), '')}<br>"
-            "（每个整理空间的记录在其 .organizer/history.db）<br><br>"
-            "AI 补充分类默认关闭；只有你自己打开并填写密钥后才会发请求。")
+            about_html(os.path.join(app_data_dir(), "")))
 
     def _show_guide(self):
         """打开包内的使用说明；不存在时直接说明要点，不指向不存在的文件。"""
@@ -6769,20 +6765,72 @@ def _combo_arrow_url() -> str:
     return path.replace("\\", "/")
 
 
-def startup_log_path() -> str:
-    """免安装包根目录的「启动日志.txt」。源码运行时写到源码目录。"""
-    app_dir = os.path.dirname(os.path.abspath(__file__))
+def _path_in_app_bundle(path: str) -> bool:
+    """路径是否落在某个 .app 包内。安装后的日志不能写进包里。"""
+    return any(
+        part.endswith(".app")
+        for part in os.path.abspath(path).split(os.sep) if part)
+
+
+def _windows_portable_root(module_file: str) -> str:
+    """旧版 Windows 免安装目录。macOS .app 不走这里。"""
+    app_dir = os.path.dirname(os.path.abspath(module_file))
     package_root = os.path.dirname(app_dir)
-    packaged = (
+    markers = (
         os.path.isdir(os.path.join(package_root, "runtime"))
         or os.path.isfile(os.path.join(package_root, "归档盒.exe"))
         or os.path.isfile(os.path.join(package_root, "启动归档盒.exe"))
     )
-    path = os.path.join(package_root if packaged else app_dir, "启动日志.txt")
+    if markers and not _path_in_app_bundle(package_root):
+        return package_root
+    return ""
+
+
+def user_log_directory() -> str:
+    """用户日志目录。ARCHIVEBOX_LOG_DIR 只覆盖日志，不改变整理数据目录。"""
+    override = os.environ.get("ARCHIVEBOX_LOG_DIR", "").strip()
+    if override:
+        return os.path.abspath(os.path.expanduser(override))
+    if sys.platform == "darwin":
+        base = os.path.join(os.path.expanduser("~"), "Library", "Logs")
+    elif os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or os.path.join(
+            os.path.expanduser("~"), "AppData", "Local")
+    else:
+        base = os.environ.get("XDG_STATE_HOME") or os.path.join(
+            os.path.expanduser("~"), ".local", "state")
+    return os.path.join(base, "归档盒")
+
+
+def _writable_log_file(directory: str) -> str:
+    os.makedirs(directory, exist_ok=True)
+    path = os.path.join(directory, "启动日志.txt")
+    if _path_in_app_bundle(path) or not os.access(directory, os.W_OK):
+        raise OSError(f"日志目录不可用：{directory}")
+    return path
+
+
+def startup_log_path() -> str:
+    """源码运行写在源码目录；冻结或 .app 内运行写到用户日志目录。"""
+    module_file = os.path.abspath(__file__)
+    frozen = bool(getattr(sys, "frozen", False))
+    forced = bool(os.environ.get("ARCHIVEBOX_LOG_DIR", "").strip())
+    if frozen or _path_in_app_bundle(module_file) or forced:
+        try:
+            return _writable_log_file(user_log_directory())
+        except OSError:
+            return os.path.join(tempfile.gettempdir(), "归档盒-启动日志.txt")
+    portable = _windows_portable_root(module_file)
+    directory = portable or os.path.dirname(module_file)
+    path = os.path.join(directory, "启动日志.txt")
     parent = os.path.dirname(path)
-    if os.path.isdir(parent) and os.access(parent, os.W_OK):
+    if (os.path.isdir(parent) and os.access(parent, os.W_OK)
+            and not _path_in_app_bundle(path)):
         return path
-    return os.path.join(tempfile.gettempdir(), "归档盒-启动日志.txt")
+    try:
+        return _writable_log_file(user_log_directory())
+    except OSError:
+        return os.path.join(tempfile.gettempdir(), "归档盒-启动日志.txt")
 
 
 def append_startup_log(text: str) -> None:
@@ -6833,6 +6881,9 @@ def _install_qt_chinese(app) -> None:
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "--product-acceptance":
+        import product_acceptance
+        raise SystemExit(product_acceptance.main(sys.argv))
     _install_crash_logging()
     app = QApplication(sys.argv)
     _install_qt_chinese(app)

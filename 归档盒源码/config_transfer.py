@@ -108,8 +108,11 @@ def rule_counts(cfg: ClassificationConfig) -> Dict[str, int]:
 
 def export_scheme_payload(cfg: ClassificationConfig, name: str,
                           description: str = "", scheme_id: str = "",
-                          app_version: str = "1.7") -> dict:
+                          app_version: str = "") -> dict:
     """构造可迁移的方案文件内容（不含任何本机绑定信息）。"""
+    from app_metadata import APP_NAME, APP_VERSION
+    if not app_version:
+        app_version = APP_VERSION
     name = (name or "").strip()
     if not name:
         raise ClassificationConfigError("方案名称不能为空。")
@@ -126,7 +129,7 @@ def export_scheme_payload(cfg: ClassificationConfig, name: str,
         "name": name,
         "description": (description or "").strip(),
         "exported_at": _now(),
-        "app": {"name": "归档盒", "version": app_version},
+        "app": {"name": APP_NAME, "version": app_version},
         "config_version": CONFIG_VERSION,
         "counts": rule_counts(cfg),
         "config": config,
