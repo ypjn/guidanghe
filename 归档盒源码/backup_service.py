@@ -39,6 +39,9 @@ class PreviewReport:
     metadata_support: Dict[str, Any] = field(default_factory=dict)
     errors: list = field(default_factory=list)
     placement_errors: list = field(default_factory=list)
+    cancelled: bool = False
+    source: str = ""
+    vault: str = ""
 
 
 @dataclass
@@ -61,18 +64,26 @@ class RestoreRunReport:
     errors: list = field(default_factory=list)
     version_id: str = ""
     target: str = ""
+    cancelled: bool = False
 
 
 @dataclass
 class VerifyReport:
     ok: bool = False
     errors: list = field(default_factory=list)
+    cancelled: bool = False
 
 
 def preview_backup(source: str, vault: str,
                    policy: Optional[dict] = None,
-                   protected_allow: Optional[Set[str]] = None) -> PreviewReport:
-    report = PreviewReport(metadata_support=metadata_support_matrix())
+                   protected_allow: Optional[Set[str]] = None,
+                   cancel_event=None,
+                   progress_cb: Progress = None) -> PreviewReport:
+    report = PreviewReport(
+        metadata_support=metadata_support_matrix(),
+        source=source,
+        vault=vault,
+    )
     placement = validate_vault_placement(source, vault)
     if placement:
         report.ok = False
@@ -81,6 +92,11 @@ def preview_backup(source: str, vault: str,
     if not os.path.isdir(source):
         report.ok = False
         report.errors.append(f"来源目录不存在：{source}")
+        return report
+    if cancel_event is not None and cancel_event.is_set():
+        report.ok = False
+        report.cancelled = True
+        report.errors.append("预览已取消")
         return report
     files, excluded = _collect_files(source, policy, protected_allow or set())
     report.exclusions = excluded
@@ -96,8 +112,23 @@ def preview_backup(source: str, vault: str,
                     if len(name) == 64:
                         existing.add(name)
     new_bytes = 0
-    for item in files:
-        digest = sha256_file(item["path"]) or ""
+    total = len(files)
+    for index, item in enumerate(files, start=1):
+        if cancel_event is not None and cancel_event.is_set():
+            report.ok = False
+            report.cancelled = True
+            report.errors.append("预览已取消")
+            report.estimated_new_bytes = new_bytes
+            return report
+        if progress_cb:
+            progress_cb(index, total, item["rel"])
+        digest = sha256_file(item["path"], cancel_event=cancel_event) or ""
+        if cancel_event is not None and cancel_event.is_set():
+            report.ok = False
+            report.cancelled = True
+            report.errors.append("预览已取消")
+            report.estimated_new_bytes = new_bytes
+            return report
         if digest and digest not in existing:
             new_bytes += item["size"]
     report.estimated_new_bytes = new_bytes
@@ -146,6 +177,7 @@ def run_backup(source: str, vault: str, *,
         created_at=_utc_now(),
         excluded=excluded,
         metadata_support=metadata_support_matrix(),
+        note=(note or "").strip(),
     )
     try:
         total = len(files)
@@ -173,7 +205,10 @@ def run_backup(source: str, vault: str, *,
                 manifest.files.append(entry)
                 continue
             before = _file_stat(path)
-            digest = sha256_file(path)
+            digest = sha256_file(path, cancel_event=cancel_event)
+            if cancel_event is not None and cancel_event.is_set():
+                report.cancelled = True
+                raise BackupStoreError("备份已取消")
             if not digest:
                 raise BackupStoreError(f"无法计算哈希：{rel}")
             after = _file_stat(path)
@@ -183,7 +218,10 @@ def run_backup(source: str, vault: str, *,
                 report.reused_objects += 1
                 ref = f"{digest[:2]}/{digest}"
             else:
-                ref = write_object(paths, path, digest)
+                ref = write_object(paths, path, digest, cancel_event=cancel_event)
+                if cancel_event is not None and cancel_event.is_set():
+                    report.cancelled = True
+                    raise BackupStoreError("备份已取消")
                 report.new_bytes += item["size"]
             manifest.files.append(FileEntry(
                 rel_path=rel,
@@ -193,6 +231,10 @@ def run_backup(source: str, vault: str, *,
                 mode=item["mode"],
                 object_ref=ref,
             ))
+        # 提交完整清单前再核对一次取消，避免“假取消”
+        if cancel_event is not None and cancel_event.is_set():
+            report.cancelled = True
+            raise BackupStoreError("备份已取消")
         manifest.file_count = len(manifest.files)
         manifest.total_bytes = sum(e.size for e in manifest.files)
         manifest.new_bytes = report.new_bytes
@@ -245,6 +287,7 @@ def restore_version(vault: str, version_id: str, target: str, *,
         total = len(manifest.files)
         for index, entry in enumerate(manifest.files, start=1):
             if cancel_event is not None and cancel_event.is_set():
+                report.cancelled = True
                 raise BackupStoreError("恢复已取消")
             if progress_cb:
                 progress_cb(index, total, entry.rel_path)
@@ -278,8 +321,14 @@ def restore_version(vault: str, version_id: str, target: str, *,
                     shutil.rmtree(tmp)
                 else:
                     os.remove(tmp)
-            shutil.copyfile(obj, tmp)
-            if sha256_file(tmp) != entry.sha256:
+            _copy_restore_file(obj, tmp, cancel_event=cancel_event)
+            if cancel_event is not None and cancel_event.is_set():
+                report.cancelled = True
+                raise BackupStoreError("恢复已取消")
+            if sha256_file(tmp, cancel_event=cancel_event) != entry.sha256:
+                if cancel_event is not None and cancel_event.is_set():
+                    report.cancelled = True
+                    raise BackupStoreError("恢复已取消")
                 raise BackupStoreError(f"恢复写入后校验失败：{entry.rel_path}")
             if entry.mode and os.name != "nt":
                 try:
@@ -290,6 +339,9 @@ def restore_version(vault: str, version_id: str, target: str, *,
                 raise BackupStoreError(f"恢复过程中目标被替换：{entry.rel_path}")
             os.replace(tmp, dest)
             report.restored += 1
+        if cancel_event is not None and cancel_event.is_set():
+            report.cancelled = True
+            raise BackupStoreError("恢复已取消")
         report.ok = True
         return report
     except Exception as exc:
@@ -298,7 +350,9 @@ def restore_version(vault: str, version_id: str, target: str, *,
         return report
 
 
-def verify_version(vault: str, version_id: str) -> VerifyReport:
+def verify_version(vault: str, version_id: str,
+                   cancel_event=None,
+                   progress_cb: Progress = None) -> VerifyReport:
     paths = vault_paths(vault)
     manifest = load_manifest(paths, version_id)
     if manifest is None:
@@ -306,8 +360,12 @@ def verify_version(vault: str, version_id: str) -> VerifyReport:
     if not manifest.recoverable:
         return VerifyReport(
             ok=False, errors=[f"版本状态为 {manifest.state}"])
-    ok, errors = verify_objects(paths, manifest)
-    return VerifyReport(ok=ok, errors=errors)
+    ok, errors = verify_objects(
+        paths, manifest, cancel_event=cancel_event, progress_cb=progress_cb)
+    cancelled = bool(
+        cancel_event is not None and cancel_event.is_set()
+    ) or any("已取消" in e for e in errors)
+    return VerifyReport(ok=ok and not cancelled, errors=errors, cancelled=cancelled)
 
 
 def list_backup_versions(vault: str, recoverable_only: bool = False):
@@ -315,6 +373,19 @@ def list_backup_versions(vault: str, recoverable_only: bool = False):
     if recoverable_only:
         return list_recoverable_versions(paths)
     return list_versions(paths)
+
+
+def _copy_restore_file(src: str, dst: str, cancel_event=None) -> None:
+    from backup_store import OBJECT_CHUNK
+    from utils import win_long_path
+    with open(win_long_path(src), "rb") as rin, open(dst, "wb") as rout:
+        while True:
+            if cancel_event is not None and cancel_event.is_set():
+                break
+            chunk = rin.read(OBJECT_CHUNK)
+            if not chunk:
+                break
+            rout.write(chunk)
 
 
 def _collect_files(source: str, policy: Optional[dict],

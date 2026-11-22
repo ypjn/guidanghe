@@ -160,3 +160,28 @@ zsh 打包/accept_mac_app.sh 打包/dist/归档盒-1.8.1-macos-arm64.dmg docs/pr
 ```
 
 未测：本环境无 `hdiutil`/`codesign`，不能在此生成或签名真实 DMG；Windows 真盘与高 DPI 原生窗口待 Windows 机验收。
+
+## A 备份桌面入口（Windows，2026-11-22）
+
+机器：Windows 11 家庭版，10.0.26200，Python 3.14.7 + 仓库 .venv（PySide6 6.12.0）。
+分支：`product/desktop-finish-win`（自 `handoff/desktop-finish-20261122` @ `b820189`）。
+
+实现：
+- 主窗口侧栏新增「版本备份」→ `backup_dialog.py` / `backup_worker.py`
+- `preview_backup` / `verify_version` 增加可选 `cancel_event` / `progress_cb`；哈希与大文件分块复制可中途取消；提交完整清单前再核对取消
+- 版本备注 `note` 写入并回读 `manifest.json`
+- Windows 下 `validate_restore_rel_path('/abs')` 正确拒绝 POSIX 绝对路径
+- 活跃 worker 接入 `_background_workers` / `_close_child_windows`；关对话框等待线程结束
+
+验收命令（源码目录，进程退出码 0）：
+
+```
+cd 归档盒源码
+$env:QT_QPA_PLATFORM='offscreen'
+..\.venv\Scripts\python.exe -m unittest discover -s tests -p 'test_product_backup*.py' -v
+```
+
+20 项通过（既有 backup 11 + UI/生命周期 9），EXIT=0。
+离屏截图：`docs/product-development/evidence/batchA-win/`（820/1024/1280、预览、版本列表、错误态）。
+原生窗口逐项点击与真盘验收仍待本机后续批次；Linux 离屏截图不记作 Windows 原生点击。
+

@@ -1888,6 +1888,7 @@ class MainWindow(QMainWindow):
         self._agent_dialog = None
         self._index_dialog = None
         self._search_dialog = None
+        self._backup_dialog = None
         self._duplicate_worker = None
         self._duplicate_seq = 0
         self._duplicate_cache = None
@@ -2145,6 +2146,13 @@ class MainWindow(QMainWindow):
             "登记要记住的文件夹。刷新只更新本地索引，不会移动文件。")
         self.btn_index_spaces.clicked.connect(self.on_index_spaces)
         side_lay.addWidget(self.btn_index_spaces)
+
+        self.btn_backup_manage = nav(QPushButton("版本备份"))
+        self.btn_backup_manage.setToolTip(
+            "把文件夹做成可恢复的本地版本。备份不删源；"
+            "恢复写入新的空目录。与「配置备份」无关。")
+        self.btn_backup_manage.clicked.connect(self.on_backup_manage)
+        side_lay.addWidget(self.btn_backup_manage)
 
         self.btn_scheme_center = nav(QPushButton("导入或保存方案"))
         self.btn_scheme_center.setToolTip(
@@ -4225,6 +4233,22 @@ class MainWindow(QMainWindow):
     def _clear_index_dialog_ref(self, dlg):
         if self._index_dialog is dlg:
             self._index_dialog = None
+
+    def on_backup_manage(self):
+        from backup_dialog import BackupManageDialog
+        if self._backup_dialog is not None:
+            self._backup_dialog.raise_()
+            self._backup_dialog.activateWindow()
+            return
+        root = self.path_edit.text().strip()
+        dlg = BackupManageDialog(self, default_source=root)
+        dlg.finished.connect(lambda _=0, d=dlg: self._clear_backup_dialog_ref(d))
+        self._backup_dialog = dlg
+        dlg.show()
+
+    def _clear_backup_dialog_ref(self, dlg):
+        if self._backup_dialog is dlg:
+            self._backup_dialog = None
 
     # ============== 学习建议（阶段 5） ==============
 
@@ -6690,6 +6714,13 @@ class MainWindow(QMainWindow):
                 candidates.extend(getter())
             else:
                 candidates.append(getattr(agent_dialog, "_worker", None))
+        backup_dialog = getattr(self, "_backup_dialog", None)
+        if backup_dialog is not None:
+            getter = getattr(backup_dialog, "running_workers", None)
+            if callable(getter):
+                candidates.extend(getter())
+            else:
+                candidates.append(getattr(backup_dialog, "_worker", None))
         candidates.extend(getattr(self, "_plan_workers", []) or [])
         candidates.extend(getattr(self, "_rule_preview_workers", []) or [])
         out, seen = [], set()
@@ -6768,8 +6799,8 @@ class MainWindow(QMainWindow):
     def _close_child_windows(self):
         """S3 / guia F-19：关闭主窗口时一并关闭所有非模态子窗口。"""
         for attr in ("_history_dialog", "_intake_dialog", "_tree_dialog",
-                     "_duplicate_dialog", "_recent_dialog",                      "_agent_dialog",
-                     "_index_dialog", "_search_dialog"):
+                     "_duplicate_dialog", "_recent_dialog", "_agent_dialog",
+                     "_index_dialog", "_search_dialog", "_backup_dialog"):
             dlg = getattr(self, attr, None)
             if dlg is None:
                 continue

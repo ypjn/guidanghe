@@ -41,11 +41,13 @@ def strip_long_prefix(path: str) -> str:
     return path
 
 
-def sha256_file(file_path: str, follow_symlinks: bool = False) -> Optional[str]:
+def sha256_file(file_path: str, follow_symlinks: bool = False,
+                cancel_event=None) -> Optional[str]:
     """
     计算文件的 SHA-256 哈希。
 
     返回 64 位小写十六进制字符串，或 None（文件不存在/不可读）。
+    cancel_event 若被置位则返回 None（调用方按取消处理）。
     """
     if not os.path.exists(win_long_path(file_path)):
         return None
@@ -54,9 +56,16 @@ def sha256_file(file_path: str, follow_symlinks: bool = False) -> Optional[str]:
     try:
         h = hashlib.sha256()
         with open(win_long_path(file_path), "rb") as f:
-            # 分块读取，避免大文件占满内存
-            for chunk in iter(lambda: f.read(65536), b""):
+            # 分块读取，避免大文件占满内存；大文件中途可取消
+            while True:
+                if cancel_event is not None and cancel_event.is_set():
+                    return None
+                chunk = f.read(65536)
+                if not chunk:
+                    break
                 h.update(chunk)
+        if cancel_event is not None and cancel_event.is_set():
+            return None
         return h.hexdigest()
     except (OSError, PermissionError):
         return None

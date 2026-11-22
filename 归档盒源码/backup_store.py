@@ -55,6 +55,7 @@ class VersionManifest:
     file_count: int = 0
     total_bytes: int = 0
     new_bytes: int = 0
+    note: str = ""
 
     @property
     def recoverable(self) -> bool:
@@ -171,7 +172,7 @@ def object_exists(vault_paths_dict: Dict[str, str], sha256: str) -> bool:
 
 
 def write_object(vault_paths_dict: Dict[str, str], src_path: str,
-                 expected_sha256: str) -> str:
+                 expected_sha256: str, cancel_event=None) -> str:
     ref = _object_ref(expected_sha256)
     final = os.path.join(vault_paths_dict["objects"], ref)
     if object_exists(vault_paths_dict, expected_sha256):
@@ -181,8 +182,12 @@ def write_object(vault_paths_dict: Dict[str, str], src_path: str,
     os.makedirs(staging, exist_ok=True)
     tmp = os.path.join(staging, f"obj-{expected_sha256}.tmp")
     try:
-        _copy_file_content(src_path, tmp)
-        actual = sha256_file(tmp)
+        _copy_file_content(src_path, tmp, cancel_event=cancel_event)
+        if cancel_event is not None and cancel_event.is_set():
+            raise BackupStoreError("备份已取消")
+        actual = sha256_file(tmp, cancel_event=cancel_event)
+        if cancel_event is not None and cancel_event.is_set():
+            raise BackupStoreError("备份已取消")
         if actual != expected_sha256:
             raise BackupStoreError(
                 f"对象校验失败：期望 {expected_sha256[:16]}…，实际 {actual}")
@@ -203,9 +208,11 @@ def write_object(vault_paths_dict: Dict[str, str], src_path: str,
     return ref
 
 
-def _copy_file_content(src: str, dst: str) -> None:
+def _copy_file_content(src: str, dst: str, cancel_event=None) -> None:
     with open(win_long_path(src), "rb") as rin, open(dst, "wb") as rout:
         while True:
+            if cancel_event is not None and cancel_event.is_set():
+                break
             chunk = rin.read(OBJECT_CHUNK)
             if not chunk:
                 break
@@ -263,6 +270,7 @@ def _manifest_to_dict(manifest: VersionManifest, complete: bool) -> Dict[str, An
         "source_root": manifest.source_root,
         "source_identity": manifest.source_identity,
         "created_at": manifest.created_at,
+        "note": manifest.note or "",
         "metadata_support": manifest.metadata_support,
         "file_count": manifest.file_count,
         "total_bytes": manifest.total_bytes,
@@ -332,6 +340,7 @@ def _dict_to_manifest(data: Dict[str, Any]) -> VersionManifest:
         file_count=int(data.get("file_count", len(files))),
         total_bytes=int(data.get("total_bytes", 0)),
         new_bytes=int(data.get("new_bytes", 0)),
+        note=str(data.get("note") or ""),
     )
 
 
@@ -354,9 +363,17 @@ def list_recoverable_versions(vault_paths_dict: Dict[str, str]) -> List[VersionM
 
 
 def verify_objects(vault_paths_dict: Dict[str, str],
-                   manifest: VersionManifest) -> Tuple[bool, List[str]]:
+                   manifest: VersionManifest,
+                   cancel_event=None,
+                   progress_cb=None) -> Tuple[bool, List[str]]:
     errors: List[str] = []
-    for entry in manifest.files:
+    total = len(manifest.files)
+    for index, entry in enumerate(manifest.files, start=1):
+        if cancel_event is not None and cancel_event.is_set():
+            errors.append("校验已取消")
+            return (False, errors)
+        if progress_cb:
+            progress_cb(index, total, entry.rel_path)
         if entry.is_symlink:
             continue
         if not entry.sha256:
@@ -364,6 +381,9 @@ def verify_objects(vault_paths_dict: Dict[str, str],
             continue
         if not object_exists(vault_paths_dict, entry.sha256):
             errors.append(f"{entry.rel_path}：对象缺失或哈希不符")
+    if cancel_event is not None and cancel_event.is_set():
+        errors.append("校验已取消")
+        return (False, errors)
     return (len(errors) == 0, errors)
 
 
@@ -376,14 +396,19 @@ def normalize_backup_rel(rel_path: str) -> str:
 
 def validate_restore_rel_path(rel_path: str) -> List[str]:
     errors: List[str] = []
+    raw = (rel_path or "").replace("\\", "/")
+    # Windows 上 os.path.isabs("/abs") 为 False，必须显式拒绝 POSIX 绝对路径。
+    if (
+        os.path.isabs(rel_path or "")
+        or (rel_path or "").startswith("\\")
+        or raw.startswith("/")
+        or raw.startswith("~")
+    ):
+        errors.append(f"绝对或非法路径：{rel_path}")
     rel = normalize_backup_rel(rel_path)
     if not rel:
         errors.append("空相对路径")
         return errors
-    if os.path.isabs(rel_path) or rel_path.startswith("\\"):
-        errors.append(f"绝对路径：{rel_path}")
-    if rel.startswith("/") or rel.startswith("~"):
-        errors.append(f"非法路径：{rel_path}")
     if len(rel) >= 2 and rel[1] == ":":
         errors.append(f"盘符路径：{rel_path}")
     parts = rel.split("/")
