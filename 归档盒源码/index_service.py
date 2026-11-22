@@ -23,6 +23,7 @@ from index_store import (
 )
 from scan_cache import file_identity, identity_matches
 from scanner import _looks_like_project_root, classify_type
+from volume_identity import identity_mismatch_message, probe_volume, volumes_match
 
 PARSER_VERSION = 1
 Progress = Optional[Callable[[int, int, str], None]]
@@ -40,12 +41,18 @@ def register_space(root: str, name: str = "", policy: Optional[dict] = None,
         found = store.find_space_by_root(root)
         if found is not None:
             return found
+        info = probe_volume(root)
+        if info is None:
+            raise IndexStoreError(f"无法登记，读不到卷身份：{root}")
         spec = SpaceSpec(
             space_id="sp-" + uuid.uuid4().hex[:16],
             root=root,
             name=(name or os.path.basename(root) or root).strip(),
             policy=_stored_policy(policy),
             enabled=True,
+            volume_id=info.volume_id,
+            filesystem=info.filesystem,
+            online=True,
         )
         store.upsert_space(spec, _now())
         return spec
@@ -70,12 +77,26 @@ def update_space(space_id: str, cancel_event=None, progress_cb: Progress = None,
             report.coverage = "paused"
             report.errors.append("空间已暂停，没有刷新索引")
             return report
+        now = _now()
         generation = store.bump_generation(space_id)
         if not os.path.isdir(spec.root):
-            report.coverage = "unavailable"
-            report.errors.append("根目录现在不存在，已保留上次索引")
-            store.set_status(space_id, report.coverage, _now())
+            report.coverage = "offline"
+            report.errors.append(
+                _offline_note(spec, "根目录现在不存在，已保留上次索引"))
+            _set_space_offline(store, spec, now)
+            store.set_status(space_id, report.coverage, now)
             return report
+        current = probe_volume(spec.root)
+        if not volumes_match(spec.volume_id, current):
+            report.coverage = "identity_mismatch"
+            report.errors.append(identity_mismatch_message(
+                spec.volume_id, current, spec.root))
+            store.set_status(space_id, report.coverage, now)
+            return report
+        if not spec.online:
+            spec.online = True
+            spec.filesystem = current.filesystem if current else spec.filesystem
+            store.upsert_space(spec, now)
         listed: set[str] = set()
         seen: set[str] = set()
         excluded_prefixes: list[tuple[str, str]] = []
@@ -97,11 +118,20 @@ def update_space(space_id: str, cancel_event=None, progress_cb: Progress = None,
                     before_body, progress_cb)
         if report.cancelled or report.errors:
             report.completed = False
-            report.coverage = "partial"
+            if report.coverage not in {"offline", "identity_mismatch", "paused"}:
+                report.coverage = "partial"
         else:
             report.completed = True
             report.coverage = "complete"
-        store.set_status(space_id, report.coverage, _now())
+            store.set_last_indexed_at(space_id, now)
+            spec = store.get_space(space_id)
+            if spec is not None:
+                spec.online = True
+                if current is not None:
+                    spec.volume_id = current.volume_id
+                    spec.filesystem = current.filesystem
+                store.upsert_space(spec, now)
+        store.set_status(space_id, report.coverage, now)
         return report
     finally:
         if own:
@@ -539,6 +569,43 @@ def _row(spec, rel, key, *, size, mtime_ns, ctime_ns, dev, ino, digest,
         "exclude_reason": reason,
         "present": 0 if index_state == ACCESS_EXCLUDE else 1,
     }
+
+
+def refresh_space_volume(space_id: str, store: Optional[IndexStore] = None) -> SpaceSpec:
+    """路径恢复后核对卷身份并更新在线状态，不扫描文件。"""
+    own = store is None
+    store = store or IndexStore()
+    try:
+        spec = store.get_space(space_id)
+        if spec is None:
+            raise IndexStoreError(f"空间不存在：{space_id}")
+        now = _now()
+        if not os.path.isdir(spec.root):
+            _set_space_offline(store, spec, now)
+            raise IndexStoreError(_offline_note(spec, "根目录不存在"))
+        current = probe_volume(spec.root)
+        if not volumes_match(spec.volume_id, current):
+            raise IndexStoreError(identity_mismatch_message(
+                spec.volume_id, current, spec.root))
+        spec.online = True
+        if current is not None:
+            spec.filesystem = current.filesystem
+        store.upsert_space(spec, now)
+        return spec
+    finally:
+        if own:
+            store.close()
+
+
+def _set_space_offline(store: IndexStore, spec: SpaceSpec, now: str) -> None:
+    spec.online = False
+    store.upsert_space(spec, now)
+    store.mark_files_offline(spec.space_id, now)
+
+
+def _offline_note(spec: SpaceSpec, reason: str) -> str:
+    indexed = spec.last_indexed_at or "未知"
+    return f"{reason}（设备离线，最近成功索引：{indexed}）"
 
 
 def _now() -> str:

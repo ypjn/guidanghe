@@ -39,7 +39,10 @@ class IndexSpacesDialog(QDialog):
         self._specs = self.store.list_spaces()
         for spec in self._specs:
             state = "启用" if spec.enabled else "暂停"
-            self.list.addItem(f"{spec.name}  [{state}]  {spec.root}")
+            link = "在线" if spec.online else "离线"
+            indexed = spec.last_indexed_at or "未索引"
+            self.list.addItem(
+                f"{spec.name}  [{state}/{link}]  {spec.root}  索引于 {indexed}")
 
     def _current(self):
         row = self.list.currentRow()

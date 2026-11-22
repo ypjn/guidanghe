@@ -11,11 +11,12 @@ import os
 import sqlite3
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional
 
 import scheme_store
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 ENV_INDEX_DB = "ARCHIVEBOX_INDEX_DB"
 
 CONTENT_DDL = """
@@ -54,6 +55,10 @@ class SpaceSpec:
     name: str
     policy: dict
     enabled: bool = True
+    volume_id: str = ""
+    filesystem: str = ""
+    online: bool = True
+    last_indexed_at: str = ""
 
 
 @dataclass
@@ -98,6 +103,8 @@ class SearchHit:
     rel_path: str
     evidence: str = ""
     availability: str = "online"
+    space_online: bool = True
+    last_indexed_at: str = ""
     index_version: int = SCHEMA_VERSION
     location: str = ""
     field: str = ""
@@ -202,7 +209,11 @@ class IndexStore:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 generation INTEGER NOT NULL DEFAULT 0,
-                last_status TEXT NOT NULL DEFAULT ''
+                last_status TEXT NOT NULL DEFAULT '',
+                volume_id TEXT NOT NULL DEFAULT '',
+                filesystem TEXT NOT NULL DEFAULT '',
+                online INTEGER NOT NULL DEFAULT 1,
+                last_indexed_at TEXT NOT NULL DEFAULT ''
             );
             CREATE TABLE IF NOT EXISTS files (
                 file_id TEXT PRIMARY KEY,
@@ -236,15 +247,62 @@ class IndexStore:
         self.conn.commit()
 
     def _migrate(self, version: int) -> None:
-        """只增加可重建的正文表。整理历史和这份文件表都留在原地。"""
-        if version != 1:
+        """版本升级在事务里完成，保留空间、索引、偏好与历史相关数据。"""
+        if version == 1:
+            self.conn.executescript(CONTENT_DDL)
+            self.conn.execute(
+                "UPDATE meta SET value='2' WHERE key='schema_version'")
+            self.conn.commit()
+            version = 2
+        if version == 2 and SCHEMA_VERSION >= 3:
+            self._migrate_v2_to_v3()
+            return
+        if version != SCHEMA_VERSION:
             raise IndexStoreError(
                 f"没有从版本 {version} 升级的步骤，已保留原库。")
-        self.conn.executescript(CONTENT_DDL)
-        self.conn.execute(
-            "UPDATE meta SET value=? WHERE key='schema_version'",
-            (str(SCHEMA_VERSION),))
-        self.conn.commit()
+
+    def _migrate_v2_to_v3(self) -> None:
+        from volume_identity import probe_volume
+
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            cols = {row[1] for row in self.conn.execute("PRAGMA table_info(spaces)")}
+            additions = [
+                ("volume_id", "TEXT NOT NULL DEFAULT ''"),
+                ("filesystem", "TEXT NOT NULL DEFAULT ''"),
+                ("online", "INTEGER NOT NULL DEFAULT 1"),
+                ("last_indexed_at", "TEXT NOT NULL DEFAULT ''"),
+            ]
+            for name, decl in additions:
+                if name not in cols:
+                    self.conn.execute(f"ALTER TABLE spaces ADD COLUMN {name} {decl}")
+            rows = self.conn.execute("SELECT space_id, root_path FROM spaces").fetchall()
+            now = datetime.now().isoformat(timespec="seconds")
+            for row in rows:
+                root = row["root_path"]
+                online = 1
+                volume_id = ""
+                filesystem = ""
+                if os.path.isdir(root):
+                    info = probe_volume(root)
+                    if info is not None:
+                        volume_id = info.volume_id
+                        filesystem = info.filesystem
+                else:
+                    online = 0
+                self.conn.execute(
+                    """
+                    UPDATE spaces SET volume_id=?, filesystem=?, online=?, updated_at=?
+                    WHERE space_id=?
+                    """,
+                    (volume_id, filesystem, online, now, row["space_id"]))
+            self.conn.execute(
+                "UPDATE meta SET value=? WHERE key='schema_version'",
+                (str(SCHEMA_VERSION),))
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
 
     def rebuild(self, *, fail: bool = False) -> None:
         """写到旁边的新库，成功后才替换。失败时原来的库还能查询。"""
@@ -271,7 +329,11 @@ class IndexStore:
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     generation INTEGER NOT NULL DEFAULT 0,
-                    last_status TEXT NOT NULL DEFAULT ''
+                    last_status TEXT NOT NULL DEFAULT '',
+                    volume_id TEXT NOT NULL DEFAULT '',
+                    filesystem TEXT NOT NULL DEFAULT '',
+                    online INTEGER NOT NULL DEFAULT 1,
+                    last_indexed_at TEXT NOT NULL DEFAULT ''
                 );
                 CREATE TABLE files (
                     file_id TEXT PRIMARY KEY,
@@ -303,9 +365,10 @@ class IndexStore:
             source_texts = self.conn.execute("SELECT * FROM file_text").fetchall()
             source_chunks = self.conn.execute("SELECT * FROM chunks").fetchall()
             for row in source_spaces:
+                values = _space_row_tuple(row)
                 fresh.execute(
-                    "INSERT INTO spaces VALUES (?,?,?,?,?,?,?,?,?)",
-                    tuple(row))
+                    "INSERT INTO spaces VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    values)
             for row in source_files:
                 fresh.execute(
                     "INSERT INTO files VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -382,17 +445,27 @@ class IndexStore:
         policy = json.dumps(spec.policy, ensure_ascii=False, sort_keys=True)
         if existing is None:
             self.conn.execute(
-                "INSERT INTO spaces(space_id, root_path, display_name, enabled, "
-                "policy_json, created_at, updated_at, generation, last_status) "
-                "VALUES (?,?,?,?,?,?,?,0,'')",
+                """
+                INSERT INTO spaces(
+                    space_id, root_path, display_name, enabled, policy_json,
+                    created_at, updated_at, generation, last_status,
+                    volume_id, filesystem, online, last_indexed_at)
+                VALUES (?,?,?,?,?,?,?,0,'',?,?,?,?)
+                """,
                 (spec.space_id, spec.root, spec.name, 1 if spec.enabled else 0,
-                 policy, now, now))
+                 policy, now, now, spec.volume_id, spec.filesystem,
+                 1 if spec.online else 0, spec.last_indexed_at))
         else:
             self.conn.execute(
-                "UPDATE spaces SET root_path=?, display_name=?, enabled=?, "
-                "policy_json=?, updated_at=? WHERE space_id=?",
+                """
+                UPDATE spaces SET root_path=?, display_name=?, enabled=?,
+                    policy_json=?, updated_at=?, volume_id=?, filesystem=?,
+                    online=?, last_indexed_at=?
+                WHERE space_id=?
+                """,
                 (spec.root, spec.name, 1 if spec.enabled else 0, policy, now,
-                 spec.space_id))
+                 spec.volume_id, spec.filesystem, 1 if spec.online else 0,
+                 spec.last_indexed_at, spec.space_id))
         self.conn.commit()
 
     def get_space(self, space_id: str) -> Optional[SpaceSpec]:
@@ -417,6 +490,29 @@ class IndexStore:
             "UPDATE spaces SET last_status=?, updated_at=? WHERE space_id=?",
             (status, now, space_id))
         self.conn.commit()
+
+    def set_last_indexed_at(self, space_id: str, when: str) -> None:
+        self.conn.execute(
+            "UPDATE spaces SET last_indexed_at=?, updated_at=? WHERE space_id=?",
+            (when, when, space_id))
+        self.conn.commit()
+
+    def mark_files_offline(self, space_id: str, now: str) -> None:
+        self.conn.execute(
+            """
+            UPDATE files SET availability='offline', indexed_at=?
+            WHERE space_id=? AND present=1 AND availability NOT IN ('excluded','deleted','link')
+            """,
+            (now, space_id))
+        self.conn.commit()
+
+    def space_online_map(self) -> dict[str, tuple[bool, str]]:
+        rows = self.conn.execute(
+            "SELECT space_id, online, last_indexed_at FROM spaces").fetchall()
+        return {
+            row["space_id"]: (bool(row["online"]), row["last_indexed_at"] or "")
+            for row in rows
+        }
 
     def remove_space(self, space_id: str) -> None:
         self.conn.execute("BEGIN IMMEDIATE")
@@ -611,13 +707,39 @@ def _space_from_row(row: sqlite3.Row) -> SpaceSpec:
         policy = {}
     if not isinstance(policy, dict):
         policy = {}
+    keys = row.keys()
     return SpaceSpec(
         space_id=row["space_id"],
         root=row["root_path"],
         name=row["display_name"],
         policy=policy,
         enabled=bool(row["enabled"]),
+        volume_id=row["volume_id"] if "volume_id" in keys else "",
+        filesystem=row["filesystem"] if "filesystem" in keys else "",
+        online=bool(row["online"]) if "online" in keys else True,
+        last_indexed_at=row["last_indexed_at"] if "last_indexed_at" in keys else "",
     )
+
+
+def _space_row_tuple(row: sqlite3.Row) -> tuple:
+    keys = row.keys()
+    defaults = {
+        "volume_id": "",
+        "filesystem": "",
+        "online": 1,
+        "last_indexed_at": "",
+    }
+    values = []
+    for key in (
+        "space_id", "root_path", "display_name", "enabled", "policy_json",
+        "created_at", "updated_at", "generation", "last_status",
+        "volume_id", "filesystem", "online", "last_indexed_at",
+    ):
+        if key in keys:
+            values.append(row[key])
+        else:
+            values.append(defaults.get(key, ""))
+    return tuple(values)
 
 
 def _file_from_row(row: sqlite3.Row) -> FileRecord:

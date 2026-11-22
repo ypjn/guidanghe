@@ -36,10 +36,12 @@ def search_files(store, query: SearchQuery) -> SearchPage:
         # 多取一些行，按文件去重后再应用 offset/limit，排除词不会在上层空耗页容量。
         rows = _filtered_files(store, query, offset + limit)
         hits = _dedupe_file_hits([_hit_from_name(row, "") for row in rows])
-        return SearchPage(
+        page = SearchPage(
             hits=hits[offset:offset + limit],
             note="没有关键词，只按空间、类型和时间筛选",
             elapsed_ms=(time.perf_counter() - started) * 1000)
+        _attach_space_status(store, page.hits)
+        return page
     if len(text) > MAX_QUERY_CHARS:
         text = text[:MAX_QUERY_CHARS]
         notes.append(f"查询已截断到 {MAX_QUERY_CHARS} 个字符")
@@ -68,7 +70,18 @@ def search_files(store, query: SearchQuery) -> SearchPage:
         elapsed_ms=(time.perf_counter() - started) * 1000,
         truncated_query=len((query.text or "").strip()) > MAX_QUERY_CHARS,
     )
+    _attach_space_status(store, page.hits)
     return page
+
+
+def _attach_space_status(store, hits: list[SearchHit]) -> None:
+    status = store.space_online_map()
+    for hit in hits:
+        online, indexed = status.get(hit.space_id, (True, ""))
+        hit.space_online = online
+        hit.last_indexed_at = indexed
+        if not online and hit.availability == "online":
+            hit.availability = "offline"
 
 
 def _dedupe_file_hits(hits: list[SearchHit]) -> list[SearchHit]:

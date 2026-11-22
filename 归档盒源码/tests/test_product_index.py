@@ -136,7 +136,7 @@ class IndexTests(unittest.TestCase):
 
         os.rename(space_a, space_a + "-gone")
         missing = update_space(spec_a.space_id, store=store)
-        self.assertEqual(missing.coverage, "unavailable")
+        self.assertEqual(missing.coverage, "offline")
         self.assertTrue(store.present_files(spec_a.space_id))
         os.rename(space_a + "-gone", space_a)
 

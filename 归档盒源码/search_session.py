@@ -18,6 +18,7 @@ from content_search import SearchPage, search_files
 from index_service import _path_key
 from scan_cache import file_identity, identity_matches
 from scanner import _looks_like_project_root
+from volume_identity import probe_volume, volumes_match
 
 # 单次查找在内存中聚合的上限。超过后结果仍正确分页，但会注明截断。
 _LOOKUP_SCAN_CAP = 20_000
@@ -95,8 +96,17 @@ def run_lookup(store, understood, space_ids=None, limit=50, offset=0):
     ))
     if truncated:
         notes.append(f"候选超过 {_LOOKUP_SCAN_CAP} 条时只在此范围内求交与排除")
+    page_hits = hits[offset:offset + limit]
+    from content_search import _attach_space_status
+    _attach_space_status(store, page_hits)
+    offline = [
+        h for h in page_hits if not h.space_online or h.availability == "offline"]
+    if offline:
+        sample = offline[0]
+        stamp = sample.last_indexed_at or "未知"
+        notes.append(f"含离线设备结果，最近索引时间：{stamp}")
     return SearchPage(
-        hits=hits[offset:offset + limit],
+        hits=page_hits,
         note="；".join(dict.fromkeys(n for n in notes if n)),
         elapsed_ms=(time.perf_counter() - started) * 1000,
         truncated_query=truncated,
@@ -108,6 +118,12 @@ def locate_hit(store, hit) -> tuple[str, str]:
     spec = store.get_space(hit.space_id)
     if spec is None:
         return "", "空间已移除，这条结果已失效"
+    if not spec.online:
+        indexed = spec.last_indexed_at or "未知"
+        return "", f"设备离线，不能打开陈旧路径（最近索引：{indexed}）"
+    current = probe_volume(spec.root)
+    if not volumes_match(spec.volume_id, current):
+        return "", "当前路径不是登记时的外置盘，不能按同名打开"
     path = os.path.join(spec.root, hit.rel_path)
     if os.path.islink(path) or not os.path.isfile(path):
         return "", "文件已不在索引记录的位置"
