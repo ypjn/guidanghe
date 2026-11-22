@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>归档盒 · 1.8.1</title>
+    <meta
+      name="description"
+      content="归档盒 1.8.1：本地文件索引与版本备份。搜索更稳，外置盘可离线查，版本可回退。"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="grain" aria-hidden="true"></div>
+
+    <header class="hero">
+      <div class="hero-copy">
+        <p class="brand">归档盒</p>
+        <h1>把外置盘上的文件，放进可检索的本地档案。</h1>
+        <p class="lede">
+          桌面端索引与备份工具。1.8.1 修好搜索边界，支持外置盘离线查询与本地版本回退。
+        </p>
+        <div class="cta-row">
+          <a class="cta primary" href="#download">下载 Windows 标准包</a>
+          <a class="cta quiet" href="#status">看本轮交付</a>
+        </div>
+      </div>
+
+      <figure class="hero-visual" aria-hidden="true">
+        <svg
+          class="boxes"
+          viewBox="0 0 520 560"
+          xmlns="http://www.w3.org/2000/svg"
+          role="presentation"
+        >
+          <defs>
+            <linearGradient id="lid" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#d8dee6" />
+              <stop offset="100%" stop-color="#b7c0cc" />
+            </linearGradient>
+            <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#f4f6f8" />
+              <stop offset="100%" stop-color="#cfd6df" />
+            </linearGradient>
+            <linearGradient id="side" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#9aa5b4" />
+              <stop offset="100%" stop-color="#7d8898" />
+            </linearGradient>
+          </defs>
+
+          <g transform="translate(118 48)">
+            <g class="box box-c">
+              <path d="M40 70 L220 20 L380 70 L200 128 Z" fill="url(#lid)" />
+              <path d="M40 70 L40 210 L200 268 L200 128 Z" fill="url(#face)" />
+              <path d="M200 128 L200 268 L380 210 L380 70 Z" fill="url(#side)" />
+              <rect x="78" y="148" width="86" height="34" rx="2" fill="#245B8C" />
+              <text
+                x="121"
+                y="171"
+                text-anchor="middle"
+                fill="#EEF1F4"
+                font-family="Noto Serif SC, serif"
+                font-size="15"
+                font-weight="700"
+              >
+                卷宗
+              </text>
+            </g>
+          </g>
+
+          <g transform="translate(52 168)">
+            <g class="box box-b">
+              <path d="M40 70 L220 20 L380 70 L200 128 Z" fill="url(#lid)" />
+              <path d="M40 70 L40 210 L200 268 L200 128 Z" fill="url(#face)" />
+              <path d="M200 128 L200 268 L380 210 L380 70 Z" fill="url(#side)" />
+              <rect x="78" y="148" width="86" height="34" rx="2" fill="#161B22" />
+              <text
+                x="121"
+                y="171"
+                text-anchor="middle"
+                fill="#EEF1F4"
+                font-family="Noto Serif SC, serif"
+                font-size="15"
+                font-weight="700"
+              >
+                索引
+              </text>
+            </g>
+          </g>
+
+          <g transform="translate(0 292)">
+            <g class="box box-a">
+              <path d="M40 70 L220 20 L380 70 L200 128 Z" fill="url(#lid)" />
+              <path d="M40 70 L40 210 L200 268 L200 128 Z" fill="url(#face)" />
+              <path d="M200 128 L200 268 L380 210 L380 70 Z" fill="url(#side)" />
+              <rect x="78" y="148" width="86" height="34" rx="2" fill="#C23B22" />
+              <text
+                x="121"
+                y="171"
+                text-anchor="middle"
+                fill="#FFF7F4"
+                font-family="Noto Serif SC, serif"
+                font-size="15"
+                font-weight="700"
+              >
+                备份
+              </text>
+            </g>
+          </g>
+        </svg>
+      </figure>
+    </header>
+
+    <main>
+      <section id="download" class="band download">
+        <div class="band-head">
+          <h2>下载</h2>
+          <p>
+            版本 <span class="ver">1.8.1</span> · 核对 SHA-256 后解压使用；macOS
+            安装包尚未随 Release 分发。
+          </p>
+        </div>
+
+        <div class="download-grid">
+          <article class="download-card">
+            <h3>Windows 标准包</h3>
+            <p>免安装 ZIP（x64）。解压后双击 <code>归档盒.exe</code> 运行。</p>
+            <a
+              class="cta primary"
+              href="https://github.com/ypjn/guidanghe/releases/download/v1.8.1-windows/-1.8.1-windows-x64.zip"
+              rel="noopener noreferrer"
+              >下载 ZIP</a
+            >
+            <p class="checksum">
+              <span class="checksum-label">SHA-256</span>
+              <code class="checksum-value" id="win-sha"
+                >95eee7d2c5db1e649ddea46027fe9987c985a3c6a0b2efde6952491f2f737305</code
+              >
+            </p>
+          </article>
+
+          <article class="download-card">
+            <h3>OCR 可选包</h3>
+            <p>便携核心包默认不含 OCR；独立可选包另行分发。</p>
+            <p class="pill pill-pending" aria-label="制作中">制作中</p>
+          </article>
+
+          <article class="download-card">
+            <h3>macOS</h3>
+            <p>
+              正式 DMG 尚未挂在 GitHub Release。请在 Apple 芯片 Mac
+              上按仓库说明自行构建。
+            </p>
+            <a
+              class="cta quiet"
+              href="https://github.com/ypjn/guidanghe/blob/main/打包/构建说明.md"
+              rel="noopener noreferrer"
+              target="_blank"
+              >查看构建说明</a
+            >
+          </article>
+        </div>
+      </section>
+
+      <section id="status" class="band">
+        <div class="band-head">
+          <h2>本轮交付</h2>
+          <p>
+            Release <code>v1.8.1-windows</code> · 版本
+            <span class="ver">1.8.1</span>
+          </p>
+        </div>
+
+        <div class="catalog">
+          <article>
+            <h3>搜索</h3>
+            <p>分页与筛选边界修好了，翻页不再漂移或漏结果。</p>
+          </article>
+          <article>
+            <h3>外置盘</h3>
+            <p>卷身份 schema 3：盘不在机时，仍可查历史只读索引。</p>
+          </article>
+          <article>
+            <h3>备份</h3>
+            <p>本地版本库支持备份与恢复，升级后可兼容回退。</p>
+          </article>
+          <article>
+            <h3>发布</h3>
+            <p>
+              Windows 标准包已上架 Release；Mac DMG 与 OCR 可选包仍在准备中。
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="band run">
+        <div class="band-head">
+          <h2>运行桌面版</h2>
+          <p>本页是发布说明；程序为 PySide6 桌面应用。</p>
+        </div>
+        <ol class="run-list">
+          <li>
+            Windows：下载上方标准包，核对哈希后解压运行（未签名时 SmartScreen
+            可能提示）
+          </li>
+          <li>
+            macOS：克隆 <code>ypjn/guidanghe</code>，按
+            <a
+              href="https://github.com/ypjn/guidanghe/blob/main/打包/构建说明.md"
+              rel="noopener noreferrer"
+              target="_blank"
+              >打包/构建说明.md</a
+            >
+            构建
+          </li>
+          <li>用验收脚本核对搜索、卷身份与备份恢复</li>
+        </ol>
+      </section>
+    </main>
+
+    <footer>
+      <p>归档盒 1.8.1 · 发布状态页</p>
+    </footer>
+
+    <script src="./main.js"></script>
+  </body>
+</html>
