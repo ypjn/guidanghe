@@ -1,0 +1,10 @@
+[PASS] 启动日志不在应用包内
+日志=/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.9YBcgP/organize/logs/启动日志.txt
+应用包=/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.9YBcgP/Applications/归档盒.app
+[PASS] 预览包含样本
+计划项=1
+[PASS] 确认后完成移动
+moved=1 errors=[]
+[PASS] 历史记下批次与校验值
+批次=[1] sha=98ce17383a623706624a86afd112dbc8656f4a64bb0aa6b4a82679abd7c2d061
+报告：/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.9YBcgP/organize/organize.json

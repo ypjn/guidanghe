@@ -1,0 +1,10 @@
+[PASS] 启动日志不在应用包内
+日志=/tmp/archivebox-src-accept.cJBasq/upgrade-logs/启动日志.txt
+应用包=/Users/ypjn/Desktop/NEU/大二上/aigc2/guidanghe-stage5/打包/dist/归档盒.app
+[PASS] 主窗口标题带当前版本
+标题=归档盒 V1.8
+[PASS] 主窗口已创建
+visible=True
+[PASS] 原生窗口事件循环退出
+exec=0
+报告：/tmp/archivebox-native.f3UtjE/show-and-quit.json

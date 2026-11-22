@@ -1,0 +1,8 @@
+[PASS] 启动日志不在应用包内
+日志=/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.9YBcgP/organize/logs/启动日志.txt
+应用包=/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.9YBcgP/Applications/归档盒.app
+[PASS] 重新打开后历史仍在
+期望批次=1 实际=[1]
+[PASS] 撤销后路径和 SHA-256 恢复
+restored=1 errors=[]
+报告：/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.9YBcgP/organize/reopen-undo.json

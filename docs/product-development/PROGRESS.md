@@ -39,12 +39,31 @@ QT_QPA_PLATFORM=offscreen "$ARCHIVEBOX_PYTHON" -m unittest discover -s tests -p 
 
 ### 构建与安装验收
 
-待本批代码提交后填写：DMG 路径、SHA-256、安装副本、进程退出码、包指纹、原生窗口。
+代码提交：`1a7d5f1e9123e13ff792a8af9485f71ee6582278`。构建命令：
+
+```sh
+ARCHIVEBOX_BUILD_PYTHON="/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/bin/python" zsh 打包/build_mac.sh
+```
+
+- 应用：`打包/dist/归档盒.app`，Mach-O arm64，`CFBundleShortVersionString` 1.8.0，`ArchiveBoxBuildCommit` 为上述提交
+- DMG：`打包/dist/归档盒-1.8.0-macos-arm64.dmg`，147 MiB，UDZO 压缩只读
+- SHA-256：`afef9a1990643f03a4c3bf9a973c11a2f83037c0f23d548ae5613dffb7d5514d`
+- 本地 ad-hoc 签名。未做 Apple 开发者签名和公证
+
+安装验收命令：
+
+```sh
+zsh 打包/accept_mac_app.sh 打包/dist/归档盒-1.8.0-macos-arm64.dmg docs/product-development/evidence/batch01
+```
+
+进程退出码（不是 `open` 的退出码）：imports、organize、reopen-undo、learning-agent、upgrade-seed、upgrade-check、smoke-gui 都是 0。脚本总退出码 0。镜像只读挂载后复制到临时“应用程序”目录，卸载后继续运行。运行前后应用包指纹都是 1309 条且一致。启动日志写在验收工作目录或 `~/Library/Logs/归档盒/启动日志.txt`，包内没有新日志。
+
+原生窗口：`show-and-quit` 的应用进程退出码 0。全屏 `screencapture` 失败，原因是 `could not create image from display`。随后直接打开 `打包/dist/归档盒.app`，窗口标题为「归档盒 V1.8」，能看到学习建议和图片文字识别入口。截图在 `docs/product-development/evidence/batch01/native-window.webp`。没有用辅助功能逐项点击扫描、确认和撤销；这些动作由打包后的可执行文件在验收命令里完成。窗口关闭后没有残留 `archivebox` 进程。
 
 已知未测：
 
 - Apple 开发者签名和公证
-- 辅助功能权限下的手工点击。离屏验收和随后的原生窗口分开记录
+- 辅助功能权限下的手工点击
 - Windows 原生安装
 
 ## 02–07

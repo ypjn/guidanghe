@@ -13,6 +13,7 @@ fi
 DMG="$1"
 EVIDENCE="$2"
 mkdir -p "$EVIDENCE"
+unset ARCHIVEBOX_APP_DIR ARCHIVEBOX_SCHEME_DIR ARCHIVEBOX_RECENT_FILE ARCHIVEBOX_LOG_DIR
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/archivebox-accept.XXXXXX")"
 MOUNT="$(mktemp -d "${TMPDIR:-/tmp}/archivebox-mount.XXXXXX")"
 
@@ -118,7 +119,7 @@ if ! cmp -s "$EVIDENCE/bundle-before.txt" "$EVIDENCE/bundle-after.txt"; then
   exit 1
 fi
 
-leftover="$(ps ax -o pid=,command= | awk -v exe="$INSTALLED" -v repl="$REPLACEMENT" 'index($0, exe) || index($0, repl) { print }' || true)"
+leftover="$(ps ax -o pid=,command= | grep -F "/Contents/MacOS/archivebox" | grep -v grep || true)"
 if [[ -n "$leftover" ]]; then
   echo "验收结束后仍有应用进程：" >&2
   echo "$leftover" >&2

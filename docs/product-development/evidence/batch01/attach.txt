@@ -1,0 +1,3 @@
+预计CRC32 $98B21840
+/dev/disk4          	GUID_partition_scheme          	
+/dev/disk4s1        	Apple_HFS                      	/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-mount.uUgBnT

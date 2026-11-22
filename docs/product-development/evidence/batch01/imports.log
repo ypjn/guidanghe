@@ -1,0 +1,12 @@
+[PASS] 启动日志不在应用包内
+日志=/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.9YBcgP/imports/logs/启动日志.txt
+应用包=/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.9YBcgP/Applications/归档盒.app
+[PASS] 加载 learning
+[PASS] 加载 learning_dialog
+[PASS] 加载 agent
+[PASS] 加载 agent_dialog
+[PASS] 加载 ocr_engine
+[PASS] 加载 app_metadata
+[PASS] 加载 preferences
+[PASS] 加载 content_extract
+报告：/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.9YBcgP/imports/imports.json
