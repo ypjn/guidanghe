@@ -1887,6 +1887,7 @@ class MainWindow(QMainWindow):
         self._duplicate_dialog = None
         self._agent_dialog = None
         self._index_dialog = None
+        self._search_dialog = None
         self._duplicate_worker = None
         self._duplicate_seq = 0
         self._duplicate_cache = None
@@ -2132,6 +2133,12 @@ class MainWindow(QMainWindow):
             "也不会移动文件")
         self.btn_learning.clicked.connect(self.on_learning_suggestions)
         side_lay.addWidget(self.btn_learning)
+
+        self.btn_search = nav(QPushButton("搜索"))
+        self.btn_search.setToolTip(
+            "在已登记的空间里按文件名和正文查找。查找不会移动文件。")
+        self.btn_search.clicked.connect(self.on_search)
+        side_lay.addWidget(self.btn_search)
 
         self.btn_index_spaces = nav(QPushButton("文件空间"))
         self.btn_index_spaces.setToolTip(
@@ -4188,6 +4195,21 @@ class MainWindow(QMainWindow):
         self._preference_note = ""
         self._invalidate_for_config_change()
         return self.classification_config
+
+    def on_search(self):
+        from search_dialog import SearchDialog
+        if self._search_dialog is not None:
+            self._search_dialog.raise_()
+            self._search_dialog.activateWindow()
+            return
+        dlg = SearchDialog(self)
+        dlg.finished.connect(lambda _=0, d=dlg: self._clear_search_dialog_ref(d))
+        self._search_dialog = dlg
+        dlg.show()
+
+    def _clear_search_dialog_ref(self, dlg):
+        if self._search_dialog is dlg:
+            self._search_dialog = None
 
     def on_index_spaces(self):
         from index_dialog import IndexSpacesDialog
@@ -6746,8 +6768,8 @@ class MainWindow(QMainWindow):
     def _close_child_windows(self):
         """S3 / guia F-19：关闭主窗口时一并关闭所有非模态子窗口。"""
         for attr in ("_history_dialog", "_intake_dialog", "_tree_dialog",
-                     "_duplicate_dialog", "_recent_dialog", "_agent_dialog",
-                     "_index_dialog"):
+                     "_duplicate_dialog", "_recent_dialog",                      "_agent_dialog",
+                     "_index_dialog", "_search_dialog"):
             dlg = getattr(self, attr, None)
             if dlg is None:
                 continue

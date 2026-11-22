@@ -28,8 +28,15 @@ def search_files(store, query: SearchQuery) -> SearchPage:
     started = time.perf_counter()
     text = (query.text or "").strip()
     notes = []
-    if not text:
+    if not text and not _has_constraint(query):
         return SearchPage(note="请输入要查找的文字")
+    if not text:
+        started_filter = time.perf_counter()
+        rows = _filtered_files(store, query, max(1, min(int(query.limit or 50), 200)))
+        return SearchPage(
+            hits=[_hit_from_name(row, "") for row in rows],
+            note="没有关键词，只按空间、类型和时间筛选",
+            elapsed_ms=(time.perf_counter() - started_filter) * 1000)
     if len(text) > MAX_QUERY_CHARS:
         text = text[:MAX_QUERY_CHARS]
         notes.append(f"查询已截断到 {MAX_QUERY_CHARS} 个字符")
@@ -70,6 +77,30 @@ def _like(text: str) -> str:
     return f"%{escaped}%"
 
 
+def _has_constraint(query: SearchQuery) -> bool:
+    return bool(
+        query.space_ids or query.kinds
+        or query.modified_after_ns or query.modified_before_ns
+        or query.created_after_ns or query.created_before_ns)
+
+
+def _filtered_files(store, query: SearchQuery, need: int):
+    where, params = _filters(query, "f")
+    return store.conn.execute(
+        f"""
+        SELECT f.file_id, f.space_id, f.rel_path, f.name, f.availability,
+               f.index_state,
+               COALESCE(t.status, '') AS content_status,
+               COALESCE(t.reason, '') AS content_reason
+        FROM files f
+        LEFT JOIN file_text t ON t.file_id = f.file_id
+        WHERE {where}
+        ORDER BY f.file_id
+        LIMIT ?
+        """,
+        (*params, need)).fetchall()
+
+
 def _filters(query: SearchQuery, alias: str) -> tuple[str, list]:
     clauses = [f"{alias}.present=1"]
     params: list = []
@@ -89,6 +120,14 @@ def _filters(query: SearchQuery, alias: str) -> tuple[str, list]:
     if before:
         clauses.append(f"{alias}.mtime_ns<=?")
         params.append(before)
+    created_after = int(getattr(query, "created_after_ns", 0) or 0)
+    created_before = int(getattr(query, "created_before_ns", 0) or 0)
+    if created_after:
+        clauses.append(f"{alias}.ctime_ns>=?")
+        params.append(created_after)
+    if created_before:
+        clauses.append(f"{alias}.ctime_ns<=?")
+        params.append(created_before)
     if not query.include_offline:
         clauses.append(f"{alias}.availability='online'")
     return " AND ".join(clauses), params

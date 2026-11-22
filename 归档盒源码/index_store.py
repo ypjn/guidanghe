@@ -87,6 +87,8 @@ class SearchQuery:
     scope: str = "all"
     modified_after_ns: int = 0
     modified_before_ns: int = 0
+    created_after_ns: int = 0
+    created_before_ns: int = 0
 
 
 @dataclass
