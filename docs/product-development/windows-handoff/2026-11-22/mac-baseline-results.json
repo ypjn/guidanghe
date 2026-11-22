@@ -1,0 +1,60 @@
+{
+  "python": "Python 3.14.8 on macOS arm64",
+  "source_imports": [
+    "归档盒源码/content_search.py",
+    "归档盒源码/search_session.py"
+  ],
+  "head": "7e77469114676450fe00ee59c9b128ac6d7d8e4b",
+  "fixture": "<generated isolated temporary fixtures>",
+  "multi_token_offset_ignored": {
+    "source_file_count": 75,
+    "alpha_match_count": 75,
+    "expected_page_counts": [
+      50,
+      25,
+      0
+    ],
+    "actual_page_counts": [
+      50,
+      50,
+      50
+    ],
+    "page_1_page_2_id_overlap": 50,
+    "all_3_pages_identical": true,
+    "reproduced": true,
+    "normal_behavior_passed": false
+  },
+  "multi_token_intersection_after_truncation": {
+    "alpha_match_count": 80,
+    "beta_match_count": 1,
+    "complete_intersection_count": 1,
+    "target_path": "alpha_043.txt",
+    "target_id": "f64ecdcaeb8ab7c71caf48cb36079867",
+    "actual_lookup_count": 0,
+    "target_is_last_alpha_hit": true,
+    "reproduced": true,
+    "normal_behavior_passed": false
+  },
+  "exclusion_after_pagination_empty_first_page": {
+    "query": "gamma",
+    "excluded": [
+      "draft"
+    ],
+    "raw_match_count": 61,
+    "full_filter_valid_paths": [
+      "gamma_keep_0008.bin"
+    ],
+    "raw_first_50_all_excluded": true,
+    "actual_first_page_count": 0,
+    "actual_second_page_paths": [
+      "gamma_keep_0008.bin"
+    ],
+    "ui_next_page_guard": "search_dialog._next_page returns without advancing when self.hits is empty",
+    "reproduced": true,
+    "normal_behavior_passed": false
+  },
+  "all_three_reproduced": true,
+  "all_expected_behaviors_passed": false,
+  "mode": "expect-known-bugs",
+  "sanitization": "Absolute local paths redacted; assertions and measurements unchanged."
+}
