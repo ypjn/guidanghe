@@ -71,7 +71,7 @@ def app_stylesheet(combo_arrow_url: str) -> str:
             color: #6B7280;
             border-color: #D6DEE6;
         }}
-        QPushButton[role="nav"] {{
+        QPushButton[role="nav"], QToolButton[role="nav"] {{
             text-align: left;
             padding: 6px 10px;
             border: 1px solid {LINE};
@@ -80,8 +80,10 @@ def app_stylesheet(combo_arrow_url: str) -> str:
             color: {INK};
             font-weight: 500;
         }}
-        QPushButton[role="nav"]:hover {{ background: {PAPER_DEEP}; }}
-        QPushButton[role="nav"]:disabled {{
+        QPushButton[role="nav"]:hover, QToolButton[role="nav"]:hover {{
+            background: {PAPER_DEEP};
+        }}
+        QPushButton[role="nav"]:disabled, QToolButton[role="nav"]:disabled {{
             color: #6B7280; background: {PAPER_DEEP}; border-color: {LINE};
         }}
         QPushButton[role="nav"][current="true"] {{
