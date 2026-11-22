@@ -24,6 +24,7 @@ DEFAULT_EXCLUDE_DIR_NAMES = (
     ".mamba-root", "site-packages",
     "__MACOSX", ".ipynb_checkpoints",
     ".dsh-backups",
+    ".archivebox-backup",
 )
 
 DEFAULT_EXCLUDE_FILE_NAMES = (

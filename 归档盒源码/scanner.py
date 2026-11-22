@@ -35,6 +35,7 @@ SKIP_DIRS = {
     "__MACOSX", ".ipynb_checkpoints",
     # 备份快照（自身递归风险）
     ".dsh-backups",
+    ".archivebox-backup",
     # 说明：未包含 out / build / target / dist / .cmake
     # —— 这些名称可能被用户合法使用（如"输出"、"课外"），
     #   交给 planner 的类型判定层处理（.class / .o 等归为"构建产物"类型）。

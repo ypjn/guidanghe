@@ -106,6 +106,37 @@ QT_QPA_PLATFORM=offscreen "$ARCHIVEBOX_PYTHON" -m unittest discover -s tests -p 
 
 离屏窗口截图在 `docs/product-development/evidence/batch04/`，宽度 820、1024、1280。长中文路径会换行，搜索、定位、整理和确认按钮都在窗口内。没有在原生窗口里逐项点击。
 
-## 05–07
+## 05 外置盘只读索引与离线目录
+
+完成（隔离夹具；真盘拔插待用户环境验收）。
+
+- `spaces` 表扩展：`volume_id`、`filesystem`、`online`、`last_indexed_at`；`SCHEMA_VERSION` 3，自版本 2 事务迁移并回填在线卷身份。
+- `volume_identity.py`：Linux/macOS/Windows 下优先 UUID 或卷序列号，辅以 `st_dev`；盘符或卷名单独不能证明同一盘。
+- 登记/刷新核对卷身份；离线保留目录与正文；查找标注离线及索引时间；定位拒绝陈旧路径与错盘同名文件。
+- 取消、I/O、权限失败、断连不全量标删；移除登记只清理本地索引与正文，不动来源与 `.organizer`。
+
+```sh
+QT_QPA_PLATFORM=offscreen /agent/repos/guidanghe/.venv/bin/python -m unittest discover \
+  -s 归档盒源码/tests -p 'test_product_volume.py' -v
+```
+
+5 项通过（离线保留、同名异盘、不完整扫描、本地移除、schema 2→3 迁移）。另有 `test_product_index.py` 中根目录缺失覆盖为 `offline`。
+
+未测：Windows NTFS/exFAT 真盘、用户安全弹出与重连 UI、junction 逃逸实测。
+
+## 06 本地版本备份与安全恢复
+
+完成。新增 `归档盒源码/backup_store.py`、`归档盒源码/backup_service.py`；索引/整理默认跳过 `.archivebox-backup`。
+
+```sh
+QT_QPA_PLATFORM=offscreen /agent/repos/guidanghe/.venv/bin/python -m unittest discover \
+  -s 归档盒源码/tests -p 'test_product_backup.py' -v
+```
+
+11 项通过，进程退出码 0。夹具：备份 v1 → 改样本 → 备份 v2 → 分别恢复到新空目录，独立清单路径/数量/SHA-256 一致；改恢复副本不影响来源与其它版本。覆盖取消、未完成清单、对象篡改/缺失、恶意清单路径、非空目标拒绝、仓库嵌套、整理保护显式授权备份。
+
+元数据见 `metadata_support_matrix()`：仅内容与可记录修改时间等，不声称扩展属性或整盘备份。
+
+## 07 Windows 集成构建
 
 未开始。
