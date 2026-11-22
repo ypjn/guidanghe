@@ -1,234 +1,277 @@
-"""本地版本备份与安全恢复。
+"""本地版本备份与安全恢复服务。
 
-备份不改源、不删源、不传播删除。恢复默认写入新的空目录，复制对象而非硬链接。
+依赖 backup_store 的对象库与清单。备份不改源、不删源；恢复默认写入新的空目录。
 """
 
 from __future__ import annotations
 
-import hashlib
 import os
-import re
 import shutil
 import stat
-import uuid
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from typing import Any, Callable, Dict, Optional, Set
 
 from backup_store import (
-    BackupError, BackupItem, BackupPreview, BackupVersion,
-    commit_manifest, ensure_vault, get_version, list_versions,
-    mark_failed, object_path, utc_now, write_draft_manifest,
-    write_object_atomic,
+    BackupStoreError, FileEntry, VersionManifest,
+    commit_manifest, detect_case_conflicts, init_vault, is_empty_directory,
+    list_recoverable_versions, list_versions, load_manifest,
+    metadata_support_matrix, next_version_id, normalize_backup_rel,
+    object_exists, object_path, validate_restore_rel_path,
+    validate_vault_placement, vault_paths, verify_objects, write_object,
 )
+from backup_store import _utc_now  # noqa: SLC001 — 与仓库时间格式一致
+from utils import sha256_file
 
 Progress = Optional[Callable[[int, int, str], None]]
 
-DEFAULT_EXCLUDES = {
-    ".organizer", ".git", ".svn", "__pycache__", ".DS_Store",
-    "Thumbs.db", "desktop.ini",
+DEFAULT_SKIP_DIR_NAMES = {
+    ".organizer", ".git", ".svn", "__pycache__", ".archivebox-backup",
 }
-
-WIN_RESERVED = {
-    "CON", "PRN", "AUX", "NUL",
-    *(f"COM{i}" for i in range(1, 10)),
-    *(f"LPT{i}" for i in range(1, 10)),
-}
-
-METADATA_SUPPORT = [
-    "相对路径",
-    "大小",
-    "SHA-256 内容校验",
-    "来源 identity（dev/ino/size/mtime_ns/ctime_ns）",
-    "POSIX 权限位（mode）——尽力保存，恢复时按目标系统应用",
-]
-METADATA_NOT_CLAIMED = [
-    "不是系统级整盘备份",
-    "不保证 ACL / 扩展属性 / 所有者 / Finder 标签完整恢复",
-    "同一物理盘上的仓库不具备整盘损坏容灾能力",
-]
 
 
 @dataclass
-class BackupReport:
-    version_id: str = ""
-    completed: bool = False
-    cancelled: bool = False
-    errors: list[str] = field(default_factory=list)
-    item_count: int = 0
+class PreviewReport:
+    ok: bool = True
+    file_count: int = 0
     total_bytes: int = 0
-    reused_objects: int = 0
-    written_objects: int = 0
+    estimated_new_bytes: int = 0
+    exclusions: list = field(default_factory=list)
+    metadata_support: Dict[str, Any] = field(default_factory=dict)
+    errors: list = field(default_factory=list)
+    placement_errors: list = field(default_factory=list)
 
 
 @dataclass
-class RestoreReport:
+class BackupRunReport:
     version_id: str = ""
-    completed: bool = False
+    state: str = "incomplete"
+    recoverable: bool = False
     cancelled: bool = False
-    errors: list[str] = field(default_factory=list)
+    errors: list = field(default_factory=list)
+    file_count: int = 0
+    total_bytes: int = 0
+    new_bytes: int = 0
+    reused_objects: int = 0
+
+
+@dataclass
+class RestoreRunReport:
+    ok: bool = False
     restored: int = 0
-    target_root: str = ""
+    errors: list = field(default_factory=list)
+    version_id: str = ""
+    target: str = ""
 
 
-def assert_independent_roots(source: str, vault: str) -> None:
-    source = os.path.realpath(os.path.abspath(source))
-    vault = os.path.realpath(os.path.abspath(vault))
-    if not os.path.isdir(source):
-        raise BackupError(f"来源目录不存在：{source}")
-    if source == vault:
-        raise BackupError("备份仓库不能与来源是同一目录")
-    try:
-        if os.path.commonpath([source, vault]) in {source, vault}:
-            raise BackupError("备份仓库不得与来源相互嵌套或重叠")
-    except ValueError:
-        # 不同盘符/根，允许。
-        pass
+@dataclass
+class VerifyReport:
+    ok: bool = False
+    errors: list = field(default_factory=list)
 
 
 def preview_backup(source: str, vault: str,
-                   extra_excludes: Optional[list[str]] = None) -> BackupPreview:
-    assert_independent_roots(source, vault)
-    excludes = sorted(DEFAULT_EXCLUDES | set(extra_excludes or []))
-    files = list(_iter_source_files(source, excludes))
-    total = sum(size for _, size, _ in files)
-    existing = _existing_digests(vault) if os.path.isdir(vault) else set()
-    estimated_new = 0
-    for path, size, _ in files:
-        digest = _sha256_file(path)
-        if digest not in existing:
-            estimated_new += size
-    warnings = list(METADATA_NOT_CLAIMED)
-    return BackupPreview(
-        file_count=len(files),
-        total_bytes=total,
-        estimated_new_bytes=estimated_new,
-        exclusions=excludes,
-        metadata_support=list(METADATA_SUPPORT),
-        warnings=warnings,
-    )
+                   policy: Optional[dict] = None,
+                   protected_allow: Optional[Set[str]] = None) -> PreviewReport:
+    report = PreviewReport(metadata_support=metadata_support_matrix())
+    placement = validate_vault_placement(source, vault)
+    if placement:
+        report.ok = False
+        report.placement_errors = placement
+        return report
+    if not os.path.isdir(source):
+        report.ok = False
+        report.errors.append(f"来源目录不存在：{source}")
+        return report
+    files, excluded = _collect_files(source, policy, protected_allow or set())
+    report.exclusions = excluded
+    report.file_count = len(files)
+    report.total_bytes = sum(item["size"] for item in files)
+    existing = set()
+    if os.path.isdir(vault):
+        paths = vault_paths(vault)
+        obj_root = paths["objects"]
+        if os.path.isdir(obj_root):
+            for dirpath, _, names in os.walk(obj_root):
+                for name in names:
+                    if len(name) == 64:
+                        existing.add(name)
+    new_bytes = 0
+    for item in files:
+        digest = sha256_file(item["path"]) or ""
+        if digest and digest not in existing:
+            new_bytes += item["size"]
+    report.estimated_new_bytes = new_bytes
+    return report
 
 
-def create_backup(source: str, vault: str, *,
-                  extra_excludes: Optional[list[str]] = None,
-                  note: str = "",
-                  cancel_event=None,
-                  progress_cb: Progress = None) -> BackupReport:
-    assert_independent_roots(source, vault)
-    ensure_vault(vault)
-    report = BackupReport()
-    version_id = "bv-" + uuid.uuid4().hex[:16]
-    report.version_id = version_id
-    excludes = sorted(DEFAULT_EXCLUDES | set(extra_excludes or []))
+def run_backup(source: str, vault: str, *,
+               policy: Optional[dict] = None,
+               protected_allow: Optional[Set[str]] = None,
+               cancel_event=None,
+               progress_cb: Progress = None,
+               note: str = "") -> BackupRunReport:
+    report = BackupRunReport()
+    placement = validate_vault_placement(source, vault)
+    if placement:
+        report.errors.extend(placement)
+        return report
     source_root = os.path.realpath(os.path.abspath(source))
-    version = BackupVersion(
+    try:
+        st = os.stat(source_root)
+        source_identity = {
+            "dev": int(st.st_dev),
+            "ino": int(st.st_ino),
+        }
+    except OSError as exc:
+        report.errors.append(f"无法读取来源身份：{exc}")
+        return report
+    try:
+        paths = init_vault(vault, source_root, source_identity)
+    except BackupStoreError as exc:
+        report.errors.append(str(exc))
+        return report
+    version_id = next_version_id(paths)
+    report.version_id = version_id
+    files, excluded = _collect_files(source_root, policy, protected_allow or set())
+    conflicts = detect_case_conflicts([item["rel"] for item in files])
+    if conflicts:
+        report.errors.append(
+            "来源存在大小写冲突：" + "；".join(f"{a} / {b}" for a, b in conflicts[:5]))
+        return report
+    manifest = VersionManifest(
         version_id=version_id,
-        created_at=utc_now(),
+        state="incomplete",
         source_root=source_root,
-        source_identity=_path_identity(source_root),
-        status="drafting",
-        note=note,
+        source_identity=source_identity,
+        created_at=_utc_now(),
+        excluded=excluded,
+        metadata_support=metadata_support_matrix(),
     )
     try:
-        files = list(_iter_source_files(source_root, excludes))
         total = len(files)
-        for index, (path, size, rel) in enumerate(files, start=1):
+        for index, item in enumerate(files, start=1):
             if cancel_event is not None and cancel_event.is_set():
                 report.cancelled = True
-                raise BackupError("备份已取消")
+                raise BackupStoreError("备份已取消")
             if progress_cb:
-                progress_cb(index, total, rel)
-            safe = _validate_rel_path(rel)
-            identity = _path_identity(path)
-            digest = _sha256_file(path)
-            # 复制前再看一眼，来源中途变化则失败该项。
-            again = _path_identity(path)
-            if again != identity:
-                raise BackupError(f"复制过程中来源发生变化：{rel}")
-            dest = object_path(vault, digest)
-            if os.path.isfile(dest):
-                if _sha256_file(dest) != digest:
-                    raise BackupError(f"对象库中已有损坏对象：{digest}")
+                progress_cb(index, total, item["rel"])
+            path = item["path"]
+            rel = normalize_backup_rel(item["rel"])
+            path_errors = validate_restore_rel_path(rel)
+            if path_errors:
+                raise BackupStoreError(f"{rel}：" + "；".join(path_errors))
+            if os.path.islink(path):
+                entry = FileEntry(
+                    rel_path=rel,
+                    size=0,
+                    sha256="",
+                    mtime_ns=item["mtime_ns"],
+                    mode=item["mode"],
+                    is_symlink=True,
+                    link_target=os.readlink(path),
+                )
+                manifest.files.append(entry)
+                continue
+            before = _file_stat(path)
+            digest = sha256_file(path)
+            if not digest:
+                raise BackupStoreError(f"无法计算哈希：{rel}")
+            after = _file_stat(path)
+            if before != after:
+                raise BackupStoreError(f"复制过程中来源发生变化：{rel}")
+            if object_exists(paths, digest):
                 report.reused_objects += 1
+                ref = f"{digest[:2]}/{digest}"
             else:
-                write_object_atomic(vault, digest, path)
-                if _sha256_file(dest) != digest:
-                    raise BackupError(f"对象写入后校验失败：{rel}")
-                report.written_objects += 1
-            version.items.append(BackupItem(
-                rel_path=safe,
-                size=size,
+                ref = write_object(paths, path, digest)
+                report.new_bytes += item["size"]
+            manifest.files.append(FileEntry(
+                rel_path=rel,
+                size=item["size"],
                 sha256=digest,
-                source_identity=identity,
-                metadata=_collect_metadata(path),
-                object_key=digest,
+                mtime_ns=item["mtime_ns"],
+                mode=item["mode"],
+                object_ref=ref,
             ))
-        write_draft_manifest(vault, version)
-        commit_manifest(vault, version)
-        report.completed = True
-        report.item_count = len(version.items)
-        report.total_bytes = sum(item.size for item in version.items)
+        manifest.file_count = len(manifest.files)
+        manifest.total_bytes = sum(e.size for e in manifest.files)
+        manifest.new_bytes = report.new_bytes
+        commit_manifest(paths, version_id, manifest, complete=True)
+        report.state = "complete"
+        report.recoverable = True
+        report.file_count = manifest.file_count
+        report.total_bytes = manifest.total_bytes
         return report
     except Exception as exc:
         report.errors.append(str(exc))
+        report.state = "incomplete"
+        report.recoverable = False
+        manifest.errors = list(report.errors)
+        manifest.file_count = len(manifest.files)
+        manifest.total_bytes = sum(e.size for e in manifest.files)
+        manifest.new_bytes = report.new_bytes
         try:
-            mark_failed(vault, version, str(exc))
+            commit_manifest(paths, version_id, manifest, complete=False)
         except Exception as mark_exc:
-            report.errors.append(f"登记失败状态时出错：{mark_exc}")
-        report.completed = False
+            report.errors.append(f"登记未完成清单失败：{mark_exc}")
         return report
 
 
 def restore_version(vault: str, version_id: str, target: str, *,
                     cancel_event=None,
-                    progress_cb: Progress = None) -> RestoreReport:
-    report = RestoreReport(version_id=version_id, target_root=target)
-    version = get_version(vault, version_id)
-    if version is None:
+                    progress_cb: Progress = None) -> RestoreRunReport:
+    report = RestoreRunReport(version_id=version_id, target=target)
+    paths = vault_paths(vault)
+    manifest = load_manifest(paths, version_id)
+    if manifest is None:
         report.errors.append("版本不存在")
         return report
-    if version.status != "complete":
+    if not manifest.recoverable:
         report.errors.append(
-            f"版本状态为 {version.status}，不能作为可恢复完成版本")
+            f"版本状态为 {manifest.state}，不能作为可恢复完成版本")
         return report
-    target = os.path.abspath(target)
-    if os.path.exists(target):
-        if not os.path.isdir(target):
+    target_abs = os.path.abspath(target)
+    if os.path.exists(target_abs):
+        if not os.path.isdir(target_abs):
             report.errors.append("恢复目标不是目录")
             return report
-        if os.listdir(target):
-            report.errors.append("恢复目标必须是新的空目录")
+        if not is_empty_directory(target_abs):
+            report.errors.append("恢复目标必须是新的空目录（非空）")
             return report
     else:
-        os.makedirs(target, exist_ok=True)
-    target_real = os.path.realpath(target)
+        os.makedirs(target_abs, exist_ok=True)
+    target_real = os.path.realpath(target_abs)
     try:
-        total = len(version.items)
-        for index, item in enumerate(version.items, start=1):
+        total = len(manifest.files)
+        for index, entry in enumerate(manifest.files, start=1):
             if cancel_event is not None and cancel_event.is_set():
-                report.cancelled = True
-                raise BackupError("恢复已取消")
+                raise BackupStoreError("恢复已取消")
             if progress_cb:
-                progress_cb(index, total, item.rel_path)
-            rel = _validate_rel_path(item.rel_path)
-            dest = os.path.join(target, rel.replace("/", os.sep))
-            dest_real_parent = os.path.realpath(os.path.dirname(dest) or target)
+                progress_cb(index, total, entry.rel_path)
+            path_errors = validate_restore_rel_path(entry.rel_path)
+            if path_errors:
+                raise BackupStoreError(
+                    f"路径逃逸或非法：{entry.rel_path}（{'；'.join(path_errors)}）")
+            rel = normalize_backup_rel(entry.rel_path)
+            dest = os.path.join(target_abs, *rel.split("/"))
+            parent = os.path.dirname(dest)
+            os.makedirs(parent, exist_ok=True)
+            parent_real = os.path.realpath(parent)
             try:
-                inside = os.path.commonpath(
-                    [dest_real_parent, target_real]) == target_real
+                inside = os.path.commonpath([parent_real, target_real]) == target_real
             except ValueError:
                 inside = False
             if not inside:
-                raise BackupError(f"恢复路径越界：{item.rel_path}")
+                raise BackupStoreError(f"恢复路径越界：{entry.rel_path}")
             if os.path.lexists(dest):
-                raise BackupError(f"恢复目标已被占用，拒绝覆盖：{item.rel_path}")
-            obj = object_path(vault, item.object_key or item.sha256)
-            if not os.path.isfile(obj):
-                raise BackupError(f"备份对象缺失：{item.rel_path}")
-            digest = _sha256_file(obj)
-            if digest != item.sha256:
-                raise BackupError(f"备份对象校验失败：{item.rel_path}")
-            os.makedirs(os.path.dirname(dest), exist_ok=True)
-            # 复制到临时名再置换，避免中途目标被换成链接。
+                raise BackupStoreError(f"恢复目标已被占用，拒绝覆盖：{entry.rel_path}")
+            if entry.is_symlink:
+                os.symlink(entry.link_target, dest)
+                report.restored += 1
+                continue
+            if not entry.sha256 or not object_exists(paths, entry.sha256):
+                raise BackupStoreError(f"备份对象缺失或损坏：{entry.rel_path}")
+            obj = object_path(paths, entry.sha256)
             tmp = dest + ".restoring"
             if os.path.lexists(tmp):
                 if os.path.isdir(tmp) and not os.path.islink(tmp):
@@ -236,130 +279,102 @@ def restore_version(vault: str, version_id: str, target: str, *,
                 else:
                     os.remove(tmp)
             shutil.copyfile(obj, tmp)
-            if _sha256_file(tmp) != item.sha256:
-                raise BackupError(f"恢复写入后校验失败：{item.rel_path}")
-            mode = item.metadata.get("mode")
-            if isinstance(mode, int):
+            if sha256_file(tmp) != entry.sha256:
+                raise BackupStoreError(f"恢复写入后校验失败：{entry.rel_path}")
+            if entry.mode and os.name != "nt":
                 try:
-                    os.chmod(tmp, mode & 0o777)
+                    os.chmod(tmp, entry.mode & 0o777)
                 except OSError:
                     pass
             if os.path.lexists(dest):
-                raise BackupError(f"恢复过程中目标被替换：{item.rel_path}")
+                raise BackupStoreError(f"恢复过程中目标被替换：{entry.rel_path}")
             os.replace(tmp, dest)
             report.restored += 1
-        report.completed = True
+        report.ok = True
         return report
     except Exception as exc:
         report.errors.append(str(exc))
-        report.completed = False
+        report.ok = False
         return report
 
 
-def verify_version(vault: str, version_id: str) -> list[str]:
-    version = get_version(vault, version_id)
-    if version is None:
-        return ["版本不存在"]
-    if version.status != "complete":
-        return [f"版本状态为 {version.status}"]
-    problems = []
-    for item in version.items:
-        try:
-            _validate_rel_path(item.rel_path)
-        except BackupError as exc:
-            problems.append(str(exc))
-            continue
-        obj = object_path(vault, item.object_key or item.sha256)
-        if not os.path.isfile(obj):
-            problems.append(f"缺失对象：{item.rel_path}")
-            continue
-        digest = _sha256_file(obj)
-        if digest != item.sha256:
-            problems.append(f"对象损坏：{item.rel_path}")
-    return problems
+def verify_version(vault: str, version_id: str) -> VerifyReport:
+    paths = vault_paths(vault)
+    manifest = load_manifest(paths, version_id)
+    if manifest is None:
+        return VerifyReport(ok=False, errors=["版本不存在"])
+    if not manifest.recoverable:
+        return VerifyReport(
+            ok=False, errors=[f"版本状态为 {manifest.state}"])
+    ok, errors = verify_objects(paths, manifest)
+    return VerifyReport(ok=ok, errors=errors)
 
 
-def _iter_source_files(root: str, excludes: list[str]):
-    exclude_set = {name.casefold() for name in excludes}
-    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+def list_backup_versions(vault: str, recoverable_only: bool = False):
+    paths = vault_paths(vault)
+    if recoverable_only:
+        return list_recoverable_versions(paths)
+    return list_versions(paths)
+
+
+def _collect_files(source: str, policy: Optional[dict],
+                   protected_allow: Set[str]):
+    files = []
+    excluded = []
+    protected = set()
+    if policy:
+        protected = {
+            normalize_backup_rel(p) for p in (policy.get("protected_prefixes") or [])
+        }
+    allow = {normalize_backup_rel(p) for p in protected_allow}
+    skip_dirs = set(DEFAULT_SKIP_DIR_NAMES)
+    if policy:
+        skip_dirs.update(
+            name.casefold() for name in (policy.get("exclude_dir_names") or []))
+    for dirpath, dirnames, filenames in os.walk(source, followlinks=False):
         dirnames[:] = [
             name for name in dirnames
-            if name.casefold() not in exclude_set and not name.startswith(".演示")
+            if name.casefold() not in {n.casefold() for n in skip_dirs}
+            and not name.startswith(".演示")
         ]
         for name in filenames:
-            if name.casefold() in exclude_set:
+            if name in {".DS_Store", "Thumbs.db", "desktop.ini"}:
                 continue
             path = os.path.join(dirpath, name)
-            if os.path.islink(path) or not os.path.isfile(path):
+            rel = normalize_backup_rel(os.path.relpath(path, source))
+            blocked = None
+            for prefix in protected:
+                if rel == prefix or rel.startswith(prefix + "/"):
+                    if prefix not in allow and not any(
+                            rel == a or rel.startswith(a + "/") for a in allow):
+                        blocked = prefix
+                    break
+            if blocked:
+                excluded.append({
+                    "path": rel,
+                    "reason": f"受保护前缀 {blocked}，未显式授权备份",
+                })
                 continue
-            rel = os.path.relpath(path, root).replace(os.sep, "/")
-            yield path, os.path.getsize(path), rel
+            try:
+                st = os.lstat(path)
+            except OSError as exc:
+                excluded.append({"path": rel, "reason": str(exc)})
+                continue
+            files.append({
+                "path": path,
+                "rel": rel,
+                "size": int(st.st_size) if not os.path.islink(path) else 0,
+                "mtime_ns": int(getattr(st, "st_mtime_ns", int(st.st_mtime * 1e9))),
+                "mode": int(stat.S_IMODE(st.st_mode)),
+            })
+    return files, excluded
 
 
-def _validate_rel_path(rel: str) -> str:
-    if not rel or rel.strip() != rel:
-        raise BackupError("非法相对路径")
-    normalized = rel.replace("\\", "/")
-    if normalized.startswith("/") or re.match(r"^[A-Za-z]:", normalized):
-        raise BackupError(f"拒绝绝对路径：{rel}")
-    parts = [part for part in normalized.split("/") if part not in ("", ".")]
-    if not parts or any(part == ".." for part in parts):
-        raise BackupError(f"拒绝越界相对路径：{rel}")
-    for part in parts:
-        stem = part.split(".")[0].upper()
-        if stem in WIN_RESERVED:
-            raise BackupError(f"拒绝 Windows 保留名：{rel}")
-        if any(ch in part for ch in '<>:"|?*\0'):
-            raise BackupError(f"路径含非法字符：{rel}")
-    return "/".join(parts)
-
-
-def _sha256_file(path: str) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        while True:
-            chunk = handle.read(1024 * 1024)
-            if not chunk:
-                break
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _path_identity(path: str) -> dict:
+def _file_stat(path: str) -> tuple:
     st = os.lstat(path)
-    return {
-        "dev": int(st.st_dev),
-        "ino": int(st.st_ino),
-        "size": int(st.st_size),
-        "mtime_ns": int(getattr(st, "st_mtime_ns", int(st.st_mtime * 1e9))),
-        "ctime_ns": int(getattr(st, "st_ctime_ns", int(st.st_ctime * 1e9))),
-    }
-
-
-def _collect_metadata(path: str) -> dict:
-    st = os.lstat(path)
-    return {
-        "mode": int(stat.S_IMODE(st.st_mode)),
-        "mtime_ns": int(getattr(st, "st_mtime_ns", int(st.st_mtime * 1e9))),
-    }
-
-
-def _existing_digests(vault: str) -> set[str]:
-    root = os.path.join(vault, "objects")
-    found: set[str] = set()
-    if not os.path.isdir(root):
-        return found
-    for dirpath, _, filenames in os.walk(root):
-        for name in filenames:
-            if len(name) == 64 and all(ch in "0123456789abcdef" for ch in name):
-                found.add(name)
-    return found
-
-
-# re-export helpers used by tests/UI
-__all__ = [
-    "BackupError", "BackupPreview", "BackupReport", "RestoreReport",
-    "METADATA_SUPPORT", "METADATA_NOT_CLAIMED",
-    "assert_independent_roots", "preview_backup", "create_backup",
-    "restore_version", "verify_version", "list_versions", "get_version",
-]
+    return (
+        int(st.st_dev),
+        int(st.st_ino),
+        int(st.st_size),
+        int(getattr(st, "st_mtime_ns", int(st.st_mtime * 1e9))),
+    )
