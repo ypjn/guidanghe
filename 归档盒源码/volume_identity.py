@@ -107,11 +107,22 @@ def _filesystem_type(path: str) -> str:
     return _linux_filesystem_type(path)
 
 
+def _windows_volume_root(path: str) -> str:
+    """GetVolumeInformationW 需要盘符根，例如 G:\\，不能用子目录。"""
+    abs_path = os.path.abspath(path)
+    drive = os.path.splitdrive(abs_path)[0]
+    if drive:
+        return drive + "\\"
+    if abs_path.endswith("\\"):
+        return abs_path
+    return abs_path + "\\"
+
+
 def _volume_label(root: str) -> str:
     if os.name == "nt":
         try:
             import ctypes
-            rootp = root if root.endswith("\\") else root + "\\"
+            rootp = _windows_volume_root(root)
             buf = ctypes.create_unicode_buffer(261)
             fs = ctypes.create_unicode_buffer(261)
             serial = ctypes.c_uint32()
@@ -131,9 +142,7 @@ def _volume_label(root: str) -> str:
 def _windows_volume_serial(path: str) -> tuple[str, str]:
     try:
         import ctypes
-        root = os.path.splitdrive(os.path.abspath(path))[0] + "\\"
-        if len(root) < 3:
-            root = path if path.endswith("\\") else path + "\\"
+        root = _windows_volume_root(path)
         serial = ctypes.c_uint32()
         fs = ctypes.create_unicode_buffer(261)
         ok = ctypes.windll.kernel32.GetVolumeInformationW(

@@ -22,7 +22,7 @@ from index_store import (
     IndexStore, IndexStoreError, IndexUpdateReport, SpaceSpec,
 )
 from scan_cache import file_identity, identity_matches
-from scanner import _looks_like_project_root, classify_type
+from scanner import _is_junction_or_reparse, _looks_like_project_root, classify_type
 from volume_identity import identity_mismatch_message, probe_volume, volumes_match
 
 PARSER_VERSION = 1
@@ -254,6 +254,13 @@ def _scan(store, spec, generation, report, listed, seen, excluded_prefixes,
             except OSError as exc:
                 report.errors.append(f"{child}：{exc.strerror or exc}")
                 continue
+            # Windows junction 不是 symlink，但 os.walk/scandir 仍会跟进去，必须单独拦住。
+            if not linked:
+                try:
+                    linked = _is_junction_or_reparse(entry.path)
+                except OSError as exc:
+                    report.errors.append(f"{child}：{exc.strerror or exc}")
+                    continue
             if linked:
                 _remember_link(store, spec, generation, child, report, seen)
                 if report.superseded:
@@ -298,7 +305,7 @@ def _remember_link(store, spec, generation, rel, report, seen) -> None:
     status = store.write_file(generation, _row(
         spec, rel, key, size=0, mtime_ns=0, ctime_ns=0, dev=0, ino=0,
         digest="", availability="link", index_state=ACCESS_METADATA,
-        reason="符号链接，默认不跟随"))
+        reason="符号链接或目录联接，默认不跟随"))
     if status == "superseded":
         report.superseded = True
         return
@@ -591,6 +598,40 @@ def refresh_space_volume(space_id: str, store: Optional[IndexStore] = None) -> S
         if current is not None:
             spec.filesystem = current.filesystem
         store.upsert_space(spec, now)
+        return spec
+    finally:
+        if own:
+            store.close()
+
+
+def reassociate_space(space_id: str, store: Optional[IndexStore] = None) -> SpaceSpec:
+    """在卷身份无法核对时，经用户确认后把当前路径重新绑定为该空间。
+
+    不删除旧索引正文；下一次刷新会按新身份增量更新。
+    盘符或卷名变化但序列号一致时不需要调用本函数。
+    """
+    own = store is None
+    store = store or IndexStore()
+    try:
+        spec = store.get_space(space_id)
+        if spec is None:
+            raise IndexStoreError(f"空间不存在：{space_id}")
+        if not os.path.isdir(spec.root):
+            raise IndexStoreError(_offline_note(spec, "根目录不存在，不能重新关联"))
+        current = probe_volume(spec.root)
+        if current is None:
+            raise IndexStoreError(f"读不到卷身份，不能重新关联：{spec.root}")
+        if volumes_match(spec.volume_id, current):
+            spec.online = True
+            spec.filesystem = current.filesystem
+            store.upsert_space(spec, _now())
+            return spec
+        now = _now()
+        spec.volume_id = current.volume_id
+        spec.filesystem = current.filesystem
+        spec.online = True
+        store.upsert_space(spec, now)
+        store.set_status(space_id, "reassociated", now)
         return spec
     finally:
         if own:

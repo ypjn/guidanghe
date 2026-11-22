@@ -185,3 +185,27 @@ $env:QT_QPA_PLATFORM='offscreen'
 离屏截图：`docs/product-development/evidence/batchA-win/`（820/1024/1280、预览、版本列表、错误态）。
 原生窗口逐项点击与真盘验收仍待本机后续批次；Linux 离屏截图不记作 Windows 原生点击。
 
+## B Windows 卷身份与索引（2026-11-22）
+
+机器：Windows 11 10.0.26200；已连接外置盘 G: 标签 YPJN，文件系统 exFAT，卷身份 win:6A12D786。
+本机 D: NTFS win:420AA01A；系统盘 C: NTFS win:68C42C93。
+
+实现：
+- 修复子路径卷标探测（GetVolumeInformationW 改用盘符根）
+- 索引扫描跳过 Windows junction/重解析点，防止越界登记
+- 新增 reassociate_space；文件空间对话框显示卷身份/当前探测，支持重新关联
+- 增加 Windows 序列号与 junction 回归；真盘脚本 打包/windows_volume_realdisk_check.py
+
+夹具验收：
+
+```
+cd 归档盒源码
+$env:QT_QPA_PLATFORM='offscreen'
+..\.venv\Scripts\python.exe -m unittest discover -s tests -p 'test_product_volume.py' -v
+```
+
+8 项通过，EXIT=0。
+
+真盘只读登记→弹出→离线→重连：等待用户指定「资料只读目录」与「可写测试目录」后再跑
+打包/windows_volume_realdisk_check.py；未指定前不写 G: 原有资料。
+

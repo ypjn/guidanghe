@@ -279,6 +279,82 @@ class VolumeIndexTests(unittest.TestCase):
         self.assertTrue(spec.online)
         self.assertEqual(len(store.present_files("sp-legacy")), 1)
 
+    def test_reassociate_updates_volume_without_wiping_index(self):
+        from index_service import reassociate_space, register_space, update_space
+        from index_store import IndexStore
+        from volume_identity import VolumeInfo, set_probe_override
+
+        root = os.path.join(self.tmp, "swap")
+        os.makedirs(root)
+        _write(root, "keep.txt", "保留索引\n")
+        set_probe_override(lambda _p: VolumeInfo("win:AAAA", "exFAT", 1, "DiskA"))
+        store = IndexStore(self.db)
+        self.addCleanup(store.close)
+        spec = register_space(root, "换盘", store=store)
+        self.assertTrue(update_space(spec.space_id, store=store).completed)
+        before = {f.rel_path for f in store.present_files(spec.space_id)}
+        self.assertIn("keep.txt", before)
+
+        set_probe_override(lambda _p: VolumeInfo("win:BBBB", "exFAT", 2, "DiskB"))
+        mismatch = update_space(spec.space_id, store=store)
+        self.assertEqual(mismatch.coverage, "identity_mismatch")
+        self.assertEqual(
+            {f.rel_path for f in store.present_files(spec.space_id)}, before)
+
+        updated = reassociate_space(spec.space_id, store=store)
+        self.assertEqual(updated.volume_id, "win:BBBB")
+        self.assertEqual(
+            {f.rel_path for f in store.present_files(spec.space_id)}, before)
+
+    @unittest.skipUnless(os.name == "nt", "Windows volume serial only")
+    def test_windows_probe_uses_volume_serial_not_drive_letter(self):
+        from volume_identity import probe_volume
+
+        info = probe_volume(self.tmp)
+        self.assertIsNotNone(info)
+        self.assertTrue(info.volume_id.startswith("win:"), info)
+        self.assertRegex(info.volume_id, r"^win:[0-9A-F]{8}$")
+        # 同一卷上的子路径必须得到同一序列号身份
+        child = os.path.join(self.tmp, "子目录 测试")
+        os.makedirs(child)
+        child_info = probe_volume(child)
+        self.assertEqual(info.volume_id, child_info.volume_id)
+        self.assertEqual(info.filesystem, child_info.filesystem)
+
+    @unittest.skipUnless(os.name == "nt", "Windows junction escape check")
+    def test_windows_junction_outside_space_not_followed_as_inside(self):
+        """目录 junction 指向空间外哨兵时，索引不得把哨兵登记为空间内文件。"""
+        import subprocess
+
+        from index_service import register_space, update_space
+        from index_store import IndexStore
+
+        root = os.path.join(self.tmp, "space root")
+        outside = os.path.join(self.tmp, "哨兵目录")
+        os.makedirs(root)
+        os.makedirs(outside)
+        _write(outside, "secret.txt", "空间外哨兵\n")
+        _write(root, "inside.txt", "空间内\n")
+        junction = os.path.join(root, "逃逸链接")
+        created = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", junction, outside],
+            capture_output=True, text=True, encoding="utf-8",
+            errors="replace", check=False)
+        if created.returncode != 0:
+            self.skipTest(
+                f"无法创建 junction：{(created.stderr or created.stdout or '').strip()}")
+
+        store = IndexStore(self.db)
+        self.addCleanup(store.close)
+        spec = register_space(root, "junction", store=store)
+        report = update_space(spec.space_id, store=store)
+        self.assertTrue(report.completed or report.coverage in {"complete", "partial"},
+                        report.errors)
+        names = {item.rel_path.replace("\\", "/") for item in store.present_files(spec.space_id)}
+        self.assertIn("inside.txt", names)
+        self.assertNotIn("逃逸链接/secret.txt", names)
+        self.assertNotIn("secret.txt", names)
+
 
 if __name__ == "__main__":
     unittest.main()

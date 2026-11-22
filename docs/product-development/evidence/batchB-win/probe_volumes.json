@@ -1,0 +1,26 @@
+[
+  {
+    "path": "G:\\\\",
+    "volume_id": "win:6A12D786",
+    "filesystem": "exFAT",
+    "label": "YPJN"
+  },
+  {
+    "path": "G:\\\\27美赛资料",
+    "volume_id": "win:6A12D786",
+    "filesystem": "exFAT",
+    "label": "YPJN"
+  },
+  {
+    "path": "D:\\\\归档盒 测试",
+    "volume_id": "win:420AA01A",
+    "filesystem": "NTFS",
+    "label": "Data"
+  },
+  {
+    "path": "C:\\\\Users\\\\Lenovo",
+    "volume_id": "win:68C42C93",
+    "filesystem": "NTFS",
+    "label": "Windows-SSD"
+  }
+]
