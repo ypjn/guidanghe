@@ -254,3 +254,76 @@ class SearchTests(unittest.TestCase):
         worker = None
         dialog.deleteLater()
         app.processEvents()
+
+    def test_lookup_paginates_after_full_filters(self):
+        """多词求交、排除词必须在分页前完成，页间不重复。"""
+        import hashlib
+        from index_service import update_space
+        from index_store import IndexStore, SpaceSpec
+        from search_intent import understand
+        from search_session import run_lookup
+
+        def ids(page):
+            return {hit.file_id for hit in page.hits}
+
+        # 75 份均匹配两个词：页大小 50 时第二页应剩 25，且与第一页无交集。
+        root = os.path.join(self.tmp, "multi")
+        os.makedirs(root)
+        for n in range(75):
+            _write(root, f"alpha_beta_{n:03d}.bin", "neutral")
+        store = IndexStore(self.db)
+        self.addCleanup(store.close)
+        spec = SpaceSpec("sp-multi", root, "multi", {})
+        store.upsert_space(spec, "2026-11-22T00:00:00")
+        update_space(spec.space_id, store=store)
+        pages = [
+            run_lookup(store, understand("alpha beta"), limit=50, offset=offset)
+            for offset in (0, 50, 100)
+        ]
+        self.assertEqual([len(page.hits) for page in pages], [50, 25, 0])
+        self.assertFalse(ids(pages[0]) & ids(pages[1]))
+        self.assertEqual(len(ids(pages[0]) | ids(pages[1])), 75)
+
+        # beta 只在 alpha 排序最后一份的正文里：完整交集应为 1。
+        root2 = os.path.join(self.tmp, "intersect")
+        os.makedirs(root2)
+        for n in range(80):
+            _write(root2, f"alpha_{n:03d}.txt", "neutral")
+        store2 = IndexStore(os.path.join(self.tmp, "intersect.db"))
+        self.addCleanup(store2.close)
+        spec2 = SpaceSpec("sp-intersect", root2, "intersect", {})
+        store2.upsert_space(spec2, "2026-11-22T00:00:00")
+        update_space(spec2.space_id, store=store2)
+        target = max(store2.present_files(), key=lambda item: item.file_id)
+        _write(root2, target.rel_path, "beta")
+        update_space(spec2.space_id, store=store2, read_content=True)
+        page = run_lookup(store2, understand("alpha beta"), limit=50)
+        self.assertEqual({hit.file_id for hit in page.hits}, {target.file_id})
+
+        # 前 60 份 draft 应被排除，第一页直接给出 keep。
+        root3 = os.path.join(self.tmp, "exclude")
+        os.makedirs(root3)
+        space_id = "sp-exclude"
+
+        def planned_id(rel):
+            return hashlib.sha256(f"{space_id}\n{rel.casefold()}".encode()).hexdigest()[:32]
+
+        candidates = [f"gamma_draft_{n:04d}.bin" for n in range(2000)]
+        drafts = [rel for rel in candidates if planned_id(rel) < "8"][:60]
+        keep = next(
+            f"gamma_keep_{n:04d}.bin"
+            for n in range(2000)
+            if planned_id(f"gamma_keep_{n:04d}.bin") > "f")
+        for rel in drafts + [keep]:
+            _write(root3, rel, "neutral")
+        store3 = IndexStore(os.path.join(self.tmp, "exclude.db"))
+        self.addCleanup(store3.close)
+        spec3 = SpaceSpec(space_id, root3, "exclude", {})
+        store3.upsert_space(spec3, "2026-11-22T00:00:00")
+        update_space(spec3.space_id, store=store3)
+        page1 = run_lookup(store3, understand("gamma，排除draft"), limit=50, offset=0)
+        page2 = run_lookup(store3, understand("gamma，排除draft"), limit=50, offset=50)
+        self.assertEqual([hit.rel_path for hit in page1.hits], [keep])
+        self.assertEqual(page2.hits, [])
+
+

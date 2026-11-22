@@ -2,17 +2,25 @@
 
 查找不产生移动计划。整理只接受同一个空间里、当前仍在线、
 且不在保护目录中的选择。
+
+多词求交、排除词和分页都按「完整结果集 → 按文件聚合 → 稳定排序 →
+再切片」的顺序处理，避免先截断再过滤造成空页或漏命中。
 """
 
 from __future__ import annotations
 
 import os
+import time
+from dataclasses import replace
 
 from content_extract import _is_within_root
-from content_search import search_files
+from content_search import SearchPage, search_files
 from index_service import _path_key
 from scan_cache import file_identity, identity_matches
 from scanner import _looks_like_project_root
+
+# 单次查找在内存中聚合的上限。超过后结果仍正确分页，但会注明截断。
+_LOOKUP_SCAN_CAP = 20_000
 
 
 class SearchSession:
@@ -31,24 +39,68 @@ class SearchSession:
 
 
 def run_lookup(store, understood, space_ids=None, limit=50, offset=0):
-    from dataclasses import replace
-
+    """完整应用包含/排除条件后，按文件聚合再分页。"""
+    limit = max(1, min(int(limit or 50), 200))
+    offset = max(0, int(offset or 0))
+    started = time.perf_counter()
     tokens = [part for part in understood.text.split() if part]
+    notes: list[str] = []
+    truncated = False
+
     if len(tokens) <= 1:
         page = search_files(store, understood.to_search_query(
-            space_ids=list(space_ids or []), scope="all", limit=limit, offset=offset))
+            space_ids=list(space_ids or []), scope="all",
+            limit=_LOOKUP_SCAN_CAP, offset=0))
+        if page.note:
+            notes.append(page.note)
+        truncated = truncated or page.truncated_query
+        if len(page.hits) >= _LOOKUP_SCAN_CAP:
+            truncated = True
+        hits = _aggregate_by_file(page.hits)
     else:
-        pages = []
+        id_sets: list[set[str]] = []
+        hit_maps: list[dict] = []
         for token in tokens:
             one = replace(understood, text=token)
-            pages.append(search_files(store, one.to_search_query(
+            page = search_files(store, one.to_search_query(
                 space_ids=list(space_ids or []), scope="all",
-                limit=limit, offset=0)))
-        common = set.intersection(*({hit.file_id for hit in page.hits} for page in pages))
-        page = pages[0]
-        page.hits = [hit for hit in page.hits if hit.file_id in common][:limit]
-    page.hits = [hit for hit in page.hits if _keeps(hit, understood.excluded)]
-    return page
+                limit=_LOOKUP_SCAN_CAP, offset=0))
+            if page.note:
+                notes.append(page.note)
+            truncated = truncated or page.truncated_query
+            if len(page.hits) >= _LOOKUP_SCAN_CAP:
+                truncated = True
+            by_id = _aggregate_by_file(page.hits)
+            hit_maps.append({hit.file_id: hit for hit in by_id})
+            id_sets.append(set(hit_maps[-1]))
+        common = set.intersection(*id_sets) if id_sets else set()
+        hits = []
+        for file_id in common:
+            chosen = None
+            for mapping in hit_maps:
+                hit = mapping.get(file_id)
+                if hit is None:
+                    continue
+                if chosen is None or (hit.field == "body" and chosen.field != "body"):
+                    chosen = hit
+            if chosen is not None:
+                hits.append(chosen)
+
+    hits = [hit for hit in hits if _keeps(hit, understood.excluded)]
+    hits.sort(key=lambda item: (
+        0 if item.field == "body" else 1,
+        item.file_id,
+        item.rank,
+        item.location,
+    ))
+    if truncated:
+        notes.append(f"候选超过 {_LOOKUP_SCAN_CAP} 条时只在此范围内求交与排除")
+    return SearchPage(
+        hits=hits[offset:offset + limit],
+        note="；".join(dict.fromkeys(n for n in notes if n)),
+        elapsed_ms=(time.perf_counter() - started) * 1000,
+        truncated_query=truncated,
+    )
 
 
 def locate_hit(store, hit) -> tuple[str, str]:
@@ -126,6 +178,28 @@ def selection_plan(root: str, plan, chosen: set[str], space_id: str,
     return kept, notes
 
 
+def _aggregate_by_file(hits: list) -> list:
+    """同一文件多个正文块或文件名命中时，保留一条代表结果。"""
+    best: dict = {}
+    order: list[str] = []
+    for hit in hits:
+        previous = best.get(hit.file_id)
+        if previous is None:
+            best[hit.file_id] = hit
+            order.append(hit.file_id)
+            continue
+        prefer_new = (
+            (hit.field == "body" and previous.field != "body")
+            or (hit.field == previous.field and (
+                hit.rank < previous.rank
+                or (hit.rank == previous.rank and hit.location < previous.location)
+            ))
+        )
+        if prefer_new:
+            best[hit.file_id] = hit
+    return [best[file_id] for file_id in order]
+
+
 def _keeps(hit, excluded: list[str]) -> bool:
     haystack = " ".join((hit.name, hit.rel_path, hit.evidence, hit.location))
     return not any(term and term in haystack for term in excluded)
@@ -139,4 +213,3 @@ def _identity(row) -> dict:
         "mtime_ns": int(row["mtime_ns"]),
         "ctime_ns": int(row["ctime_ns"]),
     }
-

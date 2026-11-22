@@ -28,22 +28,24 @@ def search_files(store, query: SearchQuery) -> SearchPage:
     started = time.perf_counter()
     text = (query.text or "").strip()
     notes = []
+    limit = max(1, min(int(query.limit or 50), 200))
+    offset = max(0, int(query.offset or 0))
     if not text and not _has_constraint(query):
         return SearchPage(note="请输入要查找的文字")
     if not text:
-        started_filter = time.perf_counter()
-        rows = _filtered_files(store, query, max(1, min(int(query.limit or 50), 200)))
+        # 多取一些行，按文件去重后再应用 offset/limit，排除词不会在上层空耗页容量。
+        rows = _filtered_files(store, query, offset + limit)
+        hits = _dedupe_file_hits([_hit_from_name(row, "") for row in rows])
         return SearchPage(
-            hits=[_hit_from_name(row, "") for row in rows],
+            hits=hits[offset:offset + limit],
             note="没有关键词，只按空间、类型和时间筛选",
-            elapsed_ms=(time.perf_counter() - started_filter) * 1000)
+            elapsed_ms=(time.perf_counter() - started) * 1000)
     if len(text) > MAX_QUERY_CHARS:
         text = text[:MAX_QUERY_CHARS]
         notes.append(f"查询已截断到 {MAX_QUERY_CHARS} 个字符")
-    limit = max(1, min(int(query.limit or 50), 200))
-    offset = max(0, int(query.offset or 0))
     scope = getattr(query, "scope", "all") or "all"
-    need = offset + limit
+    # 正文可能一文件多块，先按文件聚合再分页，因此多取候选。
+    need = min(max((offset + limit) * 8, 200), 20_000)
     body_rows: list = []
     if scope in {"all", "body"}:
         if len(text) < 3:
@@ -58,6 +60,7 @@ def search_files(store, query: SearchQuery) -> SearchPage:
     name_rows = _names(store, text, query, need) if scope in {"all", "name"} else []
     hits = [_hit_from_body(row, text) for row in body_rows]
     hits.extend(_hit_from_name(row, text) for row in name_rows)
+    hits = _dedupe_file_hits(hits)
     hits.sort(key=lambda item: (0 if item.field == "body" else 1, item.file_id, item.rank, item.location))
     page = SearchPage(
         hits=hits[offset:offset + limit],
@@ -66,6 +69,28 @@ def search_files(store, query: SearchQuery) -> SearchPage:
         truncated_query=len((query.text or "").strip()) > MAX_QUERY_CHARS,
     )
     return page
+
+
+def _dedupe_file_hits(hits: list[SearchHit]) -> list[SearchHit]:
+    """同一文件多个命中时只保留一条，优先正文。"""
+    best: dict[str, SearchHit] = {}
+    order: list[str] = []
+    for hit in hits:
+        previous = best.get(hit.file_id)
+        if previous is None:
+            best[hit.file_id] = hit
+            order.append(hit.file_id)
+            continue
+        prefer_new = (
+            (hit.field == "body" and previous.field != "body")
+            or (hit.field == previous.field and (
+                hit.rank < previous.rank
+                or (hit.rank == previous.rank and hit.location < previous.location)
+            ))
+        )
+        if prefer_new:
+            best[hit.file_id] = hit
+    return [best[file_id] for file_id in order]
 
 
 def _phrase(text: str) -> str:
