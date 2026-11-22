@@ -30,6 +30,13 @@ import threading
 import time
 import traceback
 
+# Windows 免安装包：在导入 Qt 前登记 DLL / 插件目录。
+if sys.platform == "win32":
+    try:
+        import archivebox_dllpath  # noqa: F401
+    except Exception:
+        pass
+
 from PySide6.QtCore import (
     Qt, QThread, Signal, QTimer, QCoreApplication, QEvent, QItemSelectionModel,
     QRect, QPoint, QSize,
@@ -6887,17 +6894,17 @@ def _writable_log_file(directory: str) -> str:
 
 
 def startup_log_path() -> str:
-    """源码运行写在源码目录；冻结或 .app 内运行写到用户日志目录。"""
+    """源码运行可写源码目录；安装包/免安装包/冻结运行写用户日志目录，避免改包指纹。"""
     module_file = os.path.abspath(__file__)
     frozen = bool(getattr(sys, "frozen", False))
     forced = bool(os.environ.get("ARCHIVEBOX_LOG_DIR", "").strip())
-    if frozen or _path_in_app_bundle(module_file) or forced:
+    portable = _windows_portable_root(module_file)
+    if frozen or _path_in_app_bundle(module_file) or forced or portable:
         try:
             return _writable_log_file(user_log_directory())
         except OSError:
             return os.path.join(tempfile.gettempdir(), "归档盒-启动日志.txt")
-    portable = _windows_portable_root(module_file)
-    directory = portable or os.path.dirname(module_file)
+    directory = os.path.dirname(module_file)
     path = os.path.join(directory, "启动日志.txt")
     parent = os.path.dirname(path)
     if (os.path.isdir(parent) and os.access(parent, os.W_OK)

@@ -5,3 +5,4 @@ __pycache__/
 .DS_Store
 打包/build/
 打包/dist/
+打包/_tools/

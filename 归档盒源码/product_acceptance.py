@@ -100,11 +100,20 @@ def _isolate(workdir: str) -> None:
 
 
 def _bundle_root() -> str:
+    forced = os.environ.get("ARCHIVEBOX_PORTABLE_ROOT", "").strip()
+    if forced and os.path.isdir(forced):
+        return os.path.abspath(forced)
     exe = os.path.realpath(sys.executable)
     parts = exe.split(os.sep)
     for index, part in enumerate(parts):
         if part.endswith(".app"):
             return os.sep.join(parts[:index + 1])
+    # Windows 免安装：runtime\pythonw.exe → 上一级为包根
+    runtime_dir = os.path.dirname(exe)
+    if os.path.basename(runtime_dir).casefold() == "runtime":
+        root = os.path.dirname(runtime_dir)
+        if os.path.isdir(os.path.join(root, "app")):
+            return root
     return ""
 
 
@@ -397,7 +406,11 @@ def cmd_show_and_quit(report: Report, workdir: str, extra: list[str]) -> None:
 
 
 def _exercise_window(report: Report, show_seconds: float) -> None:
-    os.environ.setdefault("QT_QPA_PLATFORM", "cocoa" if show_seconds else "offscreen")
+    if show_seconds > 0:
+        # 真显示窗口：不要强制平台插件，留给系统默认（Windows/macOS）。
+        os.environ.pop("QT_QPA_PLATFORM", None)
+    else:
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QApplication
     import main as main_mod

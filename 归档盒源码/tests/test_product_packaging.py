@@ -35,13 +35,13 @@ class PackagingIdentityTests(unittest.TestCase):
         import app_metadata
 
         self.assertEqual(app_metadata.APP_NAME, "归档盒")
-        self.assertEqual(app_metadata.APP_VERSION, "1.8.0")
-        self.assertEqual(app_metadata.APP_VERSION_LABEL, "V1.8")
-        self.assertEqual(app_metadata.APP_TITLE, "归档盒 V1.8")
+        self.assertEqual(app_metadata.APP_VERSION, "1.8.1")
+        self.assertEqual(app_metadata.APP_VERSION_LABEL, "V1.8.1")
+        self.assertEqual(app_metadata.APP_TITLE, "归档盒 V1.8.1")
         self.assertEqual(app_metadata.BUNDLE_ID, "local.ypjn.archivebox")
         self.assertEqual(app_metadata.EXECUTABLE_NAME, "archivebox")
         identity = app_metadata.load_build_identity()
-        self.assertEqual(identity["version"], "1.8.0")
+        self.assertEqual(identity["version"], "1.8.1")
         self.assertTrue(identity.get("commit"))
 
     def test_about_and_export_share_metadata(self):
@@ -55,7 +55,7 @@ class PackagingIdentityTests(unittest.TestCase):
         self.assertEqual(payload["app"]["name"], app_metadata.APP_NAME)
         self.assertEqual(payload["app"]["version"], app_metadata.APP_VERSION)
         text = app_metadata.about_html("/tmp/归档盒数据")
-        self.assertIn("1.8.0", text)
+        self.assertIn("1.8.1", text)
         self.assertIn(identity_commit_prefix(app_metadata), text)
         self.assertIn("/tmp/归档盒数据", text)
 
@@ -104,12 +104,15 @@ class PackagingIdentityTests(unittest.TestCase):
     def test_frozen_runtime_uses_user_log_dir_even_from_source_path(self):
         import main as main_mod
 
-        log_dir = tempfile.mkdtemp(prefix="archivebox_frozen_logs_")
+        # 强制落在系统临时目录，避免被污染的 TEMP 建到源码树里导致误判。
+        log_dir = tempfile.mkdtemp(
+            prefix="archivebox_frozen_logs_",
+            dir=tempfile.gettempdir())
         self.addCleanup(shutil.rmtree, log_dir, True)
         with _env("ARCHIVEBOX_LOG_DIR", log_dir), _frozen(True):
             path = main_mod.startup_log_path()
         self.assertEqual(path, os.path.join(log_dir, "启动日志.txt"))
-        self.assertFalse(path.startswith(SRC))
+        self.assertEqual(os.path.commonpath([path, log_dir]), log_dir)
 
     def test_source_run_keeps_log_beside_source(self):
         import main as main_mod

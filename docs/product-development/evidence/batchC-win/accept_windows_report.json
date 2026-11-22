@@ -1,0 +1,27 @@
+{
+    "zip":  "打包/dist/归档盒-1.8.1-windows-x64.zip",
+    "sha256_pre_rebuild":  "e43d5b380639b81fd5190145b6f4396533f49d522ac326d0b63d85c2a1c6cc86",
+    "checks":  [
+                   {
+                       "detail":  "packaged runtime python",
+                       "ok":  true,
+                       "name":  "smoke_imports"
+                   },
+                   {
+                       "detail":  "归档盒.exe exit=0",
+                       "ok":  true,
+                       "name":  "smoke_gui_via_exe"
+                   },
+                   {
+                       "detail":  "启动日志.txt absent",
+                       "ok":  true,
+                       "name":  "no_log_in_package"
+                   },
+                   {
+                       "detail":  "user/evidence workdir",
+                       "ok":  true,
+                       "name":  "log_outside_package"
+                   }
+               ],
+    "note":  "Will rebuild after this commit so identity matches final SHA"
+}

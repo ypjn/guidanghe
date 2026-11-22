@@ -209,3 +209,26 @@ $env:QT_QPA_PLATFORM='offscreen'
 真盘只读登记→弹出→离线→重连：等待用户指定「资料只读目录」与「可写测试目录」后再跑
 打包/windows_volume_realdisk_check.py；未指定前不写 G: 原有资料。
 
+
+## C Windows 独立成品（2026-11-22）
+
+修复并验收：
+- 统一包布局为 `runtime\pythonw.exe` + `app\` + `归档盒.exe`（与 Go 启动器一致）
+- 嵌入式 Python 用构建解释器 `pip install --target`（embed 无 pip）；配置 `python*._pth`（import site / Lib\\site-packages / ..\\app）
+- 原生命令失败即停；无 commit 不打正式包；产品文件白名单；启动器透传参数、日志写用户目录
+- 免安装包日志不再写安装目录，避免改指纹
+- 新增 `打包/accept_windows_app.ps1`、`requirements-windows-portable.txt`（核心 PySide6+pypdf；OCR 可选）
+
+构建（本机）：
+
+```
+powershell -File 打包/build_windows.ps1 -PythonExe .venv\Scripts\python.exe -GoExe 打包\_tools\go\bin\go.exe -EmbedPythonZip 打包\_tools\python-3.14.0-embed-amd64.zip
+```
+
+产物（构建时提交写入 identity；最终以推送前提交为准）：
+- ZIP：`打包/dist/归档盒-1.8.1-windows-x64.zip`
+- 包内 `smoke-gui` 经 `归档盒.exe` 退出码 0；包内无 `启动日志.txt`
+- 证据：`docs/product-development/evidence/batchC-win/`
+
+未测：干净新用户账户完整手工点击；OCR 捆绑包；代码签名。
+
