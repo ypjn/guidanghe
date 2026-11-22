@@ -66,6 +66,18 @@ zsh 打包/accept_mac_app.sh 打包/dist/归档盒-1.8.0-macos-arm64.dmg docs/pr
 - 辅助功能权限下的手工点击
 - Windows 原生安装
 
-## 02–07
+## 02 多空间本地索引
+
+完成。索引库在用户数据目录 `index/index.db`，说明见 `docs/product-development/index-storage.md`。
+
+```sh
+QT_QPA_PLATFORM=offscreen "$ARCHIVEBOX_PYTHON" -m unittest discover -s tests -p 'test_product_index.py' -v
+```
+
+6 项通过，进程退出码 0，用时 60.7 秒。1 万个小文件冷索引 3.14 秒、热刷新 3.36 秒、重读 0。随后加到 5 万，增量 24.77 秒，热刷新重读仍是 0。源目录清单和 `.organizer/history.db` 在索引后保持不变。
+
+macOS 在 size、mtime_ns、ctime_ns 都一致时复用内容校验。Windows 的 ctime 不是内容变更时间，刷新时重读，不把 stat 当成内容未变的证明。
+
+## 03–07
 
 未开始。

@@ -1886,6 +1886,7 @@ class MainWindow(QMainWindow):
         self._recent_dialog = None
         self._duplicate_dialog = None
         self._agent_dialog = None
+        self._index_dialog = None
         self._duplicate_worker = None
         self._duplicate_seq = 0
         self._duplicate_cache = None
@@ -2131,6 +2132,12 @@ class MainWindow(QMainWindow):
             "也不会移动文件")
         self.btn_learning.clicked.connect(self.on_learning_suggestions)
         side_lay.addWidget(self.btn_learning)
+
+        self.btn_index_spaces = nav(QPushButton("文件空间"))
+        self.btn_index_spaces.setToolTip(
+            "登记要记住的文件夹。刷新只更新本地索引，不会移动文件。")
+        self.btn_index_spaces.clicked.connect(self.on_index_spaces)
+        side_lay.addWidget(self.btn_index_spaces)
 
         self.btn_scheme_center = nav(QPushButton("导入或保存方案"))
         self.btn_scheme_center.setToolTip(
@@ -4181,6 +4188,21 @@ class MainWindow(QMainWindow):
         self._preference_note = ""
         self._invalidate_for_config_change()
         return self.classification_config
+
+    def on_index_spaces(self):
+        from index_dialog import IndexSpacesDialog
+        if self._index_dialog is not None:
+            self._index_dialog.raise_()
+            self._index_dialog.activateWindow()
+            return
+        dlg = IndexSpacesDialog(self)
+        dlg.finished.connect(lambda _=0, d=dlg: self._clear_index_dialog_ref(d))
+        self._index_dialog = dlg
+        dlg.show()
+
+    def _clear_index_dialog_ref(self, dlg):
+        if self._index_dialog is dlg:
+            self._index_dialog = None
 
     # ============== 学习建议（阶段 5） ==============
 
@@ -6724,7 +6746,8 @@ class MainWindow(QMainWindow):
     def _close_child_windows(self):
         """S3 / guia F-19：关闭主窗口时一并关闭所有非模态子窗口。"""
         for attr in ("_history_dialog", "_intake_dialog", "_tree_dialog",
-                     "_duplicate_dialog", "_recent_dialog", "_agent_dialog"):
+                     "_duplicate_dialog", "_recent_dialog", "_agent_dialog",
+                     "_index_dialog"):
             dlg = getattr(self, attr, None)
             if dlg is None:
                 continue
