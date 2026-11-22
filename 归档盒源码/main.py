@@ -92,6 +92,9 @@ DEFAULT_PROTECT_APP_SRC = os.path.dirname(os.path.abspath(__file__))
 APP_VERSION = "V1.7"
 APP_TITLE = f"归档盒 {APP_VERSION}"
 
+# 右侧说明栏展开后的最小宽度。收起时宽度为 0，对应分隔条不可拖动。
+INSPECTOR_MIN_WIDTH = 260
+
 
 # ======================== 统一任务状态（V1.2） ========================
 
@@ -2519,8 +2522,12 @@ class MainWindow(QMainWindow):
         insp_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         fill_panel(insp_scroll, "#FFFFFF")
         insp_scroll.setWidget(insp_inner)
-        insp_scroll.setMinimumWidth(
-            insp.minimumSize().width() + insp_scroll.verticalScrollBar().sizeHint().width())
+        # 内容本身需要的宽度。展开时再和 INSPECTOR_MIN_WIDTH 取较大值，
+        # 避免按钮被裁；收起时改回 0，分隔条才能收到宽度 0。
+        self._inspector_content_min = (
+            insp.minimumSize().width()
+            + insp_scroll.verticalScrollBar().sizeHint().width())
+        insp_scroll.setMinimumWidth(0)
         insp_scroll.setMaximumWidth(480)
         splitter.addWidget(insp_scroll)
         self.inspector_scroll = insp_scroll
@@ -2530,6 +2537,9 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(2, 0)
         splitter.setSizes([side_need, 960, 0])
         self.main_splitter = splitter
+        # handle(0) 隐藏，handle(1) 在左侧栏与表格之间，handle(2) 才是右侧说明栏。
+        self.inspector_handle = splitter.handle(2)
+        self._set_inspector_handle_locked(True)
         outer.addWidget(splitter, stretch=1)
 
         self.setStatusBar(QStatusBar())
@@ -2662,21 +2672,60 @@ class MainWindow(QMainWindow):
         # These display labels do not supply the paths used by file operations.
         label.setText(re.sub(r"[!-~]{7}(?=[!-~])", lambda match: match[0] + "\u200b", text))
 
+    def _inspector_handle(self):
+        """表格和右侧说明栏之间的分隔条。handle(0) 隐藏，handle(2) 才是这一条。"""
+        handle = getattr(self, "inspector_handle", None)
+        if handle is not None:
+            return handle
+        splitter = getattr(self, "main_splitter", None)
+        if splitter is None or splitter.count() < 3:
+            return None
+        return splitter.handle(2)
+
+    def _set_inspector_handle_locked(self, locked: bool):
+        """收起时分隔条不接收拖动。展开后最小停在可读宽度，拖不进裁字的窄条。"""
+        splitter = getattr(self, "main_splitter", None)
+        scroll = getattr(self, "inspector_scroll", None)
+        handle = self._inspector_handle()
+        if splitter is None or scroll is None or handle is None:
+            return
+        if locked:
+            scroll.setMinimumWidth(0)
+            splitter.setCollapsible(2, True)
+            handle.setEnabled(False)
+            handle.setCursor(Qt.CursorShape.ArrowCursor)
+            return
+        floor = max(INSPECTOR_MIN_WIDTH, getattr(self, "_inspector_content_min", 0))
+        scroll.setMinimumWidth(floor)
+        splitter.setCollapsible(2, False)
+        handle.setEnabled(True)
+        handle.setCursor(Qt.CursorShape.SplitHCursor)
+
     def _set_inspector_open(self, open_pane: bool):
-        """按选中状态显示详情栏，让表格使用空闲空间。"""
+        """按选中状态显示详情栏。收起时分隔条不可拖，展开后不少于 260。"""
         inspector = self.inspector_scroll
+        splitter = self.main_splitter
         if not open_pane:
+            sizes = splitter.sizes()
+            self._set_inspector_handle_locked(True)
+            if len(sizes) >= 3 and sizes[2]:
+                sizes[1] += sizes[2]
+                sizes[2] = 0
+                splitter.setSizes(sizes)
             inspector.hide()
             return
+        self._set_inspector_handle_locked(False)
         if not inspector.isHidden():
             return
 
-        side, table, _ = self.main_splitter.sizes()
-        table_min = self.main_splitter.widget(1).minimumWidth()
-        preferred = min(280, max(160, table // 4))
-        pane_width = max(inspector.minimumWidth(), min(preferred, table - table_min))
+        side, table, _current = splitter.sizes()
+        table_min = splitter.widget(1).minimumWidth()
+        floor = max(INSPECTOR_MIN_WIDTH, inspector.minimumWidth())
+        preferred = min(280, max(floor, table // 4))
+        room = table - table_min
+        pane_width = floor if room < floor else max(floor, min(preferred, room))
         inspector.show()
-        self.main_splitter.setSizes([side, max(table_min, table - pane_width), pane_width])
+        splitter.setSizes([side, max(table_min, table - pane_width), pane_width])
 
     def _show_inspector_content(self, item):
         """显示正文摘录或读取失败原因；图片走「图片文字」那一栏。"""
