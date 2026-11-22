@@ -1,0 +1,21 @@
+这段给Mac上的Cursor执行。接收Windows完成A–C及Windows独立复核后的完整提交，把新共享代码收成最新Mac应用和DMG。
+
+仓库：https://github.com/ypjn/guidanghe.git
+先读取docs/product-development/next-steps/2026-11-22的README、PLAN和A–C实际交付。核对远端Windows接续分支、提交、未提交改动、schema与依赖。优先保留已验证修复，建立合适的Mac接续分支，不回到旧main，不重做现有模块，也不机械合并旧V1.7分支。
+
+实施
+1. 在当前Apple芯片Mac核对实际Python、PySide6、PyInstaller和依赖入口。复用有效环境；构建使用ARCHIVEBOX_BUILD_PYTHON，不复制Windows环境或写死个人路径。
+2. 审查Windows引入的路径、卷身份、创建时间、case、权限、线程/句柄和子进程逻辑，保持平台分支清楚。补Mac回归；不能为Mac通过破坏已验证Windows行为。
+3. 从源码原生窗口实际操作备份UI、索引、中文PDF搜索、分页、保护目录、整理/重启撤销。预览/校验/备份/恢复取消与关窗等待无崩溃、旧结果和残留进程。
+4. 更新Mac打包资源及模块收集，确认backup_dialog/worker与后续新增资源确实进包。按统一app_metadata给出可辨认的版本和完整构建提交，不复用旧第01批包的身份或验收结果。
+5. 用build_mac.sh生成真实.app与只读DMG，正确本地签名；无正式开发者账号时，签名/公证单独待办，不把它当作其他功能无法验证的理由。
+
+实际包验收
+- 从DMG复制到应用目录，卸载镜像后独立运行；不依赖源码、PYTHONPATH、开发环境或外部未捆绑资源。
+- 原生窗口跑新用户全流程和非空旧用户升级。索引schema迁移、偏好、历史和旧批次撤销保持可用。
+- 新包内完成两版备份、完整性验证、恢复到两个新空目录，独立路径/数量/SHA-256核对；取消和异常结果准确。
+- 更新accept_mac_app.sh与product_acceptance.py实际覆盖新功能。源码模拟包内入口的verify_release_features.py不能单独证明真实DMG通过。
+- 应用包运行前后指纹不变，日志/用户数据不写包内；记录实际应用进程退出码和残留进程检查。open返回0不能代替应用正常退出。
+- 未接真实外置盘时，这台Mac只做对应逻辑和原生界面检查，Windows真盘结论保留其平台范围。
+
+保存新产物、版本/提交/SHA-256、原生截图和原始结果，执行E的Mac部分并修复。提交推送Mac接续分支，给本人一份可直接安装和10分钟跟做的试用步骤，再准备F。
