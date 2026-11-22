@@ -55,7 +55,8 @@ def register_space(root: str, name: str = "", policy: Optional[dict] = None,
 
 
 def update_space(space_id: str, cancel_event=None, progress_cb: Progress = None,
-                 store: Optional[IndexStore] = None) -> IndexUpdateReport:
+                 store: Optional[IndexStore] = None, read_content: bool = True,
+                 limits=None, before_body=None) -> IndexUpdateReport:
     own = store is None
     store = store or IndexStore()
     report = IndexUpdateReport(space_id=space_id)
@@ -88,6 +89,12 @@ def update_space(space_id: str, cancel_event=None, progress_cb: Progress = None,
         if report.superseded:
             return report
         _apply_deletions(store, spec, generation, listed, seen, report)
+        if not report.cancelled and not report.superseded:
+            store.prune_text(space_id)
+            if read_content:
+                _index_contents(
+                    store, spec, generation, report, cancel_event, limits,
+                    before_body, progress_cb)
         if report.cancelled or report.errors:
             report.completed = False
             report.coverage = "partial"
@@ -96,6 +103,32 @@ def update_space(space_id: str, cancel_event=None, progress_cb: Progress = None,
             report.coverage = "complete"
         store.set_status(space_id, report.coverage, _now())
         return report
+    finally:
+        if own:
+            store.close()
+
+
+def remove_text(space_id: str, store: Optional[IndexStore] = None) -> None:
+    """只删除这个空间的正文索引，文件登记和来源文件都留着。"""
+    own = store is None
+    store = store or IndexStore()
+    try:
+        store.clear_space_text(space_id)
+    finally:
+        if own:
+            store.close()
+
+
+def rebuild_text(space_id: str, cancel_event=None, progress_cb: Progress = None,
+                 store: Optional[IndexStore] = None,
+                 limits=None) -> IndexUpdateReport:
+    """丢掉正文片段后按当前解析器重读。不删除来源文件。"""
+    own = store is None
+    store = store or IndexStore()
+    try:
+        store.clear_space_text(space_id)
+        return update_space(
+            space_id, cancel_event, progress_cb, store, True, limits)
     finally:
         if own:
             store.close()
@@ -363,6 +396,49 @@ def _apply_deletions(store, spec, generation, listed, seen, report) -> None:
         report.deleted = 0
         return
     report.deleted = changed
+
+
+def _index_contents(store, spec, generation, report, cancel_event, limits,
+                    before_body, progress_cb) -> None:
+    from index_content import CONTENT_PARSER_VERSION, ContentLimits, extract_document
+
+    limits = limits or ContentLimits()
+    rows = store.conn.execute(
+        "SELECT file_id, rel_path, content_sha256 FROM files "
+        "WHERE space_id=? AND present=1 AND index_state=? ORDER BY rel_path",
+        (spec.space_id, ACCESS_CONTENT)).fetchall()
+    total = len(rows)
+    kept = {"complete", "partial", "unsupported"}
+    for index, row in enumerate(rows, start=1):
+        if cancel_event is not None and cancel_event.is_set():
+            report.cancelled = True
+            return
+        if not store.generation_is_current(spec.space_id, generation):
+            report.superseded = True
+            return
+        digest = row["content_sha256"] or ""
+        existing = store.get_file_text(row["file_id"])
+        if (existing is not None and existing["content_sha256"] == digest
+                and int(existing["parser_version"]) == CONTENT_PARSER_VERSION
+                and existing["status"] in kept):
+            continue
+        path = os.path.join(spec.root, row["rel_path"])
+        extracted = extract_document(
+            path, spec.root, limits, cancel_event, before_body)
+        if extracted.status == "cancelled":
+            report.cancelled = True
+            return
+        chunks = extracted.chunks if extracted.status in {"complete", "partial"} else []
+        status = store.replace_text(
+            generation, spec.space_id, row["file_id"], digest,
+            CONTENT_PARSER_VERSION, extracted.status, extracted.reason, chunks)
+        if status == "superseded":
+            report.superseded = True
+            return
+        if extracted.status == "failed":
+            report.errors.append(f"{row['rel_path']}：{extracted.reason}")
+        if progress_cb is not None:
+            progress_cb(index, total, row["rel_path"])
 
 
 def _protected_rels(root: str) -> list[str]:

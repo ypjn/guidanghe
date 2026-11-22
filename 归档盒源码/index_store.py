@@ -15,8 +15,36 @@ from typing import Optional
 
 import scheme_store
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 ENV_INDEX_DB = "ARCHIVEBOX_INDEX_DB"
+
+CONTENT_DDL = """
+CREATE TABLE IF NOT EXISTS file_text (
+    file_id TEXT PRIMARY KEY,
+    space_id TEXT NOT NULL,
+    content_sha256 TEXT NOT NULL DEFAULT '',
+    parser_version INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    reason TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS chunks (
+    chunk_key TEXT PRIMARY KEY,
+    file_id TEXT NOT NULL,
+    space_id TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    location TEXT NOT NULL,
+    body TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chunks_file ON chunks(file_id);
+CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+    chunk_key UNINDEXED,
+    file_id UNINDEXED,
+    space_id UNINDEXED,
+    location UNINDEXED,
+    body,
+    tokenize='trigram'
+);
+"""
 
 
 @dataclass
@@ -56,6 +84,9 @@ class SearchQuery:
     include_offline: bool = True
     limit: int = 100
     offset: int = 0
+    scope: str = "all"
+    modified_after_ns: int = 0
+    modified_before_ns: int = 0
 
 
 @dataclass
@@ -66,6 +97,11 @@ class SearchHit:
     evidence: str = ""
     availability: str = "online"
     index_version: int = SCHEMA_VERSION
+    location: str = ""
+    field: str = ""
+    content_status: str = ""
+    name: str = ""
+    rank: int = 0
 
 
 @dataclass
@@ -191,15 +227,22 @@ class IndexStore:
                 ON files(space_id, present);
             """
         )
+        self.conn.executescript(CONTENT_DDL)
         self.conn.execute(
             "INSERT INTO meta(key, value) VALUES('schema_version', ?)",
             (str(SCHEMA_VERSION),))
         self.conn.commit()
 
     def _migrate(self, version: int) -> None:
-        """旧索引版本在一个事务里升级。失败则回滚，不另起空库。"""
-        del version
-        raise IndexStoreError("没有可用的索引迁移，已保留原库。")
+        """只增加可重建的正文表。整理历史和这份文件表都留在原地。"""
+        if version != 1:
+            raise IndexStoreError(
+                f"没有从版本 {version} 升级的步骤，已保留原库。")
+        self.conn.executescript(CONTENT_DDL)
+        self.conn.execute(
+            "UPDATE meta SET value=? WHERE key='schema_version'",
+            (str(SCHEMA_VERSION),))
+        self.conn.commit()
 
     def rebuild(self, *, fail: bool = False) -> None:
         """写到旁边的新库，成功后才替换。失败时原来的库还能查询。"""
@@ -251,9 +294,12 @@ class IndexStore:
                 );
                 """
             )
+            fresh.executescript(CONTENT_DDL)
             fresh.execute(
                 "INSERT INTO meta(key, value) VALUES('schema_version', ?)",
                 (str(SCHEMA_VERSION),))
+            source_texts = self.conn.execute("SELECT * FROM file_text").fetchall()
+            source_chunks = self.conn.execute("SELECT * FROM chunks").fetchall()
             for row in source_spaces:
                 fresh.execute(
                     "INSERT INTO spaces VALUES (?,?,?,?,?,?,?,?,?)",
@@ -262,6 +308,23 @@ class IndexStore:
                 fresh.execute(
                     "INSERT INTO files VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     tuple(row))
+            for row in source_texts:
+                fresh.execute(
+                    "INSERT INTO file_text(file_id, space_id, content_sha256, "
+                    "parser_version, status, reason) VALUES (?,?,?,?,?,?)",
+                    (row["file_id"], row["space_id"], row["content_sha256"],
+                     row["parser_version"], row["status"], row["reason"]))
+            for row in source_chunks:
+                fresh.execute(
+                    "INSERT INTO chunks(chunk_key, file_id, space_id, position, "
+                    "location, body) VALUES (?,?,?,?,?,?)",
+                    (row["chunk_key"], row["file_id"], row["space_id"],
+                     row["position"], row["location"], row["body"]))
+                fresh.execute(
+                    "INSERT INTO chunks_fts(chunk_key, file_id, space_id, "
+                    "location, body) VALUES (?,?,?,?,?)",
+                    (row["chunk_key"], row["file_id"], row["space_id"],
+                     row["location"], row["body"]))
             fresh.commit()
             fresh.close()
             fresh = None
@@ -356,6 +419,7 @@ class IndexStore:
     def remove_space(self, space_id: str) -> None:
         self.conn.execute("BEGIN IMMEDIATE")
         try:
+            self._delete_space_text(space_id)
             self.conn.execute("DELETE FROM files WHERE space_id=?", (space_id,))
             self.conn.execute("DELETE FROM spaces WHERE space_id=?", (space_id,))
             self.conn.commit()
@@ -458,6 +522,84 @@ class IndexStore:
             self.conn.rollback()
             raise
         return count
+
+    def get_file_text(self, file_id: str):
+        return self.conn.execute(
+            "SELECT * FROM file_text WHERE file_id=?", (file_id,)).fetchone()
+
+    def replace_text(self, generation: int, space_id: str, file_id: str,
+                     content_sha256: str, parser_version: int, status: str,
+                     reason: str, chunks: list) -> str:
+        """用一次提取结果替换该文件的正文。代次过期时不写。"""
+        if not self.generation_is_current(space_id, generation):
+            return "superseded"
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            if not self.generation_is_current(space_id, generation):
+                self.conn.rollback()
+                return "superseded"
+            self._delete_file_text(file_id)
+            self.conn.execute(
+                "INSERT INTO file_text(file_id, space_id, content_sha256, "
+                "parser_version, status, reason) VALUES (?,?,?,?,?,?)",
+                (file_id, space_id, content_sha256, parser_version, status,
+                 reason or ""))
+            for chunk in chunks:
+                key = f"{file_id}:{chunk.position}"
+                self.conn.execute(
+                    "INSERT INTO chunks(chunk_key, file_id, space_id, position, "
+                    "location, body) VALUES (?,?,?,?,?,?)",
+                    (key, file_id, space_id, chunk.position, chunk.location,
+                     chunk.text))
+                self.conn.execute(
+                    "INSERT INTO chunks_fts(chunk_key, file_id, space_id, "
+                    "location, body) VALUES (?,?,?,?,?)",
+                    (key, file_id, space_id, chunk.location, chunk.text))
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
+        return "written"
+
+    def clear_space_text(self, space_id: str) -> None:
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            self._delete_space_text(space_id)
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
+
+    def prune_text(self, space_id: str) -> None:
+        """删掉已不在当前内容索引里的正文，不碰来源文件。"""
+        rows = self.conn.execute(
+            """
+            SELECT t.file_id FROM file_text t
+            LEFT JOIN files f ON f.file_id=t.file_id
+            WHERE t.space_id=? AND (
+                f.file_id IS NULL OR f.present=0 OR f.index_state!='content')
+            """,
+            (space_id,)).fetchall()
+        if not rows:
+            return
+        self.conn.execute("BEGIN IMMEDIATE")
+        try:
+            for row in rows:
+                self._delete_file_text(row["file_id"])
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
+
+    def _delete_space_text(self, space_id: str) -> None:
+        self.conn.execute("DELETE FROM chunks_fts WHERE space_id=?", (space_id,))
+        self.conn.execute("DELETE FROM chunks WHERE space_id=?", (space_id,))
+        self.conn.execute("DELETE FROM file_text WHERE space_id=?", (space_id,))
+
+    def _delete_file_text(self, file_id: str) -> None:
+        self.conn.execute("DELETE FROM chunks_fts WHERE file_id=?", (file_id,))
+        self.conn.execute("DELETE FROM chunks WHERE file_id=?", (file_id,))
+        self.conn.execute("DELETE FROM file_text WHERE file_id=?", (file_id,))
 
 
 def _space_from_row(row: sqlite3.Row) -> SpaceSpec:

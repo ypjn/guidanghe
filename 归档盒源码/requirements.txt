@@ -1,6 +1,9 @@
 # 归档盒 V1.2 内部试用版 — 依赖声明
 # 版本依据当前已验证环境（Python 3.14.8 / macOS arm64），不随意升级
 PySide6==6.12.0
+# 本地 PDF 文字提取。BSD-3-Clause。已在 Python 3.14.8 / macOS arm64 上用 6.4.0 读通可复制文字的 PDF。
+# 扫描件不渲染、不识别。打包时由 PyInstaller 收集这个纯 Python 包。
+pypdf==6.4.0
 # 图片文字识别。勾选「识别图片文字」后才加载。
 # Mac 优先用系统 Vision；Windows 优先用系统中文识别；两边都能改用本地模型。
 pyobjc-framework-Vision==13.0; sys_platform == "darwin"
