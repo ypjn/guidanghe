@@ -23,5 +23,8 @@
                        "name":  "log_outside_package"
                    }
                ],
-    "note":  "Will rebuild after this commit so identity matches final SHA"
+    "note":  "Will rebuild after this commit so identity matches final SHA",
+    "final_sha256":  "95eee7d2c5db1e649ddea46027fe9987c985a3c6a0b2efde6952491f2f737305",
+    "final_commit":  "af1a5d21ffd1b75435adeef032b4b88198a7eb22",
+    "final_exe_smoke_exit":  0
 }

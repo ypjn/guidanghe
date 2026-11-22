@@ -232,3 +232,8 @@ powershell -File 打包/build_windows.ps1 -PythonExe .venv\Scripts\python.exe -G
 
 未测：干净新用户账户完整手工点击；OCR 捆绑包；代码签名。
 
+
+## E Windows 独立复核（2026-11-22）
+
+见 `docs/product-development/ACCEPTANCE.md`。固定提交 `af1a5d2`；ZIP SHA-256 `95eee7d2c5db1e649ddea46027fe9987c985a3c6a0b2efde6952491f2f737305`；`归档盒.exe` smoke-gui 退出码 0。真盘与 Mac 仍待测。
+
