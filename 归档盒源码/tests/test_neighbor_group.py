@@ -15,7 +15,7 @@ from scanner import scan_directory  # noqa: E402
 def _scan(paths):
     root = tempfile.mkdtemp(prefix="archivebox_neighbor_")
     for rel in paths:
-        full = os.path.join(root, rel)
+        full = os.path.join(root, *rel.replace("\\", "/").split("/"))
         parent = os.path.dirname(full)
         if parent:
             os.makedirs(parent, exist_ok=True)
@@ -27,7 +27,8 @@ def _scan(paths):
 def _by(paths, ocr_texts=None):
     items, _ = classify_entries(
         _scan(paths), MODE_BY_DIRECTION_SEMESTER, [], ocr_texts=ocr_texts)
-    return {item.file.rel_path: item for item in items}
+    # Windows 扫描结果用反斜杠；测试键统一成 /
+    return {item.file.rel_path.replace("\\", "/"): item for item in items}
 
 
 def main() -> None:

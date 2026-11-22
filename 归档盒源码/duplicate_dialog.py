@@ -16,7 +16,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QProgressBar,
-    QPushButton, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
+    QPushButton, QTextEdit, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
 )
 
 from duplicate_report import (
@@ -108,8 +108,8 @@ class DuplicateDialog(QDialog):
         row.addWidget(self.search, 3)
         self.kind_filter = QComboBox()
         self.kind_filter.addItem("全部结果", "")
-        self.kind_filter.addItem("内容重复", KIND_CONTENT)
-        self.kind_filter.addItem("同名不同内容", KIND_SAME_NAME_DIFF)
+        self.kind_filter.addItem("同一份内容（指纹相同）", KIND_CONTENT)
+        self.kind_filter.addItem("同名·可能不同版本", KIND_SAME_NAME_DIFF)
         self.kind_filter.addItem("同名（待核对）", KIND_SAME_NAME_PENDING)
         self.kind_filter.addItem("待核对 / 核对失败", KIND_UNVERIFIED)
         self.kind_filter.currentIndexChanged.connect(self._apply_filter)
@@ -134,7 +134,16 @@ class DuplicateDialog(QDialog):
         self.tree.header().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.tree.header().setSectionResizeMode(4, QHeaderView.ResizeToContents)
         self.tree.header().setSectionResizeMode(5, QHeaderView.Stretch)
+        self.tree.currentItemChanged.connect(self._on_selection_changed)
         lay.addWidget(self.tree, 1)
+
+        self.detail = QTextEdit()
+        self.detail.setReadOnly(True)
+        self.detail.setMaximumHeight(110)
+        self.detail.setPlaceholderText(
+            "选中一组后，这里会说明：是同一份内容，还是同名但内容不同；"
+            "以及只读的保留建议。本窗口不会删除或合并文件。")
+        lay.addWidget(self.detail)
 
         actions = QHBoxLayout()
         self.btn_open = QPushButton("打开文件")
@@ -198,10 +207,12 @@ class DuplicateDialog(QDialog):
             f"<b>核对时间：</b>{report.generated_at}<br>"
             f"<b>统计：</b>{report.group_count_text}；{report.status_text}<br>"
             "只读视图：不会删除、合并或移动文件；"
+            "「同一份内容」按指纹核对，「同名·可能不同版本」不要当重复删。"
             "大小合计不代表可回收磁盘空间。</span>")
         self._populate()
         self._set_actions_enabled(True)
         self.btn_recheck.setEnabled(True)
+        self._on_selection_changed(self.tree.currentItem(), None)
 
     def show_failure(self, message: str):
         self._running = False
@@ -255,6 +266,7 @@ class DuplicateDialog(QDialog):
                 "", group.note])
             top.setData(0, Qt.UserRole, None)
             top.setData(3, Qt.UserRole, group.kind)
+            top.setData(0, Qt.UserRole + 1, group)
             top.setToolTip(0, group.note)
             self.tree.addTopLevelItem(top)
             for entry in group.entries:
@@ -291,6 +303,31 @@ class DuplicateDialog(QDialog):
             top.setHidden(not kind_ok or not (any_visible or group_hit))
 
     # ---- 选择 ----
+    def _on_selection_changed(self, current, _previous):
+        if not hasattr(self, "detail"):
+            return
+        if current is None or self.report is None:
+            self.detail.clear()
+            return
+        group = current.data(0, Qt.UserRole + 1)
+        if group is None and current.parent() is not None:
+            group = current.parent().data(0, Qt.UserRole + 1)
+        entry = current.data(0, Qt.UserRole)
+        lines = []
+        if group is not None:
+            lines.append(f"【{group.kind_label}】{group.label}")
+            if group.note:
+                lines.append(group.note)
+        if entry is not None:
+            lines.append(
+                f"当前文件：{entry.rel_path}（{entry.size_display}，"
+                f"{entry.status_label}）")
+            if entry.sha256:
+                lines.append(f"指纹：{entry.sha256}")
+        if not lines:
+            lines.append("选中一组或一份文件，查看核对说明。")
+        self.detail.setPlainText("\n".join(lines))
+
     def _selected_entry(self) -> Optional[DupEntry]:
         item = self.tree.currentItem()
         if item is None:

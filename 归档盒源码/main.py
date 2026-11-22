@@ -41,14 +41,14 @@ from PySide6.QtCore import (
     Qt, QThread, Signal, QTimer, QCoreApplication, QEvent, QItemSelectionModel,
     QRect, QPoint, QSize,
 )
-from PySide6.QtGui import QColor, QFont, QPalette
+from PySide6.QtGui import QAction, QColor, QFont, QPalette
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLayout,
     QPushButton, QLineEdit, QTableWidget, QTableWidgetItem,
     QLabel, QHeaderView, QFileDialog, QStatusBar, QProgressBar,
     QMessageBox, QAbstractItemView, QComboBox, QTextEdit,
     QDialog, QDialogButtonBox, QCheckBox, QInputDialog, QListWidget,
-    QScrollArea, QFrame, QSizePolicy, QSplitter,
+    QScrollArea, QFrame, QSizePolicy, QSplitter, QToolButton, QMenu,
 )
 
 from scanner import scan_directory, scan_paths, ScanResult
@@ -99,6 +99,11 @@ DEFAULT_PROTECT_APP_SRC = os.path.dirname(os.path.abspath(__file__))
 
 # 名称、版本和构建身份集中在 app_metadata，窗口标题与关于页共用。
 from app_metadata import APP_TITLE, APP_VERSION_LABEL
+from ui_theme import (
+    INK, MUTE, PAPER, PAPER_DEEP, RIBBON, STAMP, STAMP_SOFT, WHITE,
+    AMBER, AMBER_BG, AMBER_LINE, app_stylesheet,
+)
+from relation_graph import RelationGraphDialog
 APP_VERSION = APP_VERSION_LABEL
 
 
@@ -1893,6 +1898,7 @@ class MainWindow(QMainWindow):
         self._quiet_drop_scan = False
         self._recent_dialog = None
         self._duplicate_dialog = None
+        self._relation_dialog = None
         self._agent_dialog = None
         self._consult_dialog = None
         self._index_dialog = None
@@ -1932,6 +1938,16 @@ class MainWindow(QMainWindow):
         settings_menu = self.menuBar().addMenu("设置")
         act_ai = settings_menu.addAction("配置 AI 接口…")
         act_ai.triggered.connect(self.on_ai_settings)
+        settings_menu.addSeparator()
+        self._act_folder_watch = settings_menu.addAction("文件夹监视（实验，默认关）")
+        self._act_folder_watch.setCheckable(True)
+        try:
+            from product_prefs import load_prefs
+            self._act_folder_watch.setChecked(
+                bool(load_prefs().folder_watch_enabled))
+        except Exception:
+            self._act_folder_watch.setChecked(False)
+        self._act_folder_watch.toggled.connect(self._on_folder_watch_toggled)
         menu = self.menuBar().addMenu("帮助")
         act_guide = menu.addAction("使用说明")
         act_guide.triggered.connect(self._show_guide)
@@ -1976,6 +1992,26 @@ class MainWindow(QMainWindow):
             "AI 默认关闭，也不内置密钥。可在「设置 → 配置 AI 接口」"
             "粘贴你自己的 Key 或厂商脚本，程序会识别常见接口。\n\n"
             "（当前包内没有附带「使用说明.txt」，以上为内置说明。）")
+
+    def _on_folder_watch_toggled(self, checked: bool) -> None:
+        """只持久化开关；本版本不会真正挂监视，避免常驻扫描观感。"""
+        try:
+            from product_prefs import set_folder_watch_enabled
+            prefs = set_folder_watch_enabled(bool(checked))
+        except Exception as exc:
+            self._act_folder_watch.blockSignals(True)
+            self._act_folder_watch.setChecked(False)
+            self._act_folder_watch.blockSignals(False)
+            QMessageBox.warning(
+                self, "文件夹监视",
+                f"开关没能保存：{exc}\n\n监视仍视为关闭。")
+            return
+        if checked:
+            QMessageBox.information(
+                self, "文件夹监视",
+                prefs.folder_watch_note + "\n\n"
+                "已记住「愿意启用」。当前版本仍不会在后台监听文件夹；"
+                "整理继续靠你主动扫描与预览确认。")
 
     # V1.2: 统一任务状态 —— 旧布尔位以属性形式委托到 TaskContext
     @property
@@ -2032,8 +2068,10 @@ class MainWindow(QMainWindow):
 
         def side_heading(text):
             lab = QLabel(text)
+            lab.setProperty("role", "step")
             lab.setStyleSheet(
-                "color:#64748B;font-size:11px;font-weight:600;padding:10px 8px 4px 8px;")
+                f"color:{STAMP};font-size:11px;font-weight:650;"
+                f"padding:12px 8px 4px 8px;letter-spacing:0.04em;")
             return lab
 
         def nav(btn):
@@ -2045,19 +2083,19 @@ class MainWindow(QMainWindow):
         title = QHBoxLayout()
         title.setContentsMargins(14, 8, 14, 8)
         title_name = QLabel("归档盒")
-        title_name.setStyleSheet("color:#0F172A;font-weight:600;")
+        title_name.setStyleSheet(
+            f"color:{INK};font-weight:700;font-size:18px;letter-spacing:0.02em;")
         title.addWidget(title_name)
         self.ai_status_label = QLabel("")
         self.ai_status_label.setStyleSheet(
-            "color:#1D4ED8;background:#EFF6FF;border:1px solid #BFDBFE;"
-            "border-radius:999px;padding:3px 10px;font-size:12px;")
+            f"color:{STAMP};background:{STAMP_SOFT};border:1px solid {STAMP};"
+            "border-radius:2px;padding:3px 10px;font-size:12px;")
         title.addWidget(self.ai_status_label)
         title.addStretch(1)
-        title_hint = QLabel("选中一行后，右侧说明这个文件")
-        title_hint.setStyleSheet("color:#64748B;")
+        title_hint = QLabel("① 选空间　② 核对预览　③ 确认整理")
+        title_hint.setStyleSheet(f"color:{MUTE};")
         title.addWidget(title_hint)
         self.btn_ai_header = QPushButton("配置 AI")
-        self.btn_ai_header.setProperty("role", "primary")
         self.btn_ai_header.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_ai_header.setToolTip(
             "粘贴你自己的 API Key 或厂商脚本，自动识别 DeepSeek / OpenAI / "
@@ -2068,7 +2106,7 @@ class MainWindow(QMainWindow):
 
         rule = QFrame()
         rule.setFrameShape(QFrame.Shape.HLine)
-        rule.setStyleSheet("color:#E2E8F0;")
+        rule.setStyleSheet(f"color:{PAPER_DEEP};")
         outer.addWidget(rule)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -2078,56 +2116,50 @@ class MainWindow(QMainWindow):
 
         side_inner = QWidget()
         side_inner.setObjectName("sideInner")
-        fill_panel(side_inner, "#F8FAFC")
+        fill_panel(side_inner, PAPER)
         side_lay = QVBoxLayout(side_inner)
         side_lay.setContentsMargins(8, 4, 8, 12)
         side_lay.setSpacing(2)
-        side_lay.addWidget(side_heading("文件夹"))
+
+        # —— ① 空间 ——
+        side_lay.addWidget(side_heading("① 空间"))
         self.storage_tree = StorageTree()
         self.storage_tree.folderHighlighted.connect(self._preview_sidebar_folder)
         self.storage_tree.folderActivated.connect(self._open_sidebar_space)
         self.storage_tree.setMinimumHeight(96)
         self.storage_tree.setMaximumHeight(160)
         side_lay.addWidget(self.storage_tree)
-        folder_hint = QLabel("双击文件夹，设为这次要整理的位置")
+        folder_hint = QLabel("双击设为这次要整理的位置")
         folder_hint.setWordWrap(True)
         folder_hint.setStyleSheet(
-            "color:#64748B;font-size:11px;padding:2px 8px 8px 8px;")
+            f"color:{MUTE};font-size:11px;padding:2px 8px 6px 8px;")
         side_lay.addWidget(folder_hint)
+        self.btn_recent = nav(QPushButton("最近打开"))
+        self.btn_recent.setToolTip("打开最近用过的文件夹，也可以固定或移除记录")
+        self.btn_recent.clicked.connect(self.on_recent_spaces)
+        side_lay.addWidget(self.btn_recent)
+        self.btn_intake = nav(QPushButton("待整理清单"))
+        self.btn_intake.setToolTip(
+            "登记这次要整理的文件和文件夹。这里只登记，不移动文件")
+        self.btn_intake.clicked.connect(self.on_intake_dialog)
+        side_lay.addWidget(self.btn_intake)
+        self.btn_scan_intake = nav(QPushButton("只扫描清单"))
+        self.btn_scan_intake.setToolTip(
+            "只扫描「待整理清单」里登记的文件和文件夹；\n"
+            "清单以外的文件不会进入预览")
+        self.btn_scan_intake.setEnabled(False)
+        self.btn_scan_intake.clicked.connect(self.on_scan_intake)
+        side_lay.addWidget(self.btn_scan_intake)
 
-        side_lay.addWidget(side_heading("AI"))
-        self.btn_ai_settings = nav(QPushButton("配置 AI 接口"))
-        self.btn_ai_settings.setToolTip(
-            "粘贴 API Key 或厂商脚本，自动识别接口地址与模型。\n"
-            "不内置密钥；不配置时整理仍可完全离线进行。")
-        self.btn_ai_settings.clicked.connect(self.on_ai_settings)
-        side_lay.addWidget(self.btn_ai_settings)
+        # —— ② 预览 ——
+        side_lay.addWidget(side_heading("② 预览"))
+        self.btn_regenerate = nav(QPushButton("重新生成预览"))
+        self.btn_regenerate.setToolTip(
+            "规则或范围变了之后，按当前设置重新计算预览。不会移动文件")
+        self.btn_regenerate.setEnabled(False)
+        self.btn_regenerate.clicked.connect(self.on_regenerate_plan)
+        side_lay.addWidget(self.btn_regenerate)
 
-        self.btn_agent = nav(QPushButton("AI 整理顾问"))
-        self.btn_agent.setProperty("role", "primary")
-        self.btn_agent.setToolTip(
-            "先扫描你的目录结构，再给出管理建议；\n"
-            "你可以多轮对话调整方案。真正移动仍要回主界面确认。")
-        self.btn_agent.clicked.connect(self.on_agent)
-        side_lay.addWidget(self.btn_agent)
-
-        self.ai_check = QCheckBox("待定文件问 AI")
-        self.ai_check.setChecked(self._ai_settings.enabled)
-        self.ai_check.setToolTip(
-            "默认关闭。打开后，分类结果是「待定」或图片识别失败时，"
-            "会把文件名、相对路径和一段正文/图片文字发给你配置的 AI 接口。\n"
-            "需要先在「配置 AI 接口」里填写自己的密钥。"
-        )
-        self.ai_check.stateChanged.connect(self._on_ai_toggled)
-        side_lay.addWidget(self.ai_check)
-
-        self.ai_side_hint = QLabel("")
-        self.ai_side_hint.setWordWrap(True)
-        self.ai_side_hint.setStyleSheet(
-            "color:#64748B;font-size:11px;padding:2px 8px 6px 8px;")
-        side_lay.addWidget(self.ai_side_hint)
-
-        side_lay.addWidget(side_heading("分类"))
         self.mode_combo = QComboBox()
         for m in ALL_MODES:
             self.mode_combo.addItem(MODE_LABELS[m], m)
@@ -2160,62 +2192,22 @@ class MainWindow(QMainWindow):
         self.ocr_check.stateChanged.connect(self.on_plan_param_changed)
         side_lay.addWidget(self.ocr_check)
 
-        self.btn_edit_rules = nav(QPushButton("课程关键词"))
-        self.btn_edit_rules.setToolTip(
-            "只在「按课程再按类型」下生效。\n"
-            "当前推荐分类方式请用「学期和目录规则」"
-        )
-        self.btn_edit_rules.clicked.connect(self.on_edit_rules)
-        side_lay.addWidget(self.btn_edit_rules)
+        self.btn_relation_graph = nav(QPushButton("卷宗关系"))
+        self.btn_relation_graph.setToolTip(
+            "用当前预览画出可核对关系：同一份内容、沾边归类、同类别。\n"
+            "只读，不移动文件。")
+        self.btn_relation_graph.setEnabled(False)
+        self.btn_relation_graph.clicked.connect(self.on_relation_graph)
+        side_lay.addWidget(self.btn_relation_graph)
 
-        self.btn_edit_config = nav(QPushButton("学期和目录规则"))
-        self.btn_edit_config.setToolTip(
-            "设置学期、课程目录和关键词。\n"
-            "只在「按方向/学期/类别（推荐）」下生效"
-        )
-        self.btn_edit_config.clicked.connect(self.on_edit_config)
-        side_lay.addWidget(self.btn_edit_config)
+        self.btn_duplicates = nav(QPushButton("查看重复文件"))
+        self.btn_duplicates.setToolTip(
+            "查看同一份内容、以及同名但可能不同版本的文件。\n"
+            "这里只查看，不删除、不合并、不移动")
+        self.btn_duplicates.setEnabled(False)
+        self.btn_duplicates.clicked.connect(self.on_show_duplicates)
+        side_lay.addWidget(self.btn_duplicates)
 
-        self.btn_learning = nav(QPushButton("学习建议"))
-        self.btn_learning.setToolTip(
-            "根据最近的改单归纳候选偏好；确认前不会写入偏好表，"
-            "也不会移动文件")
-        self.btn_learning.clicked.connect(self.on_learning_suggestions)
-        side_lay.addWidget(self.btn_learning)
-
-        self.btn_search = nav(QPushButton("搜索"))
-        self.btn_search.setToolTip(
-            "在已登记的空间里按文件名和正文查找。查找不会移动文件。")
-        self.btn_search.clicked.connect(self.on_search)
-        side_lay.addWidget(self.btn_search)
-
-        self.btn_index_spaces = nav(QPushButton("文件空间"))
-        self.btn_index_spaces.setToolTip(
-            "登记要记住的文件夹。刷新只更新本地索引，不会移动文件。")
-        self.btn_index_spaces.clicked.connect(self.on_index_spaces)
-        side_lay.addWidget(self.btn_index_spaces)
-
-        self.btn_backup_manage = nav(QPushButton("版本备份"))
-        self.btn_backup_manage.setToolTip(
-            "把文件夹做成可恢复的本地版本。备份不删源；"
-            "恢复写入新的空目录。与「配置备份」无关。")
-        self.btn_backup_manage.clicked.connect(self.on_backup_manage)
-        side_lay.addWidget(self.btn_backup_manage)
-
-        self.btn_scheme_center = nav(QPushButton("导入或保存方案"))
-        self.btn_scheme_center.setToolTip(
-            "把当前分类规则保存成方案，或把已有方案应用到这个文件夹")
-        self.btn_scheme_center.clicked.connect(self.on_scheme_center)
-        side_lay.addWidget(self.btn_scheme_center)
-
-        self.btn_regenerate = nav(QPushButton("重新生成预览"))
-        self.btn_regenerate.setToolTip(
-            "规则或范围变了之后，按当前设置重新计算预览。不会移动文件")
-        self.btn_regenerate.setEnabled(False)
-        self.btn_regenerate.clicked.connect(self.on_regenerate_plan)
-        side_lay.addWidget(self.btn_regenerate)
-
-        side_lay.addWidget(side_heading("勾选"))
         self.btn_select_visible = nav(QPushButton("勾选看到的文件"))
         self.btn_select_visible.setToolTip("只勾选表格里当前显示的文件，被筛选隐藏的不变")
         self.btn_select_visible.clicked.connect(
@@ -2231,35 +2223,96 @@ class MainWindow(QMainWindow):
         self.btn_invert_visible.clicked.connect(
             lambda: self._set_visible_checked(None, invert=True))
         side_lay.addWidget(self.btn_invert_visible)
-        self.btn_recent = nav(QPushButton("最近打开"))
-        self.btn_recent.setToolTip("打开最近用过的文件夹，也可以固定或移除记录")
-        self.btn_recent.clicked.connect(self.on_recent_spaces)
-        side_lay.addWidget(self.btn_recent)
 
-        side_lay.addWidget(side_heading("这次"))
-        self.btn_intake = nav(QPushButton("待整理清单"))
-        self.btn_intake.setToolTip(
-            "登记这次要整理的文件和文件夹。这里只登记，不移动文件")
-        self.btn_intake.clicked.connect(self.on_intake_dialog)
-        side_lay.addWidget(self.btn_intake)
+        # AI：次要，不占印章红
+        self.btn_agent = nav(QPushButton("AI 整理顾问"))
+        self.btn_agent.setToolTip(
+            "先扫描你的目录结构，再给出管理建议；\n"
+            "你可以多轮对话调整方案。真正移动仍要回主界面确认。")
+        self.btn_agent.clicked.connect(self.on_agent)
+        side_lay.addWidget(self.btn_agent)
+        self.btn_ai_settings = nav(QPushButton("配置 AI 接口"))
+        self.btn_ai_settings.setToolTip(
+            "粘贴 API Key 或厂商脚本，自动识别接口地址与模型。\n"
+            "不内置密钥；不配置时整理仍可完全离线进行。")
+        self.btn_ai_settings.clicked.connect(self.on_ai_settings)
+        side_lay.addWidget(self.btn_ai_settings)
+        self.ai_check = QCheckBox("待定文件问 AI")
+        self.ai_check.setChecked(self._ai_settings.enabled)
+        self.ai_check.setToolTip(
+            "默认关闭。打开后，分类结果是「待定」或图片识别失败时，"
+            "会把文件名、相对路径和一段正文/图片文字发给你配置的 AI 接口。\n"
+            "需要先在「配置 AI 接口」里填写自己的密钥。"
+        )
+        self.ai_check.stateChanged.connect(self._on_ai_toggled)
+        side_lay.addWidget(self.ai_check)
+        self.ai_side_hint = QLabel("")
+        self.ai_side_hint.setWordWrap(True)
+        self.ai_side_hint.setStyleSheet(
+            f"color:{MUTE};font-size:11px;padding:2px 8px 6px 8px;")
+        side_lay.addWidget(self.ai_side_hint)
 
-        self.btn_scan_intake = nav(QPushButton("只扫描清单"))
-        self.btn_scan_intake.setToolTip(
-            "只扫描「待整理清单」里登记的文件和文件夹；\n"
-            "清单以外的文件不会进入预览")
-        self.btn_scan_intake.setEnabled(False)
-        self.btn_scan_intake.clicked.connect(self.on_scan_intake)
-        side_lay.addWidget(self.btn_scan_intake)
+        # 更多工具：收纳次要入口，主路径更清晰
+        self.btn_edit_rules = QPushButton("课程关键词")
+        self.btn_edit_rules.setToolTip(
+            "只在「按课程再按类型」下生效。\n"
+            "当前推荐分类方式请用「学期和目录规则」"
+        )
+        self.btn_edit_rules.clicked.connect(self.on_edit_rules)
+        self.btn_edit_config = QPushButton("学期和目录规则")
+        self.btn_edit_config.setToolTip(
+            "设置学期、课程目录和关键词。\n"
+            "只在「按方向/学期/类别（推荐）」下生效"
+        )
+        self.btn_edit_config.clicked.connect(self.on_edit_config)
+        self.btn_learning = QPushButton("学习建议")
+        self.btn_learning.setToolTip(
+            "根据最近的改单归纳候选偏好；确认前不会写入偏好表，"
+            "也不会移动文件")
+        self.btn_learning.clicked.connect(self.on_learning_suggestions)
+        self.btn_search = QPushButton("搜索")
+        self.btn_search.setToolTip(
+            "在已登记的空间里按文件名和正文查找。查找不会移动文件。")
+        self.btn_search.clicked.connect(self.on_search)
+        self.btn_index_spaces = QPushButton("文件空间")
+        self.btn_index_spaces.setToolTip(
+            "登记要记住的文件夹。刷新只更新本地索引，不会移动文件。")
+        self.btn_index_spaces.clicked.connect(self.on_index_spaces)
+        self.btn_backup_manage = QPushButton("版本备份")
+        self.btn_backup_manage.setToolTip(
+            "把文件夹做成可恢复的本地版本。备份不删源；"
+            "恢复写入新的空目录。与「配置备份」无关。")
+        self.btn_backup_manage.clicked.connect(self.on_backup_manage)
+        self.btn_scheme_center = QPushButton("导入或保存方案")
+        self.btn_scheme_center.setToolTip(
+            "把当前分类规则保存成方案，或把已有方案应用到这个文件夹")
+        self.btn_scheme_center.clicked.connect(self.on_scheme_center)
 
-        self.btn_duplicates = nav(QPushButton("查看重复文件"))
-        self.btn_duplicates.setToolTip(
-            "查看内容相同、以及文件名相同但内容不同的文件。\n"
-            "这里只查看，不删除、不合并、不移动")
-        self.btn_duplicates.setEnabled(False)
-        self.btn_duplicates.clicked.connect(self.on_show_duplicates)
-        side_lay.addWidget(self.btn_duplicates)
+        more = QToolButton()
+        more.setText("更多工具")
+        more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        more.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        more.setProperty("role", "nav")
+        more_menu = QMenu(more)
+        for w in (
+            self.btn_edit_config, self.btn_edit_rules, self.btn_learning,
+            self.btn_search, self.btn_index_spaces, self.btn_backup_manage,
+            self.btn_scheme_center,
+        ):
+            act = more_menu.addAction(w.text())
+            act.triggered.connect(w.click)
+        more.setMenu(more_menu)
+        side_lay.addWidget(more)
+        # 保留实体按钮供逻辑启用/禁用，但不占侧栏版面
+        for w in (
+            self.btn_edit_config, self.btn_edit_rules, self.btn_learning,
+            self.btn_search, self.btn_index_spaces, self.btn_backup_manage,
+            self.btn_scheme_center,
+        ):
+            w.hide()
 
-        side_lay.addWidget(side_heading("整理"))
+        # —— ③ 执行 ——
+        side_lay.addWidget(side_heading("③ 执行与恢复"))
         self.btn_undo = nav(QPushButton("撤销上一次"))
         self.btn_undo.setToolTip("把最近一次整理移走的文件放回原位置")
         self.btn_undo.setEnabled(False)
@@ -2290,7 +2343,7 @@ class MainWindow(QMainWindow):
         side_scroll.setWidgetResizable(True)
         side_scroll.setFrameShape(QFrame.Shape.NoFrame)
         side_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        fill_panel(side_scroll, "#F8FAFC")
+        fill_panel(side_scroll, PAPER)
         side_scroll.setWidget(side_inner)
         side_need = self._sidebar_width_for(side_inner)
         side_scroll.setMinimumWidth(side_need)
@@ -2299,7 +2352,7 @@ class MainWindow(QMainWindow):
 
         center_host = QWidget()
         self.center_host = center_host
-        fill_panel(center_host, "#FFFFFF")
+        fill_panel(center_host, WHITE)
         center = QVBoxLayout(center_host)
         center.setContentsMargins(12, 10, 12, 10)
         center.setSpacing(8)
@@ -2325,26 +2378,25 @@ class MainWindow(QMainWindow):
         self.ai_banner = QFrame()
         self.ai_banner.setObjectName("aiBanner")
         self.ai_banner.setStyleSheet(
-            "#aiBanner{background:#EFF6FF;border:1px solid #BFDBFE;"
-            "border-radius:10px;}")
+            f"#aiBanner{{background:{STAMP_SOFT};border:1px solid {STAMP};"
+            "border-radius:2px;}")
         banner_lay = QHBoxLayout(self.ai_banner)
         banner_lay.setContentsMargins(14, 10, 14, 10)
         banner_lay.setSpacing(10)
         banner_copy = QVBoxLayout()
         banner_copy.setSpacing(2)
-        self.ai_banner_title = QLabel("先接入你自己的 AI，整理时更聪明")
+        self.ai_banner_title = QLabel("可选：接入你自己的 AI")
         self.ai_banner_title.setStyleSheet(
-            "color:#1E3A8A;font-weight:600;font-size:13px;")
+            f"color:{STAMP};font-weight:650;font-size:13px;")
         banner_copy.addWidget(self.ai_banner_title)
         self.ai_banner_body = QLabel(
-            "粘贴 API Key 或厂商脚本，自动识别 DeepSeek、OpenAI、通义、智谱等。"
-            "配置后可用「AI 整理顾问」先扫结构再对话调整；也可对「待定」文件问 AI。")
+            "粘贴 API Key 或厂商脚本。主流程仍是预览确认后移动；"
+            "不配置也能离线整理。")
         self.ai_banner_body.setWordWrap(True)
-        self.ai_banner_body.setStyleSheet("color:#334155;font-size:12px;")
+        self.ai_banner_body.setStyleSheet(f"color:{MUTE};font-size:12px;")
         banner_copy.addWidget(self.ai_banner_body)
         banner_lay.addLayout(banner_copy, stretch=1)
         self.btn_ai_banner_setup = QPushButton("配置 AI 接口")
-        self.btn_ai_banner_setup.setProperty("role", "primary")
         self.btn_ai_banner_setup.clicked.connect(self.on_ai_settings)
         banner_lay.addWidget(self.btn_ai_banner_setup)
         self.btn_ai_banner_later = QPushButton("稍后再说")
@@ -2467,11 +2519,11 @@ class MainWindow(QMainWindow):
         self.progress.setTextVisible(False)
         self.progress.setStyleSheet(
             "QProgressBar {"
-            " border: none; border-radius: 6px;"
-            " background: #DBEAFE; min-height: 12px; max-height: 12px;"
+            " border: none; border-radius: 2px;"
+            f" background: {STAMP_SOFT}; min-height: 12px; max-height: 12px;"
             "}"
             "QProgressBar::chunk {"
-            " border-radius: 6px; background: #2563EB;"
+            f" border-radius: 2px; background: {STAMP};"
             "}"
         )
         self.progress_label = QLabel("进行中")
@@ -2479,7 +2531,7 @@ class MainWindow(QMainWindow):
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.progress_label.setMinimumWidth(96)
         self.progress_label.setStyleSheet(
-            "color:#1D4ED8;font-weight:650;font-size:13px;")
+            f"color:{STAMP};font-weight:650;font-size:13px;")
         progress_lay.addWidget(self.progress, 1)
         progress_lay.addWidget(self.progress_label)
         self.progress_row.hide()
@@ -2503,8 +2555,8 @@ class MainWindow(QMainWindow):
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(False)
         table_pal = self.table.palette()
-        table_pal.setColor(QPalette.ColorRole.Highlight, QColor("#EFF6FF"))
-        table_pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#0F172A"))
+        table_pal.setColor(QPalette.ColorRole.Highlight, QColor(STAMP_SOFT))
+        table_pal.setColor(QPalette.ColorRole.HighlightedText, QColor(INK))
         self.table.setPalette(table_pal)
         self.table.itemSelectionChanged.connect(self._update_button_states)
         self._suppress_cell_signals = False
@@ -2527,6 +2579,7 @@ class MainWindow(QMainWindow):
         self.btn_cancel.clicked.connect(self.on_cancel_execute)
         footer.addWidget(self.btn_cancel)
         self.btn_execute = QPushButton("开始整理")
+        self.btn_execute.setProperty("role", "primary")
         self.btn_execute.setToolTip("按预览里勾选的项目移动文件。移动前会再确认一次")
         self.btn_execute.setEnabled(False)
         self.btn_execute.clicked.connect(self.on_execute)
@@ -2653,11 +2706,12 @@ class MainWindow(QMainWindow):
             "待定文件问 AI",
             "按方向/学期/类别（推荐）",
             "勾选看到的文件",
-            "导入或保存方案",
             "重新生成预览",
             "不整理的目录",
             "将生成的目录",
             "查看重复文件",
+            "卷宗关系",
+            "③ 执行与恢复",
         )
         text_w = max(fm.horizontalAdvance(text) for text in labels)
         # 复选框方块、按钮内边距、侧栏左右留白
@@ -5695,6 +5749,72 @@ class MainWindow(QMainWindow):
         n = len(self.scan_result.files) if self.scan_result else 0
         return f"整个整理空间：当前扫描纳入 {n} 个文件"
 
+    def on_relation_graph(self):
+        """只读：用当前预览画卷宗关系，不移动文件。"""
+        if self._close_pending or self._closing:
+            return
+        if self._working or self._plan_working:
+            QMessageBox.information(
+                self, "归档盒", "当前有后台任务运行，请等待任务结束后再打开卷宗关系。")
+            return
+        plan = self.current_plan
+        if plan is None or not self._plan_valid:
+            QMessageBox.information(
+                self, "归档盒", "请先生成预览，再查看卷宗关系。")
+            return
+        if self._relation_dialog is not None:
+            try:
+                self._relation_dialog.close()
+            except Exception:
+                pass
+            self._relation_dialog = None
+        dlg = RelationGraphDialog(plan, self)
+        dlg.focusPath.connect(self._focus_plan_path)
+        dlg.finished.connect(lambda _=0: self._on_relation_dialog_closed(dlg))
+        self._relation_dialog = dlg
+        dlg.show()
+
+    def _on_relation_dialog_closed(self, dlg):
+        if self._relation_dialog is dlg:
+            self._relation_dialog = None
+
+    def _focus_plan_path(self, rel_path: str):
+        """卷宗关系图点选文件后，在预览表定位该行。"""
+        plan = self.current_plan
+        if plan is None or not rel_path:
+            return
+        want = os.path.normcase(os.path.normpath(rel_path))
+        row = None
+        for index, item in enumerate(plan.items):
+            key = os.path.normcase(os.path.normpath(item.file.rel_path))
+            if key == want:
+                row = index
+                break
+        if row is None:
+            self.statusBar().showMessage(f"预览里找不到：{rel_path}")
+            return
+        if self.table.isRowHidden(row):
+            # 被筛选隐藏时清掉筛选，再定位
+            if hasattr(self, "preview_filter_edit"):
+                self.preview_filter_edit.clear()
+            self._apply_preview_filters()
+        self.table.clearSelection()
+        selection = self.table.selectionModel()
+        if selection is not None:
+            flags = (QItemSelectionModel.SelectionFlag.Select
+                     | QItemSelectionModel.SelectionFlag.Rows)
+            selection.select(self.table.model().index(row, 1), flags)
+            selection.setCurrentIndex(
+                self.table.model().index(row, 1),
+                QItemSelectionModel.SelectionFlag.Current)
+        cell = self.table.item(row, 1)
+        if cell is not None:
+            self.table.scrollToItem(cell)
+        self._update_inspector()
+        self.statusBar().showMessage(f"已定位：{rel_path}")
+        self.raise_()
+        self.activateWindow()
+
     def on_show_duplicates(self):
         if self._close_pending or self._closing:
             return
@@ -5867,7 +5987,7 @@ class MainWindow(QMainWindow):
             "plan" if plan is not None else "scan")
 
     def _set_button_role(self, btn, role: str):
-        """同一时刻只把下一步操作标成蓝色主按钮。"""
+        """同一时刻只把下一步操作标成印章红主按钮。"""
         if (btn.property("role") or "") == role:
             return
         btn.setProperty("role", role)
@@ -5907,6 +6027,7 @@ class MainWindow(QMainWindow):
             self.btn_intake.setEnabled(False)
             self.btn_scan_intake.setEnabled(False)
             self.btn_duplicates.setEnabled(False)
+            self.btn_relation_graph.setEnabled(False)
             self._set_preview_controls_enabled(False)
             self._mark_next_action()
             self._sync_intake_label()
@@ -5972,6 +6093,7 @@ class MainWindow(QMainWindow):
         self.btn_scan_intake.setEnabled(
             idle and bool(self.path_edit.text().strip()) and len(self.intake) > 0)
         self.btn_duplicates.setEnabled(idle and self.scan_result is not None)
+        self.btn_relation_graph.setEnabled(idle and has_plan)
         self._set_preview_controls_enabled(idle and has_plan)
         # V1.2 第三轮：任务状态变化同步已打开的历史窗口（轻量按钮刷新）
         self._refresh_undo_button_label()
