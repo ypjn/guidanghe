@@ -217,81 +217,6 @@ footer {
   color: var(--stamp);
 }
 
-.download-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-4);
-}
-
-.download-card {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3) 0;
-  border-top: 1px solid var(--line);
-}
-
-.download-card h3 {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: 1.15rem;
-  font-weight: 700;
-  color: var(--stamp);
-}
-
-.download-card p {
-  margin: 0;
-  color: var(--ink);
-  max-width: 28em;
-}
-
-.download-card .cta {
-  align-self: flex-start;
-  margin-top: var(--space-1);
-}
-
-.checksum {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  margin-top: var(--space-1);
-}
-
-.checksum-label {
-  font-size: 0.82rem;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--mute);
-}
-
-.checksum-value {
-  display: block;
-  font-size: 0.78rem;
-  line-height: 1.45;
-  word-break: break-all;
-  padding: 0.45rem 0.55rem;
-  background: rgba(22, 27, 34, 0.06);
-}
-
-.pill {
-  display: inline-flex;
-  align-items: center;
-  align-self: flex-start;
-  min-height: 2rem;
-  padding: 0.35rem 0.85rem;
-  margin-top: var(--space-1);
-  border-radius: 999px;
-  font-size: 0.92rem;
-  font-weight: 500;
-}
-
-.pill-pending {
-  color: var(--mute);
-  border: 1px dashed var(--line);
-  background: rgba(248, 250, 252, 0.7);
-}
-
 .catalog {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -326,6 +251,62 @@ footer {
   color: var(--ink);
 }
 
+.download-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.download-card {
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  background: rgba(248, 250, 252, 0.62);
+}
+
+.download-card h3 {
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--stamp);
+}
+
+.download-card p {
+  margin: 0 0 var(--space-2);
+  color: var(--ink);
+}
+
+.download-card .meta {
+  color: var(--mute);
+  font-size: 0.92rem;
+}
+
+.download-card .hash {
+  margin-top: var(--space-3);
+  font-size: 0.82rem;
+  color: var(--mute);
+  word-break: break-all;
+}
+
+.download-card .cta-row {
+  margin-top: var(--space-2);
+}
+
+.pill {
+  display: inline-block;
+  margin-top: var(--space-1);
+  padding: 0.25rem 0.55rem;
+  border: 1px dashed var(--line);
+  color: var(--mute);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 900px) {
+  .download-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 .run-list {
   margin: 0;
   padding: 0;
@@ -354,17 +335,6 @@ footer {
   background: var(--ribbon);
 }
 
-.run-list a {
-  color: var(--stamp);
-  text-decoration-thickness: 1px;
-  text-underline-offset: 0.15em;
-}
-
-.run-list a:hover,
-.run-list a:focus-visible {
-  text-decoration: none;
-}
-
 code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.9em;
@@ -381,6 +351,7 @@ footer {
   font-size: 0.92rem;
 }
 
+/* One orchestrated entrance — not per-section fades */
 @media (prefers-reduced-motion: no-preference) {
   .hero-copy {
     animation: settle-copy 0.9s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -459,10 +430,6 @@ footer {
     gap: var(--space-2);
   }
 
-  .download-grid {
-    grid-template-columns: 1fr;
-  }
-
   .catalog {
     grid-template-columns: 1fr;
   }
@@ -481,11 +448,6 @@ footer {
 
   .hero-copy {
     max-width: none;
-  }
-
-  .download-card .cta {
-    width: auto;
-    align-self: stretch;
   }
 }
 
