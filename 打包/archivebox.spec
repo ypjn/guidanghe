@@ -23,6 +23,11 @@ datas = []
 binaries = []
 hiddenimports = [
     "ai_fallback",
+    "ai_settings_dialog",
+    "ai_prompts",
+    "ai_consult",
+    "ai_consult_store",
+    "ai_consult_dialog",
     "app_metadata",
     "agent",
     "agent_dialog",

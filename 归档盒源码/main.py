@@ -64,6 +64,7 @@ from ocr_engine import OcrError, collect_image_text, engine_label, ocr_supported
 from content_extract import extract_contents
 import scan_cache
 from ai_fallback import AiSettings, apply_ai_fallback, load_settings, save_settings
+from ai_settings_dialog import AiSettingsDialog
 from classification_config import (
     ClassificationConfig, ClassificationConfigError, config_summary,
     default_config, load_config, save_config, config_path,
@@ -1893,6 +1894,7 @@ class MainWindow(QMainWindow):
         self._recent_dialog = None
         self._duplicate_dialog = None
         self._agent_dialog = None
+        self._consult_dialog = None
         self._index_dialog = None
         self._search_dialog = None
         self._backup_dialog = None
@@ -1927,6 +1929,9 @@ class MainWindow(QMainWindow):
 
     def _build_menus(self):
         """S3 / guib F-32：提供「帮助 / 关于 / 使用说明」入口。"""
+        settings_menu = self.menuBar().addMenu("设置")
+        act_ai = settings_menu.addAction("配置 AI 接口…")
+        act_ai.triggered.connect(self.on_ai_settings)
         menu = self.menuBar().addMenu("帮助")
         act_guide = menu.addAction("使用说明")
         act_guide.triggered.connect(self._show_guide)
@@ -1968,7 +1973,8 @@ class MainWindow(QMainWindow):
             "4. 需要还原时点「撤销上一次」；中断的批次会提示核对恢复。\n\n"
             "整理记录保存在每个文件夹的 .organizer 里；"
             f"方案库与最近空间在 {app_data_dir()}。\n"
-            "AI 补充分类默认关闭，程序不内置任何密钥。\n\n"
+            "AI 默认关闭，也不内置密钥。可在「设置 → 配置 AI 接口」"
+            "粘贴你自己的 Key 或厂商脚本，程序会识别常见接口。\n\n"
             "（当前包内没有附带「使用说明.txt」，以上为内置说明。）")
 
     # V1.2: 统一任务状态 —— 旧布尔位以属性形式委托到 TaskContext
@@ -2041,10 +2047,23 @@ class MainWindow(QMainWindow):
         title_name = QLabel("归档盒")
         title_name.setStyleSheet("color:#0F172A;font-weight:600;")
         title.addWidget(title_name)
+        self.ai_status_label = QLabel("")
+        self.ai_status_label.setStyleSheet(
+            "color:#1D4ED8;background:#EFF6FF;border:1px solid #BFDBFE;"
+            "border-radius:999px;padding:3px 10px;font-size:12px;")
+        title.addWidget(self.ai_status_label)
         title.addStretch(1)
         title_hint = QLabel("选中一行后，右侧说明这个文件")
         title_hint.setStyleSheet("color:#64748B;")
         title.addWidget(title_hint)
+        self.btn_ai_header = QPushButton("配置 AI")
+        self.btn_ai_header.setProperty("role", "primary")
+        self.btn_ai_header.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_ai_header.setToolTip(
+            "粘贴你自己的 API Key 或厂商脚本，自动识别 DeepSeek / OpenAI / "
+            "通义 / 智谱等 OpenAI 兼容接口")
+        self.btn_ai_header.clicked.connect(self.on_ai_settings)
+        title.addWidget(self.btn_ai_header)
         outer.addLayout(title)
 
         rule = QFrame()
@@ -2075,6 +2094,38 @@ class MainWindow(QMainWindow):
         folder_hint.setStyleSheet(
             "color:#64748B;font-size:11px;padding:2px 8px 8px 8px;")
         side_lay.addWidget(folder_hint)
+
+        side_lay.addWidget(side_heading("AI"))
+        self.btn_ai_settings = nav(QPushButton("配置 AI 接口"))
+        self.btn_ai_settings.setToolTip(
+            "粘贴 API Key 或厂商脚本，自动识别接口地址与模型。\n"
+            "不内置密钥；不配置时整理仍可完全离线进行。")
+        self.btn_ai_settings.clicked.connect(self.on_ai_settings)
+        side_lay.addWidget(self.btn_ai_settings)
+
+        self.btn_agent = nav(QPushButton("AI 整理顾问"))
+        self.btn_agent.setProperty("role", "primary")
+        self.btn_agent.setToolTip(
+            "先扫描你的目录结构，再给出管理建议；\n"
+            "你可以多轮对话调整方案。真正移动仍要回主界面确认。")
+        self.btn_agent.clicked.connect(self.on_agent)
+        side_lay.addWidget(self.btn_agent)
+
+        self.ai_check = QCheckBox("待定文件问 AI")
+        self.ai_check.setChecked(self._ai_settings.enabled)
+        self.ai_check.setToolTip(
+            "默认关闭。打开后，分类结果是「待定」或图片识别失败时，"
+            "会把文件名、相对路径和一段正文/图片文字发给你配置的 AI 接口。\n"
+            "需要先在「配置 AI 接口」里填写自己的密钥。"
+        )
+        self.ai_check.stateChanged.connect(self._on_ai_toggled)
+        side_lay.addWidget(self.ai_check)
+
+        self.ai_side_hint = QLabel("")
+        self.ai_side_hint.setWordWrap(True)
+        self.ai_side_hint.setStyleSheet(
+            "color:#64748B;font-size:11px;padding:2px 8px 6px 8px;")
+        side_lay.addWidget(self.ai_side_hint)
 
         side_lay.addWidget(side_heading("分类"))
         self.mode_combo = QComboBox()
@@ -2108,16 +2159,6 @@ class MainWindow(QMainWindow):
             )
         self.ocr_check.stateChanged.connect(self.on_plan_param_changed)
         side_lay.addWidget(self.ocr_check)
-
-        self.ai_check = QCheckBox("待定或识别失败时问 DeepSeek")
-        self.ai_check.setChecked(self._ai_settings.enabled)
-        self.ai_check.setToolTip(
-            "默认关闭。打开后，分类结果是「待定」或图片识别失败时，"
-            "会把文件名、相对路径和一段图片文字发给 api.deepseek.com。\n"
-            "需要填写你自己的密钥。程序不再内置密钥。"
-        )
-        self.ai_check.stateChanged.connect(self._on_ai_toggled)
-        side_lay.addWidget(self.ai_check)
 
         self.btn_edit_rules = nav(QPushButton("课程关键词"))
         self.btn_edit_rules.setToolTip(
@@ -2196,13 +2237,6 @@ class MainWindow(QMainWindow):
         side_lay.addWidget(self.btn_recent)
 
         side_lay.addWidget(side_heading("这次"))
-        self.btn_agent = nav(QPushButton("AI 管家"))
-        self.btn_agent.setToolTip(
-            "用一句话查找文件并生成整理方案。\n"
-            "先给你看命中的文件和理由；确认后仍走主界面的预览与「开始整理」")
-        self.btn_agent.clicked.connect(self.on_agent)
-        side_lay.addWidget(self.btn_agent)
-
         self.btn_intake = nav(QPushButton("待整理清单"))
         self.btn_intake.setToolTip(
             "登记这次要整理的文件和文件夹。这里只登记，不移动文件")
@@ -2287,6 +2321,36 @@ class MainWindow(QMainWindow):
         self.btn_scan.clicked.connect(self.on_scan)
         toolbar.addWidget(self.btn_scan)
         center.addLayout(toolbar)
+
+        self.ai_banner = QFrame()
+        self.ai_banner.setObjectName("aiBanner")
+        self.ai_banner.setStyleSheet(
+            "#aiBanner{background:#EFF6FF;border:1px solid #BFDBFE;"
+            "border-radius:10px;}")
+        banner_lay = QHBoxLayout(self.ai_banner)
+        banner_lay.setContentsMargins(14, 10, 14, 10)
+        banner_lay.setSpacing(10)
+        banner_copy = QVBoxLayout()
+        banner_copy.setSpacing(2)
+        self.ai_banner_title = QLabel("先接入你自己的 AI，整理时更聪明")
+        self.ai_banner_title.setStyleSheet(
+            "color:#1E3A8A;font-weight:600;font-size:13px;")
+        banner_copy.addWidget(self.ai_banner_title)
+        self.ai_banner_body = QLabel(
+            "粘贴 API Key 或厂商脚本，自动识别 DeepSeek、OpenAI、通义、智谱等。"
+            "配置后可用「AI 整理顾问」先扫结构再对话调整；也可对「待定」文件问 AI。")
+        self.ai_banner_body.setWordWrap(True)
+        self.ai_banner_body.setStyleSheet("color:#334155;font-size:12px;")
+        banner_copy.addWidget(self.ai_banner_body)
+        banner_lay.addLayout(banner_copy, stretch=1)
+        self.btn_ai_banner_setup = QPushButton("配置 AI 接口")
+        self.btn_ai_banner_setup.setProperty("role", "primary")
+        self.btn_ai_banner_setup.clicked.connect(self.on_ai_settings)
+        banner_lay.addWidget(self.btn_ai_banner_setup)
+        self.btn_ai_banner_later = QPushButton("稍后再说")
+        self.btn_ai_banner_later.clicked.connect(self._dismiss_ai_banner)
+        banner_lay.addWidget(self.btn_ai_banner_later)
+        center.addWidget(self.ai_banner)
 
         filters = FlowLayout(spacing=6)
         filters.addWidget(QLabel("筛选："))
@@ -2577,13 +2641,16 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("请先选择文件夹，再重新扫描。")
         self._refresh_folder_list()
         self._update_inspector()
+        self._refresh_ai_presence()
         self._mark_next_action()
 
     def _sidebar_width_for(self, side_inner: QWidget) -> int:
         """侧栏要能放下最长的一行字，避免分类名和复选框被裁掉。"""
         fm = side_inner.fontMetrics()
         labels = (
-            "待定或识别失败时问 DeepSeek",
+            "AI 整理顾问",
+            "配置 AI 接口",
+            "待定文件问 AI",
             "按方向/学期/类别（推荐）",
             "勾选看到的文件",
             "导入或保存方案",
@@ -3277,7 +3344,30 @@ class MainWindow(QMainWindow):
         return True
 
     def on_agent(self):
-        """阶段 6：打开 AI 管家，用一句话查找并生成方案。"""
+        """打开 AI 整理顾问：扫描结构 → 建议 → 多轮调整。"""
+        if self._close_pending or self._closing:
+            return
+        if self._working or self._plan_working:
+            QMessageBox.information(
+                self, "归档盒", "当前有后台任务运行，请稍后再用 AI 整理顾问。")
+            return
+        root = self._current_root()
+        if not root or not os.path.isdir(root):
+            QMessageBox.warning(
+                self, "归档盒", "请先选择一个文件夹，再打开 AI 整理顾问。")
+            return
+        from ai_consult_dialog import AiConsultDialog
+        if self._consult_dialog is not None:
+            self._consult_dialog.raise_()
+            self._consult_dialog.activateWindow()
+            return
+        dlg = AiConsultDialog(self, root, parent=self)
+        dlg.finished.connect(lambda _=0, d=dlg: self._clear_consult_dialog_ref(d))
+        self._consult_dialog = dlg
+        dlg.show()
+
+    def on_agent_quick(self):
+        """阶段 6 原入口：一句话本地查找并生成方案。"""
         if self._close_pending or self._closing:
             return
         if self._working or self._plan_working:
@@ -3294,7 +3384,6 @@ class MainWindow(QMainWindow):
             self._agent_dialog.raise_()
             self._agent_dialog.activateWindow()
             return
-        # 与普通扫描使用同一套保护规则：默认保护源码目录 + 用户手动保护目录
         protect = [(DEFAULT_PROTECT_APP_SRC, "default", "默认保护（归档盒源码）")]
         protect.extend(manual_scan_specs(root, self.manual_protect))
         dlg = AgentDialog(self, root, protect, parent=self)
@@ -3305,6 +3394,10 @@ class MainWindow(QMainWindow):
     def _clear_agent_dialog_ref(self, dlg):
         if self._agent_dialog is dlg:
             self._agent_dialog = None
+
+    def _clear_consult_dialog_ref(self, dlg):
+        if self._consult_dialog is dlg:
+            self._consult_dialog = None
 
     def _plan_touches_protected(self, plan) -> bool:
         """方案里任一源/目标落到当前保护目录，就拒绝采用。"""
@@ -3327,8 +3420,9 @@ class MainWindow(QMainWindow):
                 return True
         return False
 
-    def adopt_agent_plan(self, plan, note: str = "") -> bool:
-        """把 AI 管家方案交给现有预览；执行仍走 on_execute。"""
+    def adopt_agent_plan(self, plan, note: str = "",
+                         scan_result=None) -> bool:
+        """把 AI 管家/顾问方案交给现有预览；执行仍走 on_execute。"""
         if self._close_pending or self._closing:
             return False
         if self._working or self._plan_working:
@@ -3343,15 +3437,15 @@ class MainWindow(QMainWindow):
                 or os.path.realpath(current) != os.path.realpath(plan.root)):
             QMessageBox.warning(
                 self, "归档盒",
-                "整理空间已经切换，请重新打开 AI 管家生成方案。")
+                "整理空间已经切换，请重新打开 AI 入口生成方案。")
             return False
         if self._plan_touches_protected(plan):
             if self._agent_dialog is not None:
                 self._agent_dialog.invalidate_for_protect_change()
             QMessageBox.warning(
                 self, "归档盒",
-                "保护设置已更改，这个 AI 管家方案已经失效。\n"
-                "请回到管家窗口按最新保护设置重新查找。")
+                "这个 AI 方案碰到了受保护目录（例如归档盒源码自身）。\n"
+                "请换一个整理空间，或在「不整理的目录」里调整保护后再生成。")
             return False
         if self._storage is None:
             try:
@@ -3361,18 +3455,24 @@ class MainWindow(QMainWindow):
                     self, "归档盒",
                     f"无法在该目录建立整理记录（.organizer）：\n{exc}")
                 return False
+        if scan_result is not None:
+            self._full_scan_result = scan_result
+            self.scan_result = scan_result
+            self.path_edit.setText(plan.root)
+            self._refresh_folder_list()
         self.current_plan = plan
         self._plan_valid = True
         self._plan_scope = "space"
-        self._plan_scope_note = note or "AI 管家查找结果"
+        self._plan_scope_note = note or "AI 方案"
         self._populate_table(plan, reset_filters=True)
         self._invalidate_confirmation()
         self._update_plan_counts()
         self._refresh_ambiguity_panel()
         self._update_button_states()
+        self._mark_next_action()
         self.invalid_label.hide()
         self.statusBar().showMessage(
-            f"{self._plan_scope_note}；请核对方案后在主界面点「开始整理」。")
+            f"{self._plan_scope_note}；请核对勾选后点「开始整理」。")
         return True
 
     def on_intake_dialog(self):
@@ -4566,17 +4666,31 @@ class MainWindow(QMainWindow):
 
     def _ai_snapshot(self) -> AiSettings:
         current = self._ai_settings
-        return AiSettings(api_key=current.api_key, enabled=bool(current.enabled))
+        return AiSettings(
+            base_url=current.base_url,
+            model=current.model,
+            api_key=current.api_key,
+            enabled=bool(current.enabled),
+            provider_id=current.provider_id,
+            setup_dismissed=bool(current.setup_dismissed),
+        )
 
     def _set_ai_checked(self, checked: bool) -> None:
         self.ai_check.blockSignals(True)
         self.ai_check.setChecked(checked)
         self.ai_check.blockSignals(False)
 
+    def _ai_endpoint_host(self) -> str:
+        from urllib.parse import urlparse
+        host = urlparse((self._ai_settings.base_url or "").strip()).netloc
+        return host or (self._ai_settings.base_url or "你配置的 AI 接口")
+
     def _ai_consent_text(self) -> str:
+        label = self._ai_settings.provider_label()
+        host = self._ai_endpoint_host()
         return (
-            "打开后，预览里仍是「待定」或图片识别失败的文件，会把下面这些内容"
-            "发给 api.deepseek.com：\n\n"
+            f"打开后，预览里仍是「待定」或图片识别失败的文件，会把下面这些内容"
+            f"发给 {label}（{host}）：\n\n"
             "• 文件名\n"
             "• 相对路径\n"
             "• 文件类型\n"
@@ -4589,37 +4703,97 @@ class MainWindow(QMainWindow):
 
     def _ask_ai_consent(self) -> bool:
         reply = QMessageBox.question(
-            self, "打开 DeepSeek 分类", self._ai_consent_text(),
+            self, "打开 AI 补充分类", self._ai_consent_text(),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
         return reply == QMessageBox.Yes
 
-    def _on_ai_toggled(self, *_):
-        checked = self.ai_check.isChecked()
-        if checked and not self._ai_settings.enabled:
-            if not self._ask_ai_consent():
-                self._set_ai_checked(False)
-                return
-            self._ai_consent_given = True
-            if not self._ai_settings.api_key.strip():
-                key, ok = QInputDialog.getText(
-                    self, "DeepSeek 密钥",
-                    "粘贴你自己的 DeepSeek 密钥。留空则保持关闭。",
-                )
-                if not ok or not str(key).strip():
-                    self._set_ai_checked(False)
-                    return
-                self._ai_settings.api_key = str(key).strip()
-        self._ai_settings.enabled = checked
+    def _refresh_ai_presence(self) -> None:
+        settings = self._ai_settings
+        status = settings.status_text()
+        if hasattr(self, "ai_status_label"):
+            self.ai_status_label.setText(status)
+            if settings.ready() and settings.enabled:
+                color = ("color:#166534;background:#ECFDF5;border:1px solid #A7F3D0;")
+            elif settings.ready():
+                color = ("color:#1D4ED8;background:#EFF6FF;border:1px solid #BFDBFE;")
+            else:
+                color = ("color:#9A3412;background:#FFF7ED;border:1px solid #FED7AA;")
+            self.ai_status_label.setStyleSheet(
+                color + "border-radius:999px;padding:3px 10px;font-size:12px;")
+        if hasattr(self, "ai_side_hint"):
+            if settings.ready():
+                self.ai_side_hint.setText(
+                    f"当前：{settings.provider_label()} · {settings.model}")
+            else:
+                self.ai_side_hint.setText("还没有密钥。配置后可对「待定」文件问 AI。")
+        if hasattr(self, "btn_ai_header"):
+            self.btn_ai_header.setText(
+                "管理 AI" if settings.ready() else "配置 AI")
+        if hasattr(self, "btn_ai_settings"):
+            self.btn_ai_settings.setText(
+                "管理 AI 接口" if settings.ready() else "配置 AI 接口")
+        show_banner = (
+            hasattr(self, "ai_banner")
+            and not settings.ready()
+            and not settings.setup_dismissed
+        )
+        if hasattr(self, "ai_banner"):
+            self.ai_banner.setVisible(show_banner)
+        self._set_ai_checked(bool(settings.enabled and settings.ready()))
+
+    def _persist_ai_settings(self) -> bool:
         try:
             save_settings(self._ai_settings)
+            return True
         except OSError as exc:
             append_startup_log(f"AI 设置保存失败：{exc}")
             QMessageBox.warning(
                 self, "AI 设置",
                 f"AI 设置没能保存到磁盘（%APPDATA% 不可写或被占用）：\n{exc}\n\n"
                 "本次运行仍按当前选择生效，下次启动需要重新设置。")
+            return False
+
+    def _dismiss_ai_banner(self) -> None:
+        self._ai_settings.setup_dismissed = True
+        self._persist_ai_settings()
+        self._refresh_ai_presence()
+
+    def on_ai_settings(self) -> None:
+        dlg = AiSettingsDialog(self._ai_settings, self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._ai_settings = dlg.result_settings()
+        self._ai_consent_given = False
+        self._refresh_ai_presence()
+        self.on_plan_param_changed()
+        self.statusBar().showMessage(self._ai_settings.status_text())
+
+    def _on_ai_toggled(self, *_):
+        checked = self.ai_check.isChecked()
+        if checked and not self._ai_settings.enabled:
+            if not self._ai_settings.ready():
+                self._set_ai_checked(False)
+                self.on_ai_settings()
+                if not (self._ai_settings.ready() and self._ai_settings.enabled):
+                    self._set_ai_checked(False)
+                    self._refresh_ai_presence()
+                    return
+                self._ai_consent_given = True
+                self._refresh_ai_presence()
+                self.on_plan_param_changed()
+                return
+            if not self._ask_ai_consent():
+                self._set_ai_checked(False)
+                return
+            self._ai_consent_given = True
+        self._ai_settings.enabled = bool(checked and self._ai_settings.ready())
+        if checked and not self._ai_settings.ready():
+            self._set_ai_checked(False)
+            self._ai_settings.enabled = False
+        self._persist_ai_settings()
+        self._refresh_ai_presence()
         self.on_plan_param_changed()
 
     def on_regenerate_plan(self):
@@ -4689,7 +4863,8 @@ class MainWindow(QMainWindow):
         if use_ocr:
             parts.append("识别图片文字")
         if use_ai:
-            parts.append("对待定或识别失败的文件询问 DeepSeek")
+            parts.append(
+                f"对待定或识别失败的文件询问 {self._ai_settings.provider_label()}")
         phase = ("、".join(parts) + "并生成计划" if parts
                  else "生成计划中（计算 SHA-256 指纹）")
         self._plan_working = True
@@ -6721,6 +6896,11 @@ class MainWindow(QMainWindow):
                 candidates.extend(getter())
             else:
                 candidates.append(getattr(agent_dialog, "_worker", None))
+        consult_dialog = getattr(self, "_consult_dialog", None)
+        if consult_dialog is not None:
+            getter = getattr(consult_dialog, "running_workers", None)
+            if callable(getter):
+                candidates.extend(getter())
         backup_dialog = getattr(self, "_backup_dialog", None)
         if backup_dialog is not None:
             getter = getattr(backup_dialog, "running_workers", None)
@@ -6807,6 +6987,7 @@ class MainWindow(QMainWindow):
         """S3 / guia F-19：关闭主窗口时一并关闭所有非模态子窗口。"""
         for attr in ("_history_dialog", "_intake_dialog", "_tree_dialog",
                      "_duplicate_dialog", "_recent_dialog", "_agent_dialog",
+                     "_consult_dialog",
                      "_index_dialog", "_search_dialog", "_backup_dialog"):
             dlg = getattr(self, attr, None)
             if dlg is None:

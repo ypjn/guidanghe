@@ -16,6 +16,7 @@ from ai_fallback import (  # noqa: E402
     allowed_pairs,
     apply_ai_fallback, load_settings, needs_ai, parse_choice, save_settings,
 )
+from ai_settings_dialog import AiSettingsDialog  # noqa: E402
 from planner import (  # noqa: E402
     MODE_BY_DIRECTION_SEMESTER, MODE_BY_TYPE, OrganizePlan, PlanItem,
 )
@@ -109,13 +110,20 @@ def main() -> None:
     assert other.direction == "待定"
     assert "连不上" in note2
 
-    save_settings(AiSettings(base_url="http://127.0.0.1:9/v1",
-                             model="other", api_key="secret", enabled=True))
+    save_settings(AiSettings(
+        provider_id="custom",
+        base_url="http://127.0.0.1:9/v1",
+        model="other",
+        api_key="secret",
+        enabled=True,
+        setup_dismissed=True,
+    ))
     loaded = load_settings()
     assert loaded.api_key == "secret"
     assert loaded.enabled
-    assert loaded.base_url == DEEPSEEK_BASE
-    assert loaded.model == DEEPSEEK_MODEL
+    assert loaded.base_url == "http://127.0.0.1:9/v1"
+    assert loaded.model == "other"
+    assert loaded.provider_id == "custom"
     assert "secret" not in note
 
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -123,8 +131,15 @@ def main() -> None:
     import main
     app = QApplication.instance() or QApplication([])
     window = main.MainWindow()
-    assert window.ai_check.text() == "待定或识别失败时问 DeepSeek"
-    assert not hasattr(window, "btn_ai")
+    assert window.ai_check.text() == "待定文件问 AI"
+    assert hasattr(window, "btn_ai_settings")
+    assert hasattr(window, "btn_ai_header")
+    assert hasattr(window, "ai_banner")
+    assert "配置 AI" in window.btn_ai_header.text() or "管理 AI" in window.btn_ai_header.text()
+    assert window.btn_agent.text() == "AI 整理顾问"
+    dlg = AiSettingsDialog(window._ai_settings, window)
+    assert dlg.windowTitle() == "配置 AI 接口"
+    dlg.reject()
     window.close()
     del app
     print("ai fallback checks passed")

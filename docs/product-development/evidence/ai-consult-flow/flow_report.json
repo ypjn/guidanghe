@@ -1,0 +1,130 @@
+{
+  "ok": true,
+  "checks": [
+    {
+      "name": "主入口是 AI 整理顾问",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "标题栏有配置 AI",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "AI 状态可见",
+      "ok": true,
+      "detail": "AI 已开启 · DeepSeek"
+    },
+    {
+      "name": "截图 01-main-with-ai-presence",
+      "ok": true,
+      "detail": "C:\\Users\\Lenovo\\Desktop\\归档盒-Windows-免安装\\guidanghe\\docs\\product-development\\evidence\\ai-consult-flow\\01-main-with-ai-presence.png"
+    },
+    {
+      "name": "顾问按钮可点",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "截图 02-ai-settings-dialog",
+      "ok": true,
+      "detail": "C:\\Users\\Lenovo\\Desktop\\归档盒-Windows-免安装\\guidanghe\\docs\\product-development\\evidence\\ai-consult-flow\\02-ai-settings-dialog.png"
+    },
+    {
+      "name": "顾问完成首轮建议",
+      "ok": true,
+      "detail": "session=True busy=False status=会话已保存（acs-d5264e50d184）。可继续调整，或生成可勾选预览方案。"
+    },
+    {
+      "name": "结构摘要非空",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "可生成预览按钮可用",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "截图 03-consult-after-advice",
+      "ok": true,
+      "detail": "C:\\Users\\Lenovo\\Desktop\\归档盒-Windows-免安装\\guidanghe\\docs\\product-development\\evidence\\ai-consult-flow\\03-consult-after-advice.png"
+    },
+    {
+      "name": "多轮调整完成",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "截图 04-consult-after-followup",
+      "ok": true,
+      "detail": "C:\\Users\\Lenovo\\Desktop\\归档盒-Windows-免安装\\guidanghe\\docs\\product-development\\evidence\\ai-consult-flow\\04-consult-after-followup.png"
+    },
+    {
+      "name": "主界面已有顾问预览方案",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "预览项可勾选且默认勾选",
+      "ok": true,
+      "detail": "selected=2 total=2"
+    },
+    {
+      "name": "方案带 AI 顾问标记",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "开始整理可点",
+      "ok": true,
+      "detail": "enabled=True storage=True"
+    },
+    {
+      "name": "扫描结果已衔接",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "可重新生成预览",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "截图 05-main-preview-from-consult",
+      "ok": true,
+      "detail": "C:\\Users\\Lenovo\\Desktop\\归档盒-Windows-免安装\\guidanghe\\docs\\product-development\\evidence\\ai-consult-flow\\05-main-preview-from-consult.png"
+    },
+    {
+      "name": "旧 AI 管家入口仍可打开",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "截图 06-legacy-agent-dialog",
+      "ok": true,
+      "detail": "C:\\Users\\Lenovo\\Desktop\\归档盒-Windows-免安装\\guidanghe\\docs\\product-development\\evidence\\ai-consult-flow\\06-legacy-agent-dialog.png"
+    },
+    {
+      "name": "取消勾选后仍按剩余项控制开始整理",
+      "ok": true,
+      "detail": "still=1 execute=True"
+    },
+    {
+      "name": "截图 07-main-after-uncheck",
+      "ok": true,
+      "detail": "C:\\Users\\Lenovo\\Desktop\\归档盒-Windows-免安装\\guidanghe\\docs\\product-development\\evidence\\ai-consult-flow\\07-main-after-uncheck.png"
+    }
+  ],
+  "issues": [],
+  "screenshots": [
+    "C:\\Users\\Lenovo\\Desktop\\归档盒-Windows-免安装\\guidanghe\\docs\\product-development\\evidence\\ai-consult-flow\\01-main-with-ai-presence.png",
+    "C:\\Users\\Lenovo\\Desktop\\归档盒-Windows-免安装\\guidanghe\\docs\\product-development\\evidence\\ai-consult-flow\\02-ai-settings-dialog.png",
+    "C:\\Users\\Lenovo\\Desktop\\归档盒-Windows-免安装\\guidanghe\\docs\\product-development\\evidence\\ai-consult-flow\\03-consult-after-advice.png",
+    "C:\\Users\\Lenovo\\Desktop\\归档盒-Windows-免安装\\guidanghe\\docs\\product-development\\evidence\\ai-consult-flow\\04-consult-after-followup.png",
+    "C:\\Users\\Lenovo\\Desktop\\归档盒-Windows-免安装\\guidanghe\\docs\\product-development\\evidence\\ai-consult-flow\\05-main-preview-from-consult.png",
+    "C:\\Users\\Lenovo\\Desktop\\归档盒-Windows-免安装\\guidanghe\\docs\\product-development\\evidence\\ai-consult-flow\\06-legacy-agent-dialog.png",
+    "C:\\Users\\Lenovo\\Desktop\\归档盒-Windows-免安装\\guidanghe\\docs\\product-development\\evidence\\ai-consult-flow\\07-main-after-uncheck.png"
+  ]
+}

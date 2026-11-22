@@ -6,3 +6,7 @@ __pycache__/
 打包/build/
 打包/dist/
 打包/_tools/
+归档盒源码/tmp_*/
+归档盒源码/archivebox_*/
+归档盒源码/consult_space_*/
+.flow_tmp/
