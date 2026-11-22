@@ -8,7 +8,9 @@
 - 备份恢复：`test_product_backup.py` 11/11
 - 卷身份 / schema 2→3：`test_product_volume.py` 5/5
 - 发布验收脚本：`打包/verify_release_features.py` 退出码 0（见 verify_release_features.json）
-- 源码发布包：`打包/dist/归档盒-1.8.1-src-with-packaging.tar.gz`（哈希见 SHA256SUMS-src.txt）
+- 源码发布包：`打包/dist/归档盒-1.8.1-src-with-packaging.tar.gz`
+- SHA-256：`196b021b7aaf809b3e9dc940ca90c5c8464febbc23cd8407274e92d81261b9da`
+- 分支 tip：`62f0e30eb2bfc2d41eb44589cca1ec48261588ea`
 
 ## 在 Mac 上生成 DMG
 
