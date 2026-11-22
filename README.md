@@ -6,11 +6,12 @@
 
 ## 下载（成品包）
 
-Mac 与 Windows **不是同一套安装包**：构建脚本、运行时布局和签名策略都分开。请按系统取对应文件。
+产品页：[https://guidanghe.apps.grok.bot/](https://guidanghe.apps.grok.bot/)（源码在仓库 `website/`）。Mac 与 Windows **不是同一套安装包**。
 
 | 平台 | 形态 | 获取 |
 | --- | --- | --- |
-| **Windows x64** | 免安装 ZIP（解压后双击 `归档盒.exe`） | [GitHub Releases · v1.8.1-windows](https://github.com/ypjn/guidanghe/releases/tag/v1.8.1-windows) |
+| **Windows x64** | 免安装 ZIP（解压后双击 `归档盒.exe`） | [直接下载](https://github.com/ypjn/guidanghe/releases/download/v1.8.1-windows/-1.8.1-windows-x64.zip) · [Release 页](https://github.com/ypjn/guidanghe/releases/tag/v1.8.1-windows) |
+| **OCR 选装** | RapidOCR 完整包（不进标准 ZIP） | 制作中，上线后挂产品页 |
 | **macOS Apple 芯片** | `.app` + 只读 DMG | 需在 Apple 芯片 Mac 上按 [打包/构建说明.md](打包/构建说明.md) 生成；正式 Release 尚未挂 DMG |
 
 **Windows 包校验（SHA-256）**
@@ -19,9 +20,11 @@ Mac 与 Windows **不是同一套安装包**：构建脚本、运行时布局和
 95eee7d2c5db1e649ddea46027fe9987c985a3c6a0b2efde6952491f2f737305
 ```
 
-对应文件：`归档盒-1.8.1-windows-x64.zip`（构建提交 `af1a5d2`）。未做代码签名，SmartScreen 可能提示「未知发布者」——请对照上面的哈希核验后再使用。
+对应 Release 资源名：`-1.8.1-windows-x64.zip`（约 256&nbsp;MB；构建提交 `af1a5d2`）。未做代码签名，SmartScreen 可能提示「未知发布者」——请对照上面的哈希核验后再使用。
 
 > 含「AI 整理顾问 → 可勾选预览」的最新源码在分支 `product/desktop-finish-win`。当前 Windows Release ZIP 仍是顾问功能合入前的构建；要用最新 AI 入口，请拉取该分支后按构建说明重新打 ZIP，或等下一版 Release。
+>
+> **不做本地大模型**；AI 仅自备 API。文件夹监视若以后做，默认关闭、须手动打开。
 
 ## 现在能做什么
 

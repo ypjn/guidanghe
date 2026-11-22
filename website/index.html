@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>归档盒 · 1.8.1</title>
+    <meta
+      name="description"
+      content="归档盒：本地文件整理。Windows 免安装下载，可选 OCR；默认离线，AI 走自备 API。"
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Noto+Sans+SC:wght@400;500;700&amp;family=Noto+Serif+SC:wght@600;700&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="grain" aria-hidden="true"></div>
+
+    <header class="hero">
+      <div class="hero-copy">
+        <p class="brand">归档盒</p>
+        <h1>把散落的资料，收进可核对的本地档案。</h1>
+        <p class="lede">
+          桌面端整理与索引工具。当前偏课程学习资料，规则与预览确认后再移动；
+          AI 只走你自备的 API，不内置本地大模型。1.8.1 含外置盘离线查询与本地版本回退。
+        </p>
+        <div class="cta-row">
+          <a
+            class="cta primary"
+            href="https://github.com/ypjn/guidanghe/releases/download/v1.8.1-windows/-1.8.1-windows-x64.zip"
+            >下载 Windows 标准包</a
+          >
+          <a class="cta quiet" href="#download">全部下载与校验</a>
+        </div>
+      </div>
+
+      <figure class="hero-visual" aria-hidden="true">
+        <svg class="boxes" viewBox="0 0 520 560" xmlns="http://www.w3.org/2000/svg" role="presentation">
+          <defs>
+            <linearGradient id="lid" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#d8dee6"></stop>
+              <stop offset="100%" stop-color="#b7c0cc"></stop>
+            </linearGradient>
+            <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#f4f6f8"></stop>
+              <stop offset="100%" stop-color="#cfd6df"></stop>
+            </linearGradient>
+            <linearGradient id="side" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#9aa5b4"></stop>
+              <stop offset="100%" stop-color="#7d8898"></stop>
+            </linearGradient>
+          </defs>
+
+          <g transform="translate(118 48)">
+            <g class="box box-c">
+              <path d="M40 70 L220 20 L380 70 L200 128 Z" fill="url(#lid)"></path>
+              <path d="M40 70 L40 210 L200 268 L200 128 Z" fill="url(#face)"></path>
+              <path d="M200 128 L200 268 L380 210 L380 70 Z" fill="url(#side)"></path>
+              <rect x="78" y="148" width="86" height="34" rx="2" fill="#245B8C"></rect>
+              <text
+                x="121"
+                y="171"
+                text-anchor="middle"
+                fill="#EEF1F4"
+                font-family="Noto Serif SC, serif"
+                font-size="15"
+                font-weight="700"
+              >
+                卷宗
+              </text>
+            </g>
+          </g>
+
+          <g transform="translate(52 168)">
+            <g class="box box-b">
+              <path d="M40 70 L220 20 L380 70 L200 128 Z" fill="url(#lid)"></path>
+              <path d="M40 70 L40 210 L200 268 L200 128 Z" fill="url(#face)"></path>
+              <path d="M200 128 L200 268 L380 210 L380 70 Z" fill="url(#side)"></path>
+              <rect x="78" y="148" width="86" height="34" rx="2" fill="#161B22"></rect>
+              <text
+                x="121"
+                y="171"
+                text-anchor="middle"
+                fill="#EEF1F4"
+                font-family="Noto Serif SC, serif"
+                font-size="15"
+                font-weight="700"
+              >
+                索引
+              </text>
+            </g>
+          </g>
+
+          <g transform="translate(0 292)">
+            <g class="box box-a">
+              <path d="M40 70 L220 20 L380 70 L200 128 Z" fill="url(#lid)"></path>
+              <path d="M40 70 L40 210 L200 268 L200 128 Z" fill="url(#face)"></path>
+              <path d="M200 128 L200 268 L380 210 L380 70 Z" fill="url(#side)"></path>
+              <rect x="78" y="148" width="86" height="34" rx="2" fill="#C23B22"></rect>
+              <text
+                x="121"
+                y="171"
+                text-anchor="middle"
+                fill="#FFF7F4"
+                font-family="Noto Serif SC, serif"
+                font-size="15"
+                font-weight="700"
+              >
+                备份
+              </text>
+            </g>
+          </g>
+        </svg>
+      </figure>
+    </header>
+
+    <main>
+      <section id="download" class="band">
+        <div class="band-head">
+          <h2>下载</h2>
+          <p>
+            标准包不含 OCR、不含本地大模型。扫描件文字识别做成选装；联网 AI 请在应用内配置自备 API Key。
+          </p>
+        </div>
+
+        <div class="download-grid">
+          <article class="download-card">
+            <h3>Windows x64 · 标准包</h3>
+            <p>免安装 ZIP，约 256&nbsp;MB。解压后双击 <code>归档盒.exe</code>。</p>
+            <p class="meta">
+              版本 1.8.1 · 未代码签名（SmartScreen 可能提示未知发布者）
+            </p>
+            <div class="cta-row">
+              <a
+                class="cta primary"
+                href="https://github.com/ypjn/guidanghe/releases/download/v1.8.1-windows/-1.8.1-windows-x64.zip"
+                >下载 ZIP</a
+              >
+              <a
+                class="cta quiet"
+                href="https://github.com/ypjn/guidanghe/releases/tag/v1.8.1-windows"
+                rel="noopener noreferrer"
+                target="_blank"
+                >Release 页</a
+              >
+            </div>
+            <p class="hash">
+              SHA-256
+              <code>95eee7d2c5db1e649ddea46027fe9987c985a3c6a0b2efde6952491f2f737305</code>
+            </p>
+          </article>
+
+          <article class="download-card">
+            <h3>OCR 选装</h3>
+            <p>
+              RapidOCR 完整包另行提供，不并入标准 ZIP，避免主包膨胀。上线后本页会给出独立下载与校验。
+            </p>
+            <p class="meta">状态：制作中 · 目标 ZIP 增量约百兆级</p>
+            <span class="pill">即将提供</span>
+          </article>
+
+          <article class="download-card">
+            <h3>macOS Apple 芯片</h3>
+            <p>
+              正式 DMG 尚未挂到 Release。可在 Apple 芯片 Mac 上按仓库
+              <code>打包/构建说明.md</code> 生成本地包。
+            </p>
+            <div class="cta-row">
+              <a
+                class="cta quiet"
+                href="https://github.com/ypjn/guidanghe"
+                rel="noopener noreferrer"
+                target="_blank"
+                >打开源码仓库</a
+              >
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="status" class="band">
+        <div class="band-head">
+          <h2>本轮交付</h2>
+          <p>
+            成品 Windows 包见上方下载。含 AI 整理顾问的最新源码在分支
+            <code>product/desktop-finish-win</code>；下一版 Release 会并入标准 ZIP。
+          </p>
+        </div>
+
+        <div class="catalog">
+          <article>
+            <h3>搜索</h3>
+            <p>分页与筛选边界修好了，翻页不再漂移或漏结果。</p>
+          </article>
+          <article>
+            <h3>外置盘</h3>
+            <p>卷身份 schema 3：盘不在机时，仍可查历史只读索引。</p>
+          </article>
+          <article>
+            <h3>备份</h3>
+            <p>本地版本库支持备份与恢复，升级后可兼容回退。</p>
+          </article>
+          <article>
+            <h3>AI</h3>
+            <p>顾问对话与可勾选预览走 API；不捆绑本地大模型，也不默认常驻监视文件夹。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="band run">
+        <div class="band-head">
+          <h2>从源码运行</h2>
+          <p>若你要改代码或验收，而不是用成品 ZIP：</p>
+        </div>
+        <ol class="run-list">
+          <li>克隆 <code>ypjn/guidanghe</code>，按 README 建虚拟环境并安装依赖</li>
+          <li>在 <code>归档盒源码</code> 下启动 <code>main.py</code>，或按 <code>打包/构建说明.md</code> 打本机包</li>
+          <li>用验收脚本核对搜索、卷身份与备份恢复</li>
+        </ol>
+      </section>
+    </main>
+
+    <footer>
+      <p>归档盒 1.8.1 · 下载页 · 默认离线 · AI 可选 API</p>
+    </footer>
+
+    <script src="./main.js"></script>
+  </body>
+</html>
