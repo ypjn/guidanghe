@@ -137,6 +137,26 @@ QT_QPA_PLATFORM=offscreen /agent/repos/guidanghe/.venv/bin/python -m unittest di
 
 元数据见 `metadata_support_matrix()`：仅内容与可记录修改时间等，不声称扩展属性或整盘备份。
 
-## 07 Windows 集成构建
+## 07 集成构建与发布验收
 
-未开始。
+完成可重复的发布准备与功能验收（本机为 Linux，正式 `.dmg` 仍须在 Apple 芯片 Mac 上生成）。
+
+- 版本升至 **1.8.1**；`打包/archivebox.spec` 纳入 `volume_identity`、`backup_*`。
+- `打包/requirements-windows.txt` 补上 `pypdf==6.4.0`；新增原生 `打包/build_windows.ps1`。
+- `打包/make_release_bundle.sh` 打出可交给 Mac 一键生成 DMG 的源码发布包。
+- `打包/verify_release_features.py`：隔离目录核对搜索反例、备份恢复、schema 升级、新模块导入。
+
+```sh
+bash 打包/make_release_bundle.sh
+.venv/bin/python 打包/verify_release_features.py
+```
+
+Mac 正式 DMG：
+
+```sh
+export ARCHIVEBOX_BUILD_PYTHON=...
+zsh 打包/build_mac.sh
+zsh 打包/accept_mac_app.sh 打包/dist/归档盒-1.8.1-macos-arm64.dmg docs/product-development/evidence/batch07
+```
+
+未测：本环境无 `hdiutil`/`codesign`，不能在此生成或签名真实 DMG；Windows 真盘与高 DPI 原生窗口待 Windows 机验收。
