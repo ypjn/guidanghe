@@ -13,3 +13,6 @@ winrt-Windows.Media.Ocr==4!10.0.28000.2957; sys_platform == "win32"
 winrt-Windows.Graphics.Imaging==4!10.0.28000.2957; sys_platform == "win32"
 winrt-Windows.Storage==4!10.0.28000.2957; sys_platform == "win32"
 winrt-Windows.Globalization==4!10.0.28000.2957; sys_platform == "win32"
+# 当前空间的可选监视。MIT。只在程序打开且用户打开开关时使用。
+# 不写入 Windows 标准 ZIP。
+watchdog==7.1.1

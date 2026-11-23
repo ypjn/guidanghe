@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
 from dataclasses import dataclass
 
 from scanner import SKIP_DIRS, _is_junction_or_reparse
@@ -83,3 +85,90 @@ def coalesce_watch(events: list[tuple[str, str]], root: str, cap: int = 200) -> 
             continue
         accepted.append(path)
     return WatchBatch(root=root, paths=accepted, overflow=overflow)
+
+
+class FolderWatch:
+    """监听一个空间。测试可注入 observer_factory，避免启动系统监视。"""
+
+    def __init__(self, observer_factory=None, debounce_s: float = 1.5):
+        self._factory = observer_factory
+        self._debounce_s = debounce_s
+        self._observer = None
+        self._root = ""
+        self._pending: list[tuple[str, str, float]] = []
+        self._lock = threading.Lock()
+
+    @property
+    def root(self) -> str:
+        return self._root
+
+    def start(self, root: str) -> None:
+        self.stop()
+        if not root or not os.path.isdir(root):
+            return
+        self._root = os.path.abspath(root)
+        if self._factory is None:
+            from watchdog.observers import Observer
+            observer = Observer()
+        else:
+            observer = self._factory()
+        observer.schedule(_event_handler(self), self._root, recursive=True)
+        starter = getattr(observer, "start", None)
+        if callable(starter):
+            starter()
+        self._observer = observer
+
+    def stop(self) -> None:
+        observer = self._observer
+        self._observer = None
+        self._root = ""
+        if observer is not None:
+            stopper = getattr(observer, "stop", None)
+            if callable(stopper):
+                stopper()
+            join = getattr(observer, "join", None)
+            if callable(join):
+                try:
+                    join(timeout=2)
+                except TypeError:
+                    join()
+                except Exception:
+                    pass
+        with self._lock:
+            self._pending.clear()
+
+    def note(self, path: str, kind: str) -> None:
+        if not self._root or not path:
+            return
+        with self._lock:
+            self._pending.append((path, kind, time.monotonic()))
+
+    def flush(self) -> WatchBatch | None:
+        with self._lock:
+            if not self._root or not self._pending:
+                return None
+            latest = max(stamp for _, _, stamp in self._pending)
+            if time.monotonic() - latest < self._debounce_s:
+                return None
+            events = [(path, kind) for path, kind, _ in self._pending]
+            root = self._root
+            self._pending.clear()
+        batch = coalesce_watch(events, root)
+        if not batch.paths and not batch.overflow:
+            return None
+        return batch
+
+
+def _event_handler(watch: FolderWatch):
+    from watchdog.events import FileSystemEventHandler
+
+    class _Handler(FileSystemEventHandler):
+        def on_created(self, event):
+            watch.note(getattr(event, "src_path", ""), "created")
+
+        def on_moved(self, event):
+            dest = getattr(event, "dest_path", "") or ""
+            if dest:
+                watch.note(dest, "moved_in")
+
+    return _Handler()

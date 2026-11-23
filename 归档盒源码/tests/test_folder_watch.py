@@ -9,7 +9,9 @@ import unittest
 SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, SRC)
 
-from folder_watch import accept_watch_path, coalesce_watch  # noqa: E402
+from folder_watch import (  # noqa: E402
+    FolderWatch, accept_watch_path, coalesce_watch,
+)
 
 
 class FolderWatchPathTests(unittest.TestCase):
@@ -54,6 +56,54 @@ class FolderWatchCoalesceTests(unittest.TestCase):
             self.assertEqual(batch.overflow, 1)
             self.assertEqual(batch.paths.count(events[0][0]), 1)
             self.assertNotIn(deleted_only, batch.paths)
+
+
+class FakeObserver:
+    def __init__(self):
+        self.scheduled = []
+        self.started = False
+        self.stopped = False
+
+    def schedule(self, handler, path, recursive=False):
+        self.scheduled.append((path, recursive))
+
+    def start(self):
+        self.started = True
+
+    def stop(self):
+        self.stopped = True
+
+    def join(self, timeout=None):
+        return None
+
+
+class FolderWatchLifecycleTests(unittest.TestCase):
+    def test_stop_drops_pending_notes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = os.path.join(tmp, "空间")
+            os.makedirs(root)
+            target = os.path.join(root, "a.txt")
+            with open(target, "w", encoding="utf-8") as handle:
+                handle.write("a")
+            made = []
+
+            def factory():
+                observer = FakeObserver()
+                made.append(observer)
+                return observer
+
+            pending = FolderWatch(observer_factory=factory, debounce_s=1.5)
+            pending.start(root)
+            pending.note(target, "created")
+            self.assertIsNone(pending.flush())
+            self.assertTrue(made[-1].started)
+            watch = FolderWatch(observer_factory=factory, debounce_s=0)
+            watch.start(root)
+            watch.note(target, "created")
+            watch.stop()
+            self.assertIsNone(watch.flush())
+            self.assertTrue(made[-1].stopped)
+            pending.stop()
 
 
 if __name__ == "__main__":
