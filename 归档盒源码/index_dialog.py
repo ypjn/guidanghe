@@ -113,6 +113,11 @@ class IndexSpacesDialog(QDialog):
             )
         self.detail.setText("\n".join(lines))
 
+    def _ocr_scans_enabled(self) -> bool:
+        parent = self.parent()
+        check = getattr(parent, "ocr_check", None)
+        return bool(check is not None and check.isChecked())
+
     def _add(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "登记文件空间")
         if not path:
@@ -128,7 +133,9 @@ class IndexSpacesDialog(QDialog):
         spec = self._current()
         if spec is None:
             return
-        report = update_space(spec.space_id, store=self.store)
+        report = update_space(
+            spec.space_id, store=self.store,
+            ocr_scans=self._ocr_scans_enabled())
         title = "文件空间"
         if report.coverage == "identity_mismatch":
             QMessageBox.warning(

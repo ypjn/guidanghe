@@ -63,7 +63,7 @@ def register_space(root: str, name: str = "", policy: Optional[dict] = None,
 
 def update_space(space_id: str, cancel_event=None, progress_cb: Progress = None,
                  store: Optional[IndexStore] = None, read_content: bool = True,
-                 limits=None, before_body=None) -> IndexUpdateReport:
+                 limits=None, before_body=None, ocr_scans: bool = False) -> IndexUpdateReport:
     own = store is None
     store = store or IndexStore()
     report = IndexUpdateReport(space_id=space_id)
@@ -115,7 +115,7 @@ def update_space(space_id: str, cancel_event=None, progress_cb: Progress = None,
             if read_content:
                 _index_contents(
                     store, spec, generation, report, cancel_event, limits,
-                    before_body, progress_cb)
+                    before_body, progress_cb, ocr_scans)
         if report.cancelled or report.errors:
             report.completed = False
             if report.coverage not in {"offline", "identity_mismatch", "paused"}:
@@ -436,10 +436,12 @@ def _apply_deletions(store, spec, generation, listed, seen, report) -> None:
 
 
 def _index_contents(store, spec, generation, report, cancel_event, limits,
-                    before_body, progress_cb) -> None:
+                    before_body, progress_cb, ocr_scans: bool = False) -> None:
     from index_content import CONTENT_PARSER_VERSION, ContentLimits, extract_document
+    from pdf_pages import EMPTY_SCAN_REASON, scan_pdf_ocr
 
     limits = limits or ContentLimits()
+    scan_ocr = scan_pdf_ocr if ocr_scans else None
     rows = store.conn.execute(
         "SELECT file_id, rel_path, content_sha256 FROM files "
         "WHERE space_id=? AND present=1 AND index_state=? ORDER BY rel_path",
@@ -457,11 +459,16 @@ def _index_contents(store, spec, generation, report, cancel_event, limits,
         existing = store.get_file_text(row["file_id"])
         if (existing is not None and existing["content_sha256"] == digest
                 and int(existing["parser_version"]) == CONTENT_PARSER_VERSION
-                and existing["status"] in kept):
+                and existing["status"] in kept
+                and not (
+                    ocr_scans
+                    and existing["status"] == "unsupported"
+                    and existing["reason"] == EMPTY_SCAN_REASON)):
             continue
         path = os.path.join(spec.root, row["rel_path"])
         extracted = extract_document(
-            path, spec.root, limits, cancel_event, before_body)
+            path, spec.root, limits, cancel_event, before_body,
+            scan_ocr=scan_ocr)
         if extracted.status == "cancelled":
             report.cancelled = True
             return

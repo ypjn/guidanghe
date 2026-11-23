@@ -102,3 +102,18 @@ def _open_pdf(path: str):
     except Exception as exc:
         raise OcrError(f"PDF 无法渲染：{exc}") from exc
 
+
+def scan_pdf_ocr(path: str, cancel_event=None) -> tuple[str, str]:
+    """用现有图片识别读扫描页。没有引擎时不渲染。"""
+    from ocr_engine import ocr_supported, recognize_image
+
+    if not ocr_supported():
+        return "", "没有可用的文字识别组件。未做扫描识别"
+    try:
+        count = pdf_page_count(path)
+        return recognize_scanned_pdf(
+            path, render_pdf_page, recognize_image,
+            max_pages=SCAN_OCR_PAGES, cancel_event=cancel_event,
+            page_count=count)
+    except OcrError as exc:
+        return "", str(exc)

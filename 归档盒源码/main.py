@@ -484,6 +484,7 @@ class PlanWorker(QThread):
                 cancel_event=self.cancel_event,
                 progress_cb=_progress,
                 root=self.scan_result.root,
+                ocr_scans=self.ocr_enabled,
             )
             if self.cancel_event.is_set() or extraction.cancelled:
                 # 取消后不发布半成品计划；界面按 seq 丢弃迟到的结果。
@@ -2228,6 +2229,7 @@ class MainWindow(QMainWindow):
         if self._ocr_supported:
             self.ocr_check.setToolTip(
                 "生成预览时读取图片里的文字，用来匹配关键词。\n"
+                "没有可复制文字的 PDF 会识别前 5 页。\n"
                 "已经按文件夹归好的文件不会因此改判。\n"
                 "「文件名关键词」长期规则会同时看图片里的字。\n"
                 + engine_label() + "\n"

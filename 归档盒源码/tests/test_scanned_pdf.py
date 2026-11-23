@@ -141,6 +141,85 @@ class PdfRenderTests(unittest.TestCase):
             os.remove(png)
 
 
+class ScanSwitchTests(unittest.TestCase):
+    def test_ocr_scans_flag_controls_render_and_keeps_text(self):
+        import pdf_pages
+        from content_extract import extract_contents
+        from content_search import search_files
+        from index_service import register_space, update_space
+        from index_store import IndexStore, SearchQuery
+        from scanner import FileEntry
+
+        calls = []
+        original = pdf_pages.scan_pdf_ocr
+
+        def fake(path, cancel_event=None):
+            calls.append(os.path.basename(path))
+            return "高等数学", ""
+
+        pdf_pages.scan_pdf_ocr = fake
+        self.addCleanup(lambda: setattr(pdf_pages, "scan_pdf_ocr", original))
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ["ARCHIVEBOX_APP_DIR"] = os.path.join(tmp, "app")
+            root = os.path.join(tmp, "空间")
+            os.makedirs(root)
+            blank = os.path.join(root, "空白.pdf")
+            _blank_pdf(blank)
+            entry = FileEntry(
+                abs_path=blank, rel_path="空白.pdf", filename="空白.pdf",
+                file_type="文档", size=os.path.getsize(blank), size_display="1")
+            off = extract_contents([entry], root=root, ocr_scans=False)
+            self.assertEqual(calls, [])
+            self.assertNotIn("空白.pdf", off.texts)
+            on = extract_contents([entry], root=root, ocr_scans=True)
+            self.assertEqual(calls, ["空白.pdf"])
+            self.assertIn("高等数学", on.texts["空白.pdf"])
+
+            calls.clear()
+            store = IndexStore(os.path.join(tmp, "index.db"))
+            self.addCleanup(store.close)
+            spec = register_space(root, "扫描", store=store)
+            update_space(spec.space_id, store=store, ocr_scans=False)
+            self.assertEqual(calls, [])
+            update_space(spec.space_id, store=store, ocr_scans=True)
+            self.assertEqual(calls, ["空白.pdf"])
+            calls.clear()
+            update_space(spec.space_id, store=store, ocr_scans=False)
+            self.assertEqual(calls, [])
+            found = search_files(
+                store, SearchQuery(text="高等数学", scope="body", limit=10))
+            self.assertTrue(any(hit.rel_path == "空白.pdf" for hit in found.hits))
+
+    def test_vision_reads_a_one_page_scan(self):
+        if sys.platform != "darwin":
+            self.skipTest("只在 Mac 上跑系统文字识别")
+        from ocr_engine import engine_names
+        from pdf_pages import scan_pdf_ocr
+        if "vision" not in engine_names():
+            self.skipTest("没有 Vision")
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QColor, QFont, QImage, QPainter
+        from PySide6.QtWidgets import QApplication
+        from PIL import Image
+
+        app = QApplication.instance() or QApplication([])
+        with tempfile.TemporaryDirectory() as tmp:
+            png = os.path.join(tmp, "note.png")
+            image = QImage(900, 240, QImage.Format.Format_RGB32)
+            image.fill(QColor("white"))
+            painter = QPainter(image)
+            painter.setPen(QColor("black"))
+            painter.setFont(QFont("PingFang SC", 64))
+            painter.drawText(
+                image.rect(), int(Qt.AlignmentFlag.AlignCenter), "高等数学作业")
+            painter.end()
+            self.assertTrue(image.save(png, "PNG"))
+            pdf_path = os.path.join(tmp, "scan.pdf")
+            Image.open(png).save(pdf_path, "PDF", resolution=72.0)
+            text, reason = scan_pdf_ocr(pdf_path)
+            self.assertIn("数学", text + reason)
+        del app
+
 
 if __name__ == "__main__":
     unittest.main()
