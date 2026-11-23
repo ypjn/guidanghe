@@ -2495,8 +2495,27 @@ class MainWindow(QMainWindow):
         toolbar = QHBoxLayout()
         toolbar.setSpacing(8)
         self.path_edit = QLineEdit()
-        self.path_edit.setPlaceholderText("还没有选择文件夹，也可以把文件拖进窗口")
-        self.path_edit.setReadOnly(True)
+        self.path_edit.setPlaceholderText("单击这里，输入或粘贴文件夹路径")
+        self.path_edit.setToolTip(
+            "单击后可以直接修改路径。回车才切换文件夹，Esc 取消。"
+            "点到别处不切换，选中或输入会保留。")
+        self.path_edit.returnPressed.connect(self._commit_typed_path)
+        path_palette = self.path_edit.palette()
+        path_palette.setColor(
+            QPalette.ColorGroup.Inactive, QPalette.ColorRole.Highlight,
+            path_palette.color(QPalette.ColorGroup.Active, QPalette.ColorRole.Highlight))
+        path_palette.setColor(
+            QPalette.ColorGroup.Inactive, QPalette.ColorRole.HighlightedText,
+            path_palette.color(
+                QPalette.ColorGroup.Active, QPalette.ColorRole.HighlightedText))
+        self.path_edit.setPalette(path_palette)
+        self._path_edit_origin = ""
+        self._path_edit_session = False
+        self._path_commit_guard = False
+        self._path_focus_token = 0
+        self._path_edit_cursor = 0
+        self._path_edit_anchor = -1
+        self._path_edit_sel_len = 0
         toolbar.addWidget(self.path_edit, stretch=1)
         self.btn_browse = QPushButton("选择文件夹")
         self.btn_browse.setToolTip("打开系统对话框，选择这次要整理的文件夹")
@@ -2674,9 +2693,20 @@ class MainWindow(QMainWindow):
 
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
-            ["勾选", "原位置", "目标位置", "分类依据", "状态", "大小"]
+            ["", "原位置", "目标位置", "分类依据", "状态", "大小"]
         )
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.Fixed)
+        self.table.setColumnWidth(0, 72)
+        self.header_select_all = QCheckBox("全选", header)
+        self.header_select_all.setToolTip("勾选或取消当前看到的文件。被筛选隐藏的不变。")
+        self.header_select_all.setStyleSheet("QCheckBox{font-size:12px;spacing:4px;}")
+        self._header_select_guard = False
+        self.header_select_all.clicked.connect(self._on_header_select_all)
+        header.sectionResized.connect(lambda *_: self._place_header_select_all())
+        self.table.horizontalScrollBar().valueChanged.connect(
+            lambda *_: self._place_header_select_all())
+        self._place_header_select_all()
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
         # S3 / guib F-09：分类依据列固定宽度，长规则不能把状态/大小挤出屏幕
@@ -3060,6 +3090,89 @@ class MainWindow(QMainWindow):
 
     # ============== 浏览 & 扫描 ==============
 
+    def _commit_typed_path(self):
+        """回车时把地址栏里的路径设为整理空间。点到别处不调用这里。"""
+        if self._path_commit_guard or not self._path_edit_session:
+            return
+        edit = self.path_edit
+        previous = getattr(self, "_path_edit_origin", edit.text())
+        typed = edit.text().strip()
+        if len(typed) >= 2 and typed[0] == typed[-1] and typed[0] in "\"'":
+            typed = typed[1:-1].strip()
+        self._path_commit_guard = True
+        try:
+            if not typed:
+                edit.setText(previous)
+                return
+            candidate = os.path.normpath(os.path.expanduser(typed))
+            if self._same_folder(candidate, previous):
+                edit.setText(previous)
+                self._path_edit_session = False
+                self._path_edit_sel_len = 0
+                edit.deselect()
+                return
+            if self._close_pending or self._closing:
+                edit.setText(previous)
+                return
+            if self._working or self._plan_working:
+                edit.setText(previous)
+                self.statusBar().showMessage(
+                    "当前有后台任务运行，暂不能切换整理空间。")
+                return
+            if not os.path.isdir(candidate):
+                edit.setText(previous)
+                self.statusBar().showMessage(f"这个文件夹现在打不开：{typed}")
+                return
+            edit.setText(candidate)
+            self._path_edit_origin = candidate
+            self.btn_scan.setEnabled(True)
+            self._reset_for_new_dir(candidate)
+            self._touch_recent_space(candidate)
+            self.statusBar().showMessage(f"已选择：{candidate}")
+            self._path_edit_session = False
+            self._path_edit_sel_len = 0
+            edit.deselect()
+            self._mark_next_action()
+        finally:
+            self._path_commit_guard = False
+
+    def _select_path_edit(self, token: int):
+        edit = self.path_edit
+        if token != self._path_focus_token or not edit.hasFocus():
+            return
+        edit.selectAll()
+        self._remember_path_edit_state(edit)
+
+    def _restore_path_edit_state(self, token: int):
+        """再次点回地址栏时，保持离开前的选中或光标，不重新全选。"""
+        edit = self.path_edit
+        if token != self._path_focus_token or not edit.hasFocus():
+            return
+        if self._path_edit_sel_len > 0 and self._path_edit_anchor >= 0:
+            edit.setSelection(self._path_edit_anchor, self._path_edit_sel_len)
+        else:
+            edit.setCursorPosition(self._path_edit_cursor)
+
+    def _remember_path_edit_state(self, edit):
+        self._path_edit_cursor = edit.cursorPosition()
+        start = edit.selectionStart()
+        if start >= 0:
+            self._path_edit_anchor = start
+            self._path_edit_sel_len = edit.selectionEnd() - start
+        else:
+            self._path_edit_anchor = -1
+            self._path_edit_sel_len = 0
+
+    def _keep_path_edit_highlight(self):
+        """点到别处后，文件夹不变，地址栏上的选中仍然看得见。"""
+        if not self._path_edit_session:
+            return
+        edit = self.path_edit
+        if edit.hasFocus():
+            return
+        if self._path_edit_sel_len > 0 and self._path_edit_anchor >= 0:
+            edit.setSelection(self._path_edit_anchor, self._path_edit_sel_len)
+
     def on_browse(self):
         if self._close_pending or self._closing or self._working or self._plan_working:
             return
@@ -3070,6 +3183,7 @@ class MainWindow(QMainWindow):
         )
         if chosen:
             self.path_edit.setText(chosen)
+            self._path_edit_origin = chosen
             self.btn_scan.setEnabled(True)
             self._reset_for_new_dir(chosen)
             self._touch_recent_space(chosen)
@@ -3563,6 +3677,7 @@ class MainWindow(QMainWindow):
                 "不会自动创建该目录。")
             return False
         self.path_edit.setText(path)
+        self._path_edit_origin = path
         self.btn_scan.setEnabled(True)
         self._reset_for_new_dir(path)
         self._touch_recent_space(path)
@@ -3981,6 +4096,28 @@ class MainWindow(QMainWindow):
 
     def eventFilter(self, obj, event):
         etype = event.type()
+        if obj is getattr(self, "path_edit", None):
+            if etype == QEvent.Type.FocusIn:
+                self._path_focus_token += 1
+                token = self._path_focus_token
+                if not self._path_edit_session:
+                    self._path_edit_session = True
+                    self._path_edit_origin = obj.text()
+                    QTimer.singleShot(0, lambda: self._select_path_edit(token))
+                else:
+                    QTimer.singleShot(0, lambda: self._restore_path_edit_state(token))
+            elif etype == QEvent.Type.FocusOut:
+                self._remember_path_edit_state(obj)
+                self._path_focus_token += 1
+                QTimer.singleShot(0, self._keep_path_edit_highlight)
+            elif (etype == QEvent.Type.KeyPress
+                  and event.key() == Qt.Key.Key_Escape):
+                self._path_edit_session = False
+                self._path_edit_sel_len = 0
+                obj.setText(getattr(self, "_path_edit_origin", obj.text()))
+                obj.deselect()
+                obj.clearFocus()
+                return True
         if etype == QEvent.Type.ChildAdded:
             child = event.child()
             if isinstance(child, QWidget):
@@ -5615,6 +5752,7 @@ class MainWindow(QMainWindow):
         if plan is None or not self._plan_valid:
             self._visible_flags = []
             self._clear_move_counts()
+            self._sync_header_select_all()
             return
         text = self.plan_search.text().strip().lower()
         ftype = self.type_filter.currentData() or ""
@@ -5783,6 +5921,7 @@ class MainWindow(QMainWindow):
         plan = self.current_plan
         if plan is None or not self._plan_valid:
             self._clear_move_counts()
+            self._sync_header_select_all()
             return
         flags = self._visible_flags
         if len(flags) != plan.total:
@@ -5802,13 +5941,16 @@ class MainWindow(QMainWindow):
                 f"将移动 {move_count}｜跳过 {plan.total - move_count}"
                 + (f"｜待确认歧义 {pending_amb}" if pending_amb else "")
                 + (f"｜已跳过 {skipped}" if skipped else ""))
+        self._sync_header_select_all()
 
     def _set_visible_checked(self, value, invert: bool = False):
         if (self._close_pending or self._closing
                 or self._working or self._plan_working):
+            self._sync_header_select_all()
             return
         plan = self.current_plan
         if plan is None or not self._plan_valid:
+            self._sync_header_select_all()
             return
         flags = self._visible_flags
         if len(flags) != plan.total:
@@ -5830,6 +5972,62 @@ class MainWindow(QMainWindow):
                 cb.blockSignals(False)
         self._update_plan_counts()
         self._update_button_states()
+
+    def _place_header_select_all(self):
+        box = getattr(self, "header_select_all", None)
+        if box is None:
+            return
+        header = self.table.horizontalHeader()
+        x = header.sectionViewportPosition(0)
+        box.setGeometry(x + 6, 0, max(0, header.sectionSize(0) - 8), header.height())
+
+    def _visible_selection_state(self) -> str:
+        plan = self.current_plan
+        if plan is None or not self._plan_valid:
+            return "none"
+        flags = self._visible_flags
+        if len(flags) != plan.total:
+            flags = [True] * plan.total
+        chosen = []
+        for row, visible in enumerate(flags):
+            if not visible:
+                continue
+            item = plan.items[row]
+            if getattr(item, "skipped", False):
+                continue
+            chosen.append(bool(item.selected))
+        if not chosen or not any(chosen):
+            return "none"
+        if all(chosen):
+            return "all"
+        return "some"
+
+    def _sync_header_select_all(self):
+        box = getattr(self, "header_select_all", None)
+        if box is None:
+            return
+        state = self._visible_selection_state()
+        self._header_select_guard = True
+        box.blockSignals(True)
+        if state == "all":
+            box.setCheckState(Qt.CheckState.Checked)
+        elif state == "some":
+            box.setCheckState(Qt.CheckState.PartiallyChecked)
+        else:
+            box.setCheckState(Qt.CheckState.Unchecked)
+        box.setEnabled(
+            self.current_plan is not None and self._plan_valid
+            and not (self._working or self._plan_working
+                     or self._close_pending or self._closing))
+        box.blockSignals(False)
+        self._header_select_guard = False
+        self._place_header_select_all()
+
+    def _on_header_select_all(self, _checked: bool = False):
+        if self._header_select_guard:
+            return
+        self._set_visible_checked(self._visible_selection_state() != "all")
+        self._sync_header_select_all()
 
     def _item_for_table_row(self, row: int):
         """按“当前计划 + 根目录 + 源相对路径”定位条目，不把行号当身份。"""

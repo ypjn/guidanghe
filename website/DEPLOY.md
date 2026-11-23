@@ -50,5 +50,5 @@ git checkout product/desktop-finish-win
 
 - 主按钮「下载 Windows 标准包」
 - `#download` 含 Windows ZIP、Mac DMG 与 SHA-256  
-  Windows `a0413c78505bef3a11dbde116fdf96798af3ef2273fd77adc9bfe0df99390eb1`  
-  Mac `0dedfa0eed1302bc72c2854acef578e3f5f74751f74b79e5df7abf86ffc63597`
+  Windows `58504af4d6531360dbae4f70fb51eec8ec52a8ab92d8b66e77f054d62c4dbe12`  
+  Mac `ab2809e37da30fa2ac21a712831b1176a3317470da62e21eaf33b9c3b71fa017`

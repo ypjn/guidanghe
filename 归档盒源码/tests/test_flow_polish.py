@@ -16,6 +16,7 @@ SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if SRC not in sys.path:
     sys.path.insert(0, SRC)
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QDialogButtonBox, QLabel, QMessageBox, QTextEdit
 
 import main
@@ -195,6 +196,89 @@ class FlowPolishTests(unittest.TestCase):
         choice = dialog.rows_grid.columnMinimumWidth(0)
         self.assertGreaterEqual(choice, 64)
         dialog.close()
+
+    def test_path_bar_commits_a_typed_folder(self):
+        window = main.MainWindow()
+        first = tempfile.mkdtemp(prefix="archivebox_path_a_")
+        second = tempfile.mkdtemp(prefix="archivebox_path_b_")
+        window.path_edit.setText(first)
+        window._path_edit_session = True
+        window._path_edit_origin = first
+        window.current_plan = "keep"
+        window.path_edit.setText(first + os.sep)
+        window._commit_typed_path()
+        self.assertEqual(window.current_plan, "keep")
+        self.assertEqual(window.path_edit.text(), first)
+        window._path_edit_session = True
+        window.path_edit.setText(second)
+        window._commit_typed_path()
+        self.assertEqual(os.path.normpath(window.path_edit.text()), os.path.normpath(second))
+        self.assertIsNone(window.current_plan)
+        self.assertTrue(window.btn_scan.isEnabled())
+        window._path_edit_session = True
+        window.path_edit.setText(os.path.join(second, "没有这个文件夹"))
+        window._commit_typed_path()
+        self.assertEqual(os.path.normpath(window.path_edit.text()), os.path.normpath(second))
+        self.assertIn("打不开", window.statusBar().currentMessage())
+        window._working = True
+        window._path_edit_session = True
+        third = tempfile.mkdtemp(prefix="archivebox_path_c_")
+        window.path_edit.setText(third)
+        window._commit_typed_path()
+        self.assertEqual(os.path.normpath(window.path_edit.text()), os.path.normpath(second))
+        self.assertIn("不能切换", window.statusBar().currentMessage())
+        self.assertFalse(window.path_edit.isReadOnly())
+        window._working = False
+        window._path_edit_session = True
+        window._path_edit_origin = os.path.normpath(second)
+        window.current_plan = "keep"
+        window.path_edit.setText(third)
+        window.path_edit.setSelection(0, 4)
+        window._remember_path_edit_state(window.path_edit)
+        window._keep_path_edit_highlight()
+        self.assertEqual(window.path_edit.text(), third)
+        self.assertEqual(window.current_plan, "keep")
+        self.assertGreater(window.path_edit.selectionEnd(), window.path_edit.selectionStart())
+        window.close()
+
+    def test_header_select_all_toggles_visible_rows(self):
+        window = main.MainWindow()
+        root = tempfile.mkdtemp(prefix="archivebox_all_")
+        first = _item(root, "甲.txt", os.path.join("_已整理", "文档"))
+        second = _item(root, "乙.txt", os.path.join("_已整理", "文档"))
+        second.selected = False
+        plan = OrganizePlan(
+            root=root, mode=MODE_BY_TYPE, rules=[], items=[first, second])
+        window.current_plan = plan
+        window._plan_valid = True
+        window._populate_table(plan, reset_filters=True)
+        self.assertEqual(window.header_select_all.text(), "全选")
+        self.assertEqual(
+            window.header_select_all.checkState(), Qt.CheckState.PartiallyChecked)
+        window.resize(1100, 700)
+        window.show()
+        self.app.processEvents()
+        self.assertGreater(window.header_select_all.width(), 0)
+        self.assertLess(window.header_select_all.x(), window.table.columnWidth(0))
+        window.plan_search.setText("乙")
+        window._on_header_select_all()
+        self.assertTrue(first.selected)
+        self.assertTrue(second.selected)
+        window.plan_search.clear()
+        self.assertEqual(
+            window.header_select_all.checkState(), Qt.CheckState.Checked)
+        window._on_header_select_all()
+        self.assertFalse(first.selected)
+        self.assertFalse(second.selected)
+        window._on_header_select_all()
+        self.assertTrue(first.selected)
+        self.assertTrue(second.selected)
+        self.assertEqual(
+            window.header_select_all.checkState(), Qt.CheckState.Checked)
+        window._on_header_select_all()
+        self.assertFalse(first.selected)
+        self.assertFalse(second.selected)
+        window.close()
 
     def test_sidebar_opens_at_top(self):
         window = main.MainWindow()
