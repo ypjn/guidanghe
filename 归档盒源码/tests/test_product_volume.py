@@ -321,6 +321,47 @@ class VolumeIndexTests(unittest.TestCase):
         self.assertEqual(info.volume_id, child_info.volume_id)
         self.assertEqual(info.filesystem, child_info.filesystem)
 
+    @unittest.skipUnless(sys.platform == "darwin", "macOS volume identity")
+    def test_macos_child_path_keeps_same_volume_identity(self):
+        """子目录必须和父目录得到同一卷身份，不能只靠文件夹名。"""
+        from volume_identity import probe_volume
+
+        info = probe_volume(self.tmp)
+        self.assertIsNotNone(info)
+        self.assertTrue(info.volume_id.startswith("uuid:"), info.volume_id)
+        child = os.path.join(self.tmp, "子目录 测试")
+        os.makedirs(child)
+        child_info = probe_volume(child)
+        self.assertIsNotNone(child_info)
+        self.assertEqual(info.volume_id, child_info.volume_id)
+        self.assertEqual(info.filesystem, child_info.filesystem)
+
+    @unittest.skipIf(os.name == "nt", "POSIX directory symlink escape check")
+    def test_directory_symlink_outside_space_not_indexed(self):
+        """目录符号链接指向空间外时，索引不得把哨兵登记成空间内文件。"""
+        from index_service import register_space, update_space
+        from index_store import IndexStore
+
+        root = os.path.join(self.tmp, "space root")
+        outside = os.path.join(self.tmp, "哨兵目录")
+        os.makedirs(root)
+        os.makedirs(outside)
+        _write(outside, "secret.txt", "空间外哨兵\n")
+        _write(root, "inside.txt", "空间内\n")
+        os.symlink(outside, os.path.join(root, "逃逸链接"), target_is_directory=True)
+
+        store = IndexStore(self.db)
+        self.addCleanup(store.close)
+        spec = register_space(root, "symlink", store=store)
+        report = update_space(spec.space_id, store=store)
+        self.assertTrue(
+            report.completed or report.coverage in {"complete", "partial"},
+            report.errors)
+        names = {item.rel_path.replace("\\", "/") for item in store.present_files(spec.space_id)}
+        self.assertIn("inside.txt", names)
+        self.assertNotIn("逃逸链接/secret.txt", names)
+        self.assertNotIn("secret.txt", names)
+
     @unittest.skipUnless(os.name == "nt", "Windows junction escape check")
     def test_windows_junction_outside_space_not_followed_as_inside(self):
         """目录 junction 指向空间外哨兵时，索引不得把哨兵登记为空间内文件。"""

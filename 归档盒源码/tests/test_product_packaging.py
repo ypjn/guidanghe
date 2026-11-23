@@ -70,6 +70,9 @@ class PackagingIdentityTests(unittest.TestCase):
                 script.find("ARCHIVEBOX_BUILD_PYTHON"),
                 script.find(".venv/bin/python"))
         self.assertIn("app_metadata", spec)
+        self.assertIn("backup_dialog", spec)
+        self.assertIn("backup_worker", spec)
+        self.assertIn("relation_graph", spec)
         self.assertIn("归档盒.icns", spec)
         icon = os.path.join(ROOT, "打包", "assets", "归档盒.icns")
         self.assertTrue(os.path.isfile(icon))

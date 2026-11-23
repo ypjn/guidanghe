@@ -235,5 +235,31 @@ powershell -File 打包/build_windows.ps1 -PythonExe .venv\Scripts\python.exe -G
 
 ## E Windows 独立复核（2026-11-22）
 
-见 `docs/product-development/ACCEPTANCE.md`。固定提交 `af1a5d2`；ZIP SHA-256 `95eee7d2c5db1e649ddea46027fe9987c985a3c6a0b2efde6952491f2f737305`；`归档盒.exe` smoke-gui 退出码 0。真盘与 Mac 仍待测。
+见 `docs/product-development/ACCEPTANCE.md`。固定提交 `af1a5d2`；ZIP SHA-256 `95eee7d2c5db1e649ddea46027fe9987c985a3c6a0b2efde6952491f2f737305`；`归档盒.exe` smoke-gui 退出码 0。真盘仍待用户指定目录。Mac 见下节。
+
+
+## D Mac 兼容与 DMG（2026-11-23）
+
+机器：macOS，Apple 芯片 arm64，Python 3.14.8，PySide6 6.12.0，PyInstaller 6.22.3。
+工作区：`guidanghe-mac-finish`，分支 `product/desktop-finish-mac`，从 `ebe02ab` 接出。已生成的 DMG 包内身份仍写着构建时的 `ebe02ab`。
+
+补齐：
+- `diskutil info -plist` 读取卷 UUID。子目录不再用文件夹名充当卷身份。
+- 目录符号链接指向空间外时不登记哨兵，对应 Windows junction 拦截。
+- Mac 打包清单纳入 `backup_dialog`、`backup_worker`、`relation_graph`、`ui_theme`、`media_hints`。
+- 安装验收增加两版备份、校验和恢复到新空目录。
+
+源码测试进程退出码 0：备份 11、备份界面 9、卷身份 8（Windows 两项跳过）、搜索 5、正文 6、打包身份 7、AI 顾问 6，以及 AI 配置、关系图、重复文案、沾边证据脚本。
+
+```sh
+ARCHIVEBOX_BUILD_PYTHON="/Users/ypjn/Desktop/NEU/大二上/aigc2/归档盒源码/.venv/bin/python" zsh 打包/build_mac.sh
+zsh 打包/accept_mac_app.sh 打包/dist/归档盒-1.8.1-macos-arm64.dmg docs/product-development/evidence/batchD-mac
+```
+
+- DMG：`打包/dist/归档盒-1.8.1-macos-arm64.dmg`
+- SHA-256：`f635b68fa00dc96c19c342df2c5e92aa8f3a497559d9210dee8b7ab04651443b`
+- 包内身份记录的提交仍是 `ebe02ab`（构建时 HEAD）。本地 ad-hoc 签名，未公证。
+- 卸载镜像后 imports、organize、reopen-undo、learning-agent、backup-roundtrip、upgrade-seed、upgrade-check、smoke-gui 的应用进程退出码都是 0。运行前后包指纹都是 1309 条且一致。
+
+未测：Apple 开发者签名和公证；未接真实外置盘的拔插；辅助功能下的手工逐项点击。
 

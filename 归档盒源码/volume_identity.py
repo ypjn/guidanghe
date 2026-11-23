@@ -155,21 +155,51 @@ def _windows_volume_serial(path: str) -> tuple[str, str]:
 
 
 def _macos_disk_uuid(root: str, dev: int) -> str:
+    """用 diskutil 的 plist 读取卷 UUID，避免中文文案和子目录名。"""
+    uuid = _macos_plist_uuid(root)
+    if uuid:
+        return uuid
+    device = _macos_df_device(root)
+    if device and device != root:
+        uuid = _macos_plist_uuid(device)
+        if uuid:
+            return uuid
+    return _linux_mount_uuid(dev)
+
+
+def _macos_plist_uuid(target: str) -> str:
+    try:
+        import plistlib
+        import subprocess
+        out = subprocess.run(
+            ["diskutil", "info", "-plist", target],
+            capture_output=True, timeout=3, check=False)
+        if out.returncode != 0 or not out.stdout:
+            return ""
+        data = plistlib.loads(out.stdout)
+    except Exception:
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    for key in ("VolumeUUID", "DiskUUID", "PartitionUUID"):
+        value = str(data.get(key) or "").strip()
+        if value and set(value) != {"0", "-"}:
+            return value
+    return ""
+
+
+def _macos_df_device(path: str) -> str:
     try:
         import subprocess
         out = subprocess.run(
-            ["diskutil", "info", root],
-            capture_output=True, text=True, timeout=3, check=False)
-        if out.returncode != 0:
+            ["df", "-P", path],
+            capture_output=True, text=True, timeout=2, check=False)
+        lines = [line for line in (out.stdout or "").splitlines() if line.strip()]
+        if out.returncode != 0 or len(lines) < 2:
             return ""
-        for line in (out.stdout or "").splitlines():
-            if "Volume UUID" in line or "Disk / Partition UUID" in line:
-                parts = line.split(":", 1)
-                if len(parts) == 2:
-                    return parts[1].strip()
+        return lines[-1].split(maxsplit=1)[0]
     except Exception:
-        pass
-    return _linux_mount_uuid(dev)
+        return ""
 
 
 def _linux_mount_uuid(dev: int) -> str:

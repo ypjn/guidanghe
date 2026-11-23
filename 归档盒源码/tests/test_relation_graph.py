@@ -50,3 +50,13 @@ def test_build_relation_graph_empty():
     graph = build_relation_graph(SimpleNamespace(items=[]))
     assert graph.nodes == []
     assert graph.edges == []
+
+
+def main() -> None:
+    test_build_relation_graph_edges()
+    test_build_relation_graph_empty()
+    print("relation graph checks passed")
+
+
+if __name__ == "__main__":
+    main()

@@ -11,6 +11,7 @@
   learning-agent   确认学习建议、复用到后续预览；管家给出方案但不移动文件
   upgrade-seed     写入旧方案、偏好、最近空间和一次可撤销历史
   upgrade-check    重新打开上述数据，确认没有被清空，并完成撤销
+  backup-roundtrip 备份两版、校验后分别恢复到新空目录并核对内容
   smoke-gui        创建主窗口后退出，返回应用进程退出码
   show-and-quit    显示主窗口若干秒后退出，供原生截图
 """
@@ -42,6 +43,7 @@ def main(argv: list[str]) -> int:
             "learning-agent": cmd_learning_agent,
             "upgrade-seed": cmd_upgrade_seed,
             "upgrade-check": cmd_upgrade_check,
+            "backup-roundtrip": cmd_backup_roundtrip,
             "smoke-gui": cmd_smoke_gui,
             "show-and-quit": cmd_show_and_quit,
         }
@@ -132,6 +134,9 @@ def cmd_imports(report: Report, workdir: str, extra: list[str]) -> None:
     for name in (
         "learning", "learning_dialog", "agent", "agent_dialog",
         "ocr_engine", "app_metadata", "preferences", "content_extract",
+        "backup_dialog", "backup_worker", "backup_service", "volume_identity",
+        "ai_consult", "ai_consult_dialog", "relation_graph", "index_service",
+        "content_search", "ui_theme", "media_hints",
     ):
         try:
             __import__(name)
@@ -392,6 +397,65 @@ def cmd_upgrade_check(report: Report, workdir: str, extra: list[str]) -> None:
                  f"found={found} restored={undone.restored} errors={undone.errors_list}")
     report.check("范围外哨兵未变",
                  _sha256(state["sentinel"]) == state["sentinel_sha256"], "")
+
+
+def cmd_backup_roundtrip(report: Report, workdir: str, extra: list[str]) -> None:
+    """两版备份、校验，再分别恢复到新空目录。"""
+    del extra
+    from backup_service import restore_version, run_backup, verify_version
+
+    source = os.path.join(workdir, "source")
+    vault = os.path.join(workdir, "vault")
+    os.makedirs(os.path.join(source, "docs"))
+    sample = os.path.join(source, "docs", "甲.txt")
+    first = "第一版内容\n"
+    second = "第二版内容\n"
+    with open(sample, "w", encoding="utf-8") as handle:
+        handle.write(first)
+    sentinel = os.path.join(workdir, "范围外哨兵.txt")
+    with open(sentinel, "w", encoding="utf-8") as handle:
+        handle.write("哨兵\n")
+    sentinel_sha = _sha256(sentinel)
+
+    first_run = run_backup(source, vault, note="v1")
+    report.check(
+        "第一版备份可恢复",
+        bool(first_run.recoverable and first_run.version_id),
+        f"errors={first_run.errors}")
+    if not first_run.recoverable:
+        return
+    with open(sample, "w", encoding="utf-8") as handle:
+        handle.write(second)
+    second_run = run_backup(source, vault, note="v2")
+    report.check(
+        "第二版备份可恢复且不同于第一版",
+        bool(second_run.recoverable and second_run.version_id
+             and second_run.version_id != first_run.version_id),
+        f"errors={second_run.errors}")
+    if not second_run.recoverable:
+        return
+
+    for label, version_id, expected in (
+            ("第一版", first_run.version_id, first),
+            ("第二版", second_run.version_id, second)):
+        verified = verify_version(vault, version_id)
+        report.check(f"{label}校验通过", verified.ok, f"errors={verified.errors}")
+        dest = os.path.join(workdir, f"restore-{label}")
+        os.makedirs(dest)
+        restored = restore_version(vault, version_id, dest)
+        restored_path = os.path.join(dest, "docs", "甲.txt")
+        text = ""
+        if os.path.isfile(restored_path):
+            with open(restored_path, encoding="utf-8") as handle:
+                text = handle.read()
+        report.check(
+            f"{label}恢复到新空目录",
+            restored.ok and restored.restored >= 1 and text == expected,
+            f"ok={restored.ok} restored={restored.restored} errors={restored.errors}")
+    report.check("范围外哨兵未变", _sha256(sentinel) == sentinel_sha, "")
+    with open(sample, encoding="utf-8") as handle:
+        source_now = handle.read()
+    report.check("恢复没有改回来源", source_now == second, source_now)
 
 
 def cmd_smoke_gui(report: Report, workdir: str, extra: list[str]) -> None:

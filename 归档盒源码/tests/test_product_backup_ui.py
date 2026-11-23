@@ -250,20 +250,41 @@ class BackupUiLifecycleTests(unittest.TestCase):
         self.assertTrue(any("空目录" in e for e in bad.errors))
 
     def test_close_dialog_waits_for_preview_worker(self):
-        # 放大样本，保证关窗时线程仍在跑
-        for i in range(20):
-            _write(self.source, f"bulk/file_{i}.bin", os.urandom(128 * 1024))
+        import backup_worker
+
+        entered = threading.Event()
+        release = threading.Event()
+        original = backup_worker.preview_backup
+
+        def hold(source, vault, **kwargs):
+            entered.set()
+            cancel = kwargs.get("cancel_event")
+            deadline = time.time() + 8
+            while time.time() < deadline and not release.is_set():
+                if cancel is not None and cancel.is_set():
+                    break
+                time.sleep(0.02)
+            return original(source, vault, **kwargs)
+
+        backup_worker.preview_backup = hold
+        self.addCleanup(setattr, backup_worker, "preview_backup", original)
+        self.dlg.show()
         self.dlg.start_preview()
-        _process(30)
+        self.assertTrue(entered.wait(3), "预览线程没有开始")
+        _process(20)
         self.assertTrue(self.dlg._busy)
-        # close 应忽略并等待
+        self.assertTrue(self.dlg.isVisible())
         self.dlg.close()
-        _process(50)
-        # 若仍在跑则窗口保持；等待结束后可关闭
+        self.assertTrue(self.dlg.isVisible())
+        self.assertTrue(self.dlg._pending_close)
+        self.assertFalse(self.dlg._closing)
+        release.set()
         self._wait_idle(timeout=30)
-        self.dlg._closing = True
-        self.dlg.close()
-        _process(30)
+        if self.dlg.isVisible():
+            self.dlg._closing = True
+            self.dlg.close()
+            _process(30)
+        self.assertFalse(self.dlg.isVisible())
 
     def test_cancel_restore_reports_partial_without_wiping_target(self):
         for i in range(8):

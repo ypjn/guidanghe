@@ -422,7 +422,11 @@ class ContentTests(unittest.TestCase):
         self.addCleanup(upgraded.close)
         version = upgraded.conn.execute(
             "SELECT value FROM meta WHERE key='schema_version'").fetchone()["value"]
-        self.assertEqual(version, "2")
+        self.assertEqual(version, "3")
+        space_cols = {
+            row[1] for row in upgraded.conn.execute("PRAGMA table_info(spaces)")}
+        self.assertIn("volume_id", space_cols)
+        self.assertIn("online", space_cols)
         self.assertEqual(upgraded.get_file("sp-old", "旧.txt")["rel_path"], "旧.txt")
         self.assertEqual(
             search_files(upgraded, SearchQuery(text="旧", scope="body")).hits, [])

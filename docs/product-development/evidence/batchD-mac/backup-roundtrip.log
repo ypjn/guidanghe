@@ -1,0 +1,20 @@
+[PASS] 启动日志不在应用包内
+日志=/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.LiWSPe/backup/logs/启动日志.txt
+应用包=/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.LiWSPe/Applications/归档盒.app
+[PASS] 第一版备份可恢复
+errors=[]
+[PASS] 第二版备份可恢复且不同于第一版
+errors=[]
+[PASS] 第一版校验通过
+errors=[]
+[PASS] 第一版恢复到新空目录
+ok=True restored=1 errors=[]
+[PASS] 第二版校验通过
+errors=[]
+[PASS] 第二版恢复到新空目录
+ok=True restored=1 errors=[]
+[PASS] 范围外哨兵未变
+[PASS] 恢复没有改回来源
+第二版内容
+
+报告：/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.LiWSPe/backup/backup-roundtrip.json
