@@ -1,6 +1,6 @@
 # 归档盒
 
-本地桌面文件整理工具，当前版本 **V1.8.2（1.8.2）**。用 Python、PySide6 和 SQLite。默认离线：不调用付费接口，不上传文件正文，也不做云盘。
+本地桌面文件整理工具，当前版本 **V1.8.3（1.8.3）**。用 Python、PySide6 和 SQLite。默认离线：不调用付费接口，不上传文件正文，也不做云盘。
 
 选一个文件夹后，可以预览整理方案，确认后才移动文件。每次移动都有历史，可以撤销。模型和建议只生成方案，文件变更仍然走预览、确认、执行和撤销。
 
@@ -10,16 +10,16 @@
 
 | 平台 | 形态 | 获取 |
 | --- | --- | --- |
-| **Windows x64** | 免安装 ZIP（解压后双击 `归档盒.exe`） | [归档盒-1.8.2-windows-x64.zip](https://github.com/ypjn/guidanghe/releases/download/v1.8.2/guidanghe-1.8.2-windows-x64.zip) |
-| **macOS Apple 芯片** | `.app` + 只读 DMG | [归档盒-1.8.2-macos-arm64.dmg](https://github.com/ypjn/guidanghe/releases/download/v1.8.2/guidanghe-1.8.2-macos-arm64.dmg) |
+| **Windows x64** | 免安装 ZIP（解压后双击 `归档盒.exe`） | [归档盒-1.8.3-windows-x64.zip](https://github.com/ypjn/guidanghe/releases/download/v1.8.3/guidanghe-1.8.3-windows-x64.zip) |
+| **macOS Apple 芯片** | `.app` + 只读 DMG | [归档盒-1.8.3-macos-arm64.dmg](https://github.com/ypjn/guidanghe/releases/download/v1.8.3/guidanghe-1.8.3-macos-arm64.dmg) |
 
-发布页：[v1.8.2](https://github.com/ypjn/guidanghe/releases/tag/v1.8.2)。两个包都从提交 `ab6697a` 构建。
+发布页：[v1.8.3](https://github.com/ypjn/guidanghe/releases/tag/v1.8.3)。两个包都从提交 `45eb2b4` 构建。
 
 **SHA-256**
 
 ```
-a0413c78505bef3a11dbde116fdf96798af3ef2273fd77adc9bfe0df99390eb1  guidanghe-1.8.2-windows-x64.zip
-0dedfa0eed1302bc72c2854acef578e3f5f74751f74b79e5df7abf86ffc63597  guidanghe-1.8.2-macos-arm64.dmg
+58504af4d6531360dbae4f70fb51eec8ec52a8ab92d8b66e77f054d62c4dbe12  guidanghe-1.8.3-windows-x64.zip
+ab2809e37da30fa2ac21a712831b1176a3317470da62e21eaf33b9c3b71fa017  guidanghe-1.8.3-macos-arm64.dmg
 ```
 
 Windows 包约 91 MB，未签名，SmartScreen 可能提示未知发布者，请先对照哈希。Mac 包约 152 MB，是本机 ad-hoc 签名，没有 Apple 公证。
@@ -32,6 +32,8 @@ Windows 标准 ZIP 只带界面和 PDF 文字提取（PySide6 6.12.0、pypdf 6.4
 
 - 按课程、类型或学期规则整理文件，并撤销到原来的位置
 - 确认框列出真实目标文件夹和文件；已经在自己文件夹里的文件默认不勾选
+- 顶部路径可以单击修改。点到别处不切换文件夹，回车才切换；Esc 取消
+- 预览表头有「全选」，只作用于当前看得到的文件
 - 从改单记录里提出学习建议；确认后才写成偏好
 - **AI 整理顾问**：先扫目录结构，再多轮对话调整；可生成主界面可勾选预览（需自备 API Key）
 - 标题栏有 **AI 管家**，打开的是同一个顾问窗口。一句话查找仍在侧栏，整理和查找分开
