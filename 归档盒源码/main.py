@@ -1926,9 +1926,15 @@ class MainWindow(QMainWindow):
         self._busy_started_at = 0.0
         self._interrupted_batch = None
         self._root_mismatch_note = ""
+        from folder_watch import FolderWatch
+        self._folder_watch = FolderWatch()
+        self._folder_watch_timer = QTimer(self)
+        self._folder_watch_timer.setInterval(400)
+        self._folder_watch_timer.timeout.connect(self._tick_folder_watch)
 
         self._build_ui()
         self._build_menus()
+        self._folder_watch_timer.start()
         self._attach_drop_watch(self)
         for child in self.findChildren(QWidget):
             self._attach_drop_watch(child)
@@ -1939,7 +1945,7 @@ class MainWindow(QMainWindow):
         act_ai = settings_menu.addAction("配置 AI 接口…")
         act_ai.triggered.connect(self.on_ai_settings)
         settings_menu.addSeparator()
-        self._act_folder_watch = settings_menu.addAction("文件夹监视（实验，默认关）")
+        self._act_folder_watch = settings_menu.addAction("文件夹监视（默认关）")
         self._act_folder_watch.setCheckable(True)
         try:
             from product_prefs import load_prefs
@@ -1994,10 +2000,10 @@ class MainWindow(QMainWindow):
             "（当前包内没有附带「使用说明.txt」，以上为内置说明。）")
 
     def _on_folder_watch_toggled(self, checked: bool) -> None:
-        """只持久化开关；本版本不会真正挂监视，避免常驻扫描观感。"""
+        """记住开关。打开后只监听当前空间，新文件不自动移动。"""
         try:
             from product_prefs import set_folder_watch_enabled
-            prefs = set_folder_watch_enabled(bool(checked))
+            set_folder_watch_enabled(bool(checked))
         except Exception as exc:
             self._act_folder_watch.blockSignals(True)
             self._act_folder_watch.setChecked(False)
@@ -2006,12 +2012,56 @@ class MainWindow(QMainWindow):
                 self, "文件夹监视",
                 f"开关没能保存：{exc}\n\n监视仍视为关闭。")
             return
-        if checked:
-            QMessageBox.information(
-                self, "文件夹监视",
-                prefs.folder_watch_note + "\n\n"
-                "已记住「愿意启用」。当前版本仍不会在后台监听文件夹；"
-                "整理继续靠你主动扫描与预览确认。")
+        if not checked:
+            self._folder_watch.stop()
+            return
+        root = self._current_root()
+        if not root or not os.path.isdir(root):
+            try:
+                from product_prefs import set_folder_watch_enabled
+                set_folder_watch_enabled(False)
+            except Exception:
+                pass
+            self._act_folder_watch.blockSignals(True)
+            self._act_folder_watch.setChecked(False)
+            self._act_folder_watch.blockSignals(False)
+            self.statusBar().showMessage(
+                "请先选择整理空间。监视只针对当前空间，不会自动移动文件。")
+            return
+        self._folder_watch.start(root)
+        self.statusBar().showMessage(
+            "正在监视当前空间。新文件只提示重新扫描，不会自动移动。")
+
+    def _tick_folder_watch(self) -> None:
+        watch = getattr(self, "_folder_watch", None)
+        action = getattr(self, "_act_folder_watch", None)
+        if watch is None or action is None or not action.isChecked():
+            if watch is not None and watch.root:
+                watch.stop()
+            return
+        root = self._current_root()
+        if not root or not os.path.isdir(root):
+            if watch.root:
+                watch.stop()
+                self.statusBar().showMessage(
+                    "空间不在线，监视已停。不会自动移动。")
+            return
+        if os.path.realpath(watch.root or "") != os.path.realpath(root):
+            watch.start(root)
+            self.statusBar().showMessage(
+                "正在监视当前空间。新文件只提示重新扫描，不会自动移动。")
+        batch = watch.flush()
+        if batch is None:
+            return
+        if batch.overflow:
+            self.statusBar().showMessage(
+                "发现超过 200 个变化。请重新扫描当前空间。不会自动移动。")
+            return
+        count = len(batch.paths)
+        if count:
+            self.statusBar().showMessage(
+                f"发现 {count} 个新文件。点「重新扫描」后才会进入预览。"
+                "不会自动移动。")
 
     # V1.2: 统一任务状态 —— 旧布尔位以属性形式委托到 TaskContext
     @property
@@ -7041,6 +7091,9 @@ class MainWindow(QMainWindow):
         return out
 
     def closeEvent(self, event):
+        watch = getattr(self, "_folder_watch", None)
+        if watch is not None:
+            watch.stop()
         if self._closing:
             event.accept()
             return

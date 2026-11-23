@@ -55,6 +55,8 @@ hiddenimports = [
     "learning",
     "learning_dialog",
     "ocr_engine",
+    "folder_watch",
+    "watchdog",
     "plan_patch",
     "planner",
     "pypdf",
@@ -94,6 +96,7 @@ hiddenimports = [
 for pkg in (
     "rapidocr",
     "onnxruntime",
+    "watchdog",
     "objc",
     "CoreFoundation",
     "Foundation",

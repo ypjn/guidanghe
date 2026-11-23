@@ -106,5 +106,32 @@ class FolderWatchLifecycleTests(unittest.TestCase):
             pending.stop()
 
 
+class FolderWatchWindowTests(unittest.TestCase):
+    def test_menu_requires_space_and_close_stops(self):
+        app_dir = tempfile.mkdtemp(prefix="archivebox_watch_app_")
+        os.environ["ARCHIVEBOX_APP_DIR"] = app_dir
+        from PySide6.QtGui import QCloseEvent
+        from PySide6.QtWidgets import QApplication
+        import main
+        from product_prefs import load_prefs
+
+        app = QApplication.instance() or QApplication([])
+        window = main.MainWindow()
+        self.addCleanup(window._folder_watch.stop)
+        window._act_folder_watch.setChecked(True)
+        self.assertFalse(window._act_folder_watch.isChecked())
+        self.assertFalse(load_prefs().folder_watch_enabled)
+        self.assertIn("请先选择整理空间", window.statusBar().currentMessage())
+
+        root = tempfile.mkdtemp(prefix="archivebox_watch_root_")
+        window.path_edit.setText(root)
+        window._act_folder_watch.setChecked(True)
+        self.assertIn("不会自动移动", window.statusBar().currentMessage())
+        self.assertTrue(load_prefs().folder_watch_enabled)
+        window.closeEvent(QCloseEvent())
+        self.assertEqual(window._folder_watch.root, "")
+        del app
+
+
 if __name__ == "__main__":
     unittest.main()
