@@ -853,6 +853,30 @@ def _append_evidence(rule_desc: str, extra_source: str, used_extra: bool,
     return rule_desc + "；" + "；".join(bits)
 
 
+_INBOX_DIRS = frozenset({
+    "下载", "downloads", "download", "桌面", "desktop",
+    "待整理", "inbox", "收件箱",
+})
+
+
+def _leave_unchecked(rel_path: str, mode: str, target_dir_rel: str) -> bool:
+    """按类型、按课程再按类型时，自有文件夹里的文件默认不勾选。
+
+    空间根目录和常见收件箱里的散文件仍默认勾选。推荐模式不走这里，
+    它会按原有课程目录归位。已经就在计划目标文件夹里的文件，任何模式都不勾。
+    """
+    parent = os.path.normpath(os.path.dirname(rel_path or ""))
+    if parent == ".":
+        parent = ""
+    target = os.path.normpath(target_dir_rel or "")
+    if parent and parent == target:
+        return True
+    if mode == MODE_BY_DIRECTION_SEMESTER or not parent:
+        return False
+    top = parent.split(os.sep)[0].casefold()
+    return top not in _INBOX_DIRS
+
+
 def classify_entries(
     scan_result: ScanResult,
     mode: str,
@@ -1074,6 +1098,16 @@ def classify_entries(
 
     # 全部分类/归组完成后再统一分配唯一名（稳定、大小写归一，见函数说明）
     assign_unique_targets(items, root)
+
+    for item in items:
+        # 已经放在自有文件夹里的文件，不要在「按类型」里默认勾走。
+        # 推荐模式仍默认勾选：它会按原有课程目录归位，而不是拆成类型文件夹。
+        if _leave_unchecked(item.file.rel_path, mode, item.target_dir_rel):
+            item.selected = False
+            note = "已在自有文件夹中，默认不移动"
+            applied = item.rule_applied or ""
+            if note not in applied:
+                item.rule_applied = f"{applied}；{note}" if applied else note
 
     if mode == MODE_BY_DIRECTION_SEMESTER:
         for item in items:

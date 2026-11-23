@@ -16,7 +16,14 @@ GO_TGZ="$CACHE/go${GO_VER}.darwin-arm64.tar.gz"
 GO_URL="https://mirrors.aliyun.com/golang/go${GO_VER}.darwin-arm64.tar.gz"
 GO="$CACHE/go/bin/go"
 SITE="$DIST/runtime/Lib/site-packages"
-PIP="$ROOT/归档盒源码/.venv/bin/pip"
+if [[ -n "${ARCHIVEBOX_BUILD_PYTHON:-}" ]]; then
+  PYBIN="$ARCHIVEBOX_BUILD_PYTHON"
+elif [[ -x "$ROOT/归档盒源码/.venv/bin/python" ]]; then
+  PYBIN="$ROOT/归档盒源码/.venv/bin/python"
+else
+  echo "未找到构建解释器。请设置 ARCHIVEBOX_BUILD_PYTHON。" >&2
+  exit 1
+fi
 INDEX="https://pypi.tuna.tsinghua.edu.cn/simple"
 
 mkdir -p "$CACHE"
@@ -68,15 +75,9 @@ COMMON_PIP=(
 )
 
 echo "安装 Windows x64 依赖……"
-# 界面只用 Qt Widgets。不装 WebEngine，否则会带上一整份浏览器内核。
-"$PIP" install "${COMMON_PIP[@]}" \
-  rapidocr==3.10.0 \
-  onnxruntime==1.31.1 \
-  "winrt-Windows.Media.Ocr==4!10.0.28000.2957" \
-  "winrt-Windows.Graphics.Imaging==4!10.0.28000.2957" \
-  "winrt-Windows.Storage==4!10.0.28000.2957" \
-  "winrt-Windows.Globalization==4!10.0.28000.2957"
-"$PIP" install "${COMMON_PIP[@]}" --no-deps \
+# 标准 ZIP 只带界面和 PDF 文字提取。不装 watchdog、pypdfium2、RapidOCR。
+"$PYBIN" -m pip install "${COMMON_PIP[@]}" pypdf==6.4.0
+"$PYBIN" -m pip install "${COMMON_PIP[@]}" --no-deps \
   PySide6==6.12.0 \
   PySide6_Essentials==6.12.0 \
   shiboken6==6.12.0
@@ -108,8 +109,13 @@ echo "编译 归档盒.exe ……"
     "$GO" build -ldflags="-H windowsgui -s -w" -o "$DIST/归档盒.exe" .
 )
 
-cat > "$DIST/使用说明.txt" <<'EOF'
-归档盒 Windows 免安装版（V1.7）
+VERSION="$("$PYBIN" -c 'import sys; sys.path.insert(0, sys.argv[1]); from app_metadata import APP_VERSION; print(APP_VERSION)' "$ROOT/归档盒源码")"
+COMMIT="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+"$PYBIN" -c 'import sys; sys.path.insert(0, sys.argv[1]); from app_metadata import write_build_identity; write_build_identity(sys.argv[2], sys.argv[3], "windows-x64")' \
+  "$ROOT/归档盒源码" "$DIST/app/build_identity.json" "$COMMIT"
+
+cat > "$DIST/使用说明.txt" <<EOF
+归档盒 Windows 免安装版（V${VERSION}）
 
 这是给 64 位 Windows 用的。请把整个文件夹一起拷走，不要只拷「归档盒.exe」。
 双击「归档盒.exe」就能打开，不需要安装 Python。
@@ -123,15 +129,21 @@ cat > "$DIST/使用说明.txt" <<'EOF'
 如果窗口没有出现，看同一文件夹里新生成的「启动日志.txt」。
 
 整理记录保存在你的账户里，不在这个文件夹里：
-%APPDATA%\归档盒
+%APPDATA%\\归档盒
 
+这个标准包能提取 PDF 里可复制的文字。
+文件夹监视和扫描版 PDF 渲染没有打进这个包；菜单可以打开，缺少组件时会保持关闭。
 AI 补充分类默认关闭，程序不内置任何密钥；只有你自己打开并填写密钥后才会发请求。
 
 Apple 芯片的 Mac 请用另一份「归档盒.app」，不要用这个 exe。
+构建提交：${COMMIT}
 EOF
 
-rm -f "$PACK/归档盒-Windows-免安装.zip"
-"$ROOT/归档盒源码/.venv/bin/python" "$PACK/zip_unicode.py" \
-  "$DIST" "$PACK/归档盒-Windows-免安装.zip"
+mkdir -p "$PACK/dist"
+ZIP="$PACK/dist/归档盒-${VERSION}-windows-x64.zip"
+rm -f "$ZIP"
+"$PYBIN" "$PACK/zip_unicode.py" "$DIST" "$ZIP"
+shasum -a 256 "$ZIP" | tee "$PACK/dist/SHA256SUMS-windows.txt"
 echo "已生成：$DIST/归档盒.exe"
-echo "压缩包：$PACK/归档盒-Windows-免安装.zip"
+echo "压缩包：$ZIP"
+echo "构建提交：$COMMIT"

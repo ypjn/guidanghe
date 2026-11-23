@@ -13,8 +13,8 @@ import subprocess
 import sys
 
 APP_NAME = "归档盒"
-APP_VERSION = "1.8.1"
-APP_VERSION_LABEL = "V1.8.1"
+APP_VERSION = "1.8.2"
+APP_VERSION_LABEL = "V1.8.2"
 APP_TITLE = f"{APP_NAME} {APP_VERSION_LABEL}"
 BUNDLE_ID = "local.ypjn.archivebox"
 EXECUTABLE_NAME = "archivebox"
