@@ -125,5 +125,22 @@ class ScannedPdfGateTests(unittest.TestCase):
             self.assertEqual(locked_report.reason, "PDF 已加密，未读取正文")
 
 
+class PdfRenderTests(unittest.TestCase):
+    def test_render_first_page_only(self):
+        from pdf_pages import render_pdf_page
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "空白.pdf")
+            _blank_pdf(path)
+            png = render_pdf_page(path, 1)
+            if png:
+                self.addCleanup(lambda: os.path.exists(png) and os.remove(png))
+            self.assertTrue(png and os.path.isfile(png))
+            self.assertGreater(os.path.getsize(png), 0)
+            self.assertIsNone(render_pdf_page(path, 2))
+            os.remove(png)
+
+
+
 if __name__ == "__main__":
     unittest.main()

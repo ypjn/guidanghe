@@ -5,6 +5,9 @@
 from __future__ import annotations
 
 import os
+import tempfile
+
+from ocr_engine import OcrError, model_cache_dir
 
 SCAN_OCR_PAGES = 5
 SCAN_OCR_LONG_EDGE = 1600
@@ -45,3 +48,57 @@ def recognize_scanned_pdf(path: str, render_page, recognize, max_pages: int = SC
     if page_count is not None and page_count > max_pages:
         reason = f"已识别前 {max_pages} 页，后面的扫描页未读"
     return PAGE_BREAK.join(parts), reason
+
+
+def pdf_page_count(path: str) -> int:
+    document = _open_pdf(path)
+    try:
+        return len(document)
+    finally:
+        document.close()
+
+
+def render_pdf_page(path: str, page_index: int,
+                    long_edge: int = SCAN_OCR_LONG_EDGE) -> str | None:
+    """把一页渲染成 PNG。没有这一页时返回 None。"""
+    document = _open_pdf(path)
+    page = None
+    bitmap = None
+    try:
+        if page_index < 1 or page_index > len(document):
+            return None
+        page = document[page_index - 1]
+        width, height = page.get_size()
+        longest = max(float(width), float(height), 1.0)
+        scale = min(long_edge / longest, 4.0)
+        bitmap = page.render(scale=scale)
+        image = bitmap.to_pil()
+        folder = os.path.join(model_cache_dir(), "pages")
+        os.makedirs(folder, exist_ok=True)
+        handle, dest = tempfile.mkstemp(
+            prefix=f"page{page_index}-", suffix=".png", dir=folder)
+        os.close(handle)
+        image.save(dest, format="PNG")
+        return dest
+    except OcrError:
+        raise
+    except Exception as exc:
+        raise OcrError(f"PDF 无法渲染：{exc}") from exc
+    finally:
+        if bitmap is not None:
+            bitmap.close()
+        if page is not None:
+            page.close()
+        document.close()
+
+
+def _open_pdf(path: str):
+    try:
+        import pypdfium2 as pdfium
+    except Exception as exc:
+        raise OcrError("缺少 PDF 页面渲染组件。") from exc
+    try:
+        return pdfium.PdfDocument(path)
+    except Exception as exc:
+        raise OcrError(f"PDF 无法渲染：{exc}") from exc
+
