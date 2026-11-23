@@ -10,16 +10,16 @@
 
 | 平台 | 形态 | 获取 |
 | --- | --- | --- |
-| **Windows x64** | 免安装 ZIP（解压后双击 `归档盒.exe`） | [归档盒-1.8.2-windows-x64.zip](https://github.com/ypjn/guidanghe/releases/download/v1.8.2/归档盒-1.8.2-windows-x64.zip) |
-| **macOS Apple 芯片** | `.app` + 只读 DMG | [归档盒-1.8.2-macos-arm64.dmg](https://github.com/ypjn/guidanghe/releases/download/v1.8.2/归档盒-1.8.2-macos-arm64.dmg) |
+| **Windows x64** | 免安装 ZIP（解压后双击 `归档盒.exe`） | [归档盒-1.8.2-windows-x64.zip](https://github.com/ypjn/guidanghe/releases/download/v1.8.2/guidanghe-1.8.2-windows-x64.zip) |
+| **macOS Apple 芯片** | `.app` + 只读 DMG | [归档盒-1.8.2-macos-arm64.dmg](https://github.com/ypjn/guidanghe/releases/download/v1.8.2/guidanghe-1.8.2-macos-arm64.dmg) |
 
 发布页：[v1.8.2](https://github.com/ypjn/guidanghe/releases/tag/v1.8.2)。两个包都从提交 `ab6697a` 构建。
 
 **SHA-256**
 
 ```
-a0413c78505bef3a11dbde116fdf96798af3ef2273fd77adc9bfe0df99390eb1  归档盒-1.8.2-windows-x64.zip
-0dedfa0eed1302bc72c2854acef578e3f5f74751f74b79e5df7abf86ffc63597  归档盒-1.8.2-macos-arm64.dmg
+a0413c78505bef3a11dbde116fdf96798af3ef2273fd77adc9bfe0df99390eb1  guidanghe-1.8.2-windows-x64.zip
+0dedfa0eed1302bc72c2854acef578e3f5f74751f74b79e5df7abf86ffc63597  guidanghe-1.8.2-macos-arm64.dmg
 ```
 
 Windows 包约 91 MB，未签名，SmartScreen 可能提示未知发布者，请先对照哈希。Mac 包约 152 MB，是本机 ad-hoc 签名，没有 Apple 公证。
