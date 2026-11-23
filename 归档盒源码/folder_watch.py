@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 
 from scanner import SKIP_DIRS, _is_junction_or_reparse
 
@@ -56,3 +57,29 @@ def _crosses_link_or_junction(root: str, path: str) -> bool:
         if os.path.lexists(cursor) and _is_junction_or_reparse(cursor):
             return True
     return False
+
+
+@dataclass
+class WatchBatch:
+    root: str
+    paths: list[str]
+    overflow: int
+
+
+def coalesce_watch(events: list[tuple[str, str]], root: str, cap: int = 200) -> WatchBatch:
+    """按出现顺序去重。超过 cap 的可接受路径只计入 overflow。"""
+    accepted: list[str] = []
+    seen: set[str] = set()
+    overflow = 0
+    for path, kind in events:
+        if not accept_watch_path(root, path, kind):
+            continue
+        key = os.path.normcase(os.path.abspath(path))
+        if key in seen:
+            continue
+        seen.add(key)
+        if len(accepted) >= cap:
+            overflow += 1
+            continue
+        accepted.append(path)
+    return WatchBatch(root=root, paths=accepted, overflow=overflow)
