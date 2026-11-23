@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>归档盒 · 1.8.1</title>
+    <title>归档盒 · 1.8.2</title>
     <meta
       name="description"
-      content="归档盒 1.8.1：本地文件索引与版本备份。搜索更稳，外置盘可离线查，版本可回退。"
+      content="归档盒 1.8.2：本地整理与索引。Windows 免安装包和 Mac 安装镜像都可以下载。"
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -24,7 +24,7 @@
         <p class="brand">归档盒</p>
         <h1>把外置盘上的文件，放进可检索的本地档案。</h1>
         <p class="lede">
-          桌面端索引与备份工具。1.8.1 修好搜索边界，支持外置盘离线查询与本地版本回退。
+          桌面端整理与索引工具。1.8.2 提供 Windows 免安装包和 Mac 安装镜像。
         </p>
         <div class="cta-row">
           <a class="cta primary" href="#download">下载 Windows 标准包</a>
@@ -122,25 +122,25 @@
         <div class="band-head">
           <h2>下载</h2>
           <p>
-            版本 <span class="ver">1.8.1</span> · 核对 SHA-256 后解压使用；macOS
-            安装包尚未随 Release 分发。
+            版本 <span class="ver">1.8.2</span> · 下载后核对 SHA-256。Windows
+            包未签名，Mac 包没有 Apple 公证。
           </p>
         </div>
 
         <div class="download-grid">
           <article class="download-card">
             <h3>Windows 标准包</h3>
-            <p>免安装 ZIP（x64）。解压后双击 <code>归档盒.exe</code> 运行。</p>
+            <p>免安装 ZIP（x64，约 91 MB）。解压后双击 <code>归档盒.exe</code> 运行。</p>
             <a
               class="cta primary"
-              href="https://github.com/ypjn/guidanghe/releases/download/v1.8.1-windows/-1.8.1-windows-x64.zip"
+              href="https://github.com/ypjn/guidanghe/releases/download/v1.8.2/归档盒-1.8.2-windows-x64.zip"
               rel="noopener noreferrer"
               >下载 ZIP</a
             >
             <p class="checksum">
               <span class="checksum-label">SHA-256</span>
               <code class="checksum-value" id="win-sha"
-                >95eee7d2c5db1e649ddea46027fe9987c985a3c6a0b2efde6952491f2f737305</code
+                >a0413c78505bef3a11dbde116fdf96798af3ef2273fd77adc9bfe0df99390eb1</code
               >
             </p>
           </article>
@@ -153,17 +153,19 @@
 
           <article class="download-card">
             <h3>macOS</h3>
-            <p>
-              正式 DMG 尚未挂在 GitHub Release。请在 Apple 芯片 Mac
-              上按仓库说明自行构建。
-            </p>
+            <p>Apple 芯片，只读 DMG，约 152 MB。把应用拖进「应用程序」。</p>
             <a
-              class="cta quiet"
-              href="https://github.com/ypjn/guidanghe/blob/main/打包/构建说明.md"
+              class="cta primary"
+              href="https://github.com/ypjn/guidanghe/releases/download/v1.8.2/归档盒-1.8.2-macos-arm64.dmg"
               rel="noopener noreferrer"
-              target="_blank"
-              >查看构建说明</a
+              >下载 DMG</a
             >
+            <p class="checksum">
+              <span class="checksum-label">SHA-256</span>
+              <code class="checksum-value"
+                >0dedfa0eed1302bc72c2854acef578e3f5f74751f74b79e5df7abf86ffc63597</code
+              >
+            </p>
           </article>
         </div>
       </section>
@@ -172,8 +174,8 @@
         <div class="band-head">
           <h2>本轮交付</h2>
           <p>
-            Release <code>v1.8.1-windows</code> · 版本
-            <span class="ver">1.8.1</span>
+            Release <code>v1.8.2</code> · 版本
+            <span class="ver">1.8.2</span>
           </p>
         </div>
 
@@ -193,7 +195,7 @@
           <article>
             <h3>发布</h3>
             <p>
-              Windows 标准包已上架 Release；Mac DMG 与 OCR 可选包仍在准备中。
+              Windows 标准包和 Mac DMG 都在 Release v1.8.2。标准包不含 OCR。
             </p>
           </article>
         </div>
@@ -210,14 +212,7 @@
             可能提示）
           </li>
           <li>
-            macOS：克隆 <code>ypjn/guidanghe</code>，按
-            <a
-              href="https://github.com/ypjn/guidanghe/blob/main/打包/构建说明.md"
-              rel="noopener noreferrer"
-              target="_blank"
-              >打包/构建说明.md</a
-            >
-            构建
+            macOS：下载上方 DMG，把「归档盒」拖进「应用程序」后打开
           </li>
           <li>用验收脚本核对搜索、卷身份与备份恢复</li>
         </ol>
@@ -225,7 +220,7 @@
     </main>
 
     <footer>
-      <p>归档盒 1.8.1 · 发布状态页</p>
+      <p>归档盒 1.8.2 · 发布状态页</p>
     </footer>
 
     <script src="./main.js"></script>
