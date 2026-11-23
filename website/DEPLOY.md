@@ -49,5 +49,6 @@ git checkout product/desktop-finish-win
 打开 https://guidanghe.apps.grok.bot/ 应看到：
 
 - 主按钮「下载 Windows 标准包」
-- `#download` 含 ZIP 与 SHA-256  
-  `95eee7d2c5db1e649ddea46027fe9987c985a3c6a0b2efde6952491f2f737305`
+- `#download` 含 Windows ZIP、Mac DMG 与 SHA-256  
+  Windows `a0413c78505bef3a11dbde116fdf96798af3ef2273fd77adc9bfe0df99390eb1`  
+  Mac `0dedfa0eed1302bc72c2854acef578e3f5f74751f74b79e5df7abf86ffc63597`
