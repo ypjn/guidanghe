@@ -63,7 +63,8 @@ class _Stop(Exception):
 
 
 def extract_document(path: str, root: str, limits: ContentLimits | None = None,
-                     cancel_event=None, before_body=None) -> ExtractionReport:
+                     cancel_event=None, before_body=None,
+                     scan_ocr=None) -> ExtractionReport:
     """读取一个文件。读取前后都核对身份；对不上就丢弃这次正文。"""
     limits = limits or ContentLimits()
     if cancel_event is not None and cancel_event.is_set():
@@ -87,7 +88,8 @@ def extract_document(path: str, root: str, limits: ContentLimits | None = None,
         elif ext in OFFICE_EXTENSIONS:
             report = _read_office(path, ext, limits, started, cancel_event)
         elif ext in PDF_EXTENSIONS:
-            report = _read_pdf(path, limits, started, cancel_event)
+            report = _read_pdf(
+                path, limits, started, cancel_event, scan_ocr=scan_ocr)
         else:
             report = ExtractionReport("unsupported", "当前不索引这种格式的正文")
     except OSError as exc:
@@ -281,7 +283,7 @@ def _text_of(node, local_name: str) -> str:
 
 
 def _read_pdf(path: str, limits: ContentLimits, started: float,
-              cancel_event) -> ExtractionReport:
+              cancel_event, scan_ocr=None) -> ExtractionReport:
     size = os.path.getsize(path)
     if size > limits.max_file_bytes:
         return ExtractionReport(
@@ -341,7 +343,27 @@ def _read_pdf(path: str, limits: ContentLimits, started: float,
                 f"已索引前 {limits.max_chars} 个字符，第 {index} 页之后未完整覆盖",
                 chunks, PARSER_NAME)
     if not chunks:
-        return ExtractionReport(
-            "unsupported", "没有可提取文字，未做扫描识别", [], PARSER_NAME)
+        if scan_ocr is None:
+            return ExtractionReport(
+                "unsupported", "没有可提取文字，未做扫描识别", [], PARSER_NAME)
+        return _apply_scan_ocr(path, limits, scan_ocr, cancel_event)
     return ExtractionReport("complete", "", chunks, PARSER_NAME)
+
+
+def _apply_scan_ocr(path: str, limits: ContentLimits, scan_ocr,
+                    cancel_event) -> ExtractionReport:
+    from pdf_pages import CANCELLED_SCAN_REASON, EMPTY_SCAN_REASON, PAGE_BREAK
+
+    text, reason = scan_ocr(path, cancel_event)
+    if reason == CANCELLED_SCAN_REASON:
+        return ExtractionReport("cancelled", reason, [], PARSER_NAME)
+    chunks: list[TextChunk] = []
+    for index, part in enumerate(str(text or "").split(PAGE_BREAK), start=1):
+        chunks.extend(_split(
+            part, f"第{index}页（扫描）", limits, len(chunks) + 1))
+    if not chunks:
+        return ExtractionReport(
+            "unsupported", reason or EMPTY_SCAN_REASON, [], PARSER_NAME)
+    status = "partial" if reason else "complete"
+    return ExtractionReport(status, reason, chunks, PARSER_NAME)
 
