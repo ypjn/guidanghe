@@ -1,0 +1,23 @@
+[PASS] 启动日志不在应用包内
+日志=/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.LiWSPe/imports/logs/启动日志.txt
+应用包=/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.LiWSPe/Applications/归档盒.app
+[PASS] 加载 learning
+[PASS] 加载 learning_dialog
+[PASS] 加载 agent
+[PASS] 加载 agent_dialog
+[PASS] 加载 ocr_engine
+[PASS] 加载 app_metadata
+[PASS] 加载 preferences
+[PASS] 加载 content_extract
+[PASS] 加载 backup_dialog
+[PASS] 加载 backup_worker
+[PASS] 加载 backup_service
+[PASS] 加载 volume_identity
+[PASS] 加载 ai_consult
+[PASS] 加载 ai_consult_dialog
+[PASS] 加载 relation_graph
+[PASS] 加载 index_service
+[PASS] 加载 content_search
+[PASS] 加载 ui_theme
+[PASS] 加载 media_hints
+报告：/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.LiWSPe/imports/imports.json

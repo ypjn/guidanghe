@@ -1,0 +1,14 @@
+{
+  "ArchiveBoxBuildCommit" => "ebe02abe2d1587a3c66bb8329bc32d8d019ef250"
+  "CFBundleDisplayName" => "归档盒"
+  "CFBundleExecutable" => "archivebox"
+  "CFBundleIconFile" => "归档盒.icns"
+  "CFBundleIdentifier" => "local.ypjn.archivebox"
+  "CFBundleInfoDictionaryVersion" => "6.0"
+  "CFBundleName" => "归档盒"
+  "CFBundlePackageType" => "APPL"
+  "CFBundleShortVersionString" => "1.8.1"
+  "CFBundleVersion" => "1.8.1"
+  "LSMinimumSystemVersion" => "12.0"
+  "NSHighResolutionCapable" => true
+}

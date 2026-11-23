@@ -280,7 +280,7 @@ def _short_error(exc: OSError) -> str:
 
 
 def extract_contents(files, cancel_event=None, progress_cb=None,
-                     root: str | None = None) -> ContentExtraction:
+                     root: str | None = None, ocr_scans: bool = False) -> ContentExtraction:
     """按文件提取正文；单个文件失败不影响其余文件。
 
     取消时不抛异常，返回已处理的部分，并置 cancelled=True。调用方应丢弃
@@ -354,6 +354,38 @@ def extract_contents(files, cancel_event=None, progress_cb=None,
                     result.errors.get(entry.rel_path)
                     or "正文为空或没有可读取的文字")
             result.texts[entry.rel_path] = text
+            continue
+
+        if ext == ".pdf":
+            if ocr_scans and root is not None:
+                from index_content import extract_document
+                from pdf_pages import scan_pdf_ocr
+
+                if not _is_within_root(entry.abs_path, root):
+                    result.errors[entry.rel_path] = "无法读取正文：越出整理空间"
+                    result.kinds[entry.rel_path] = "读取失败"
+                    continue
+                report = extract_document(
+                    entry.abs_path, root, cancel_event=cancel_event,
+                    scan_ocr=scan_pdf_ocr)
+                if report.status == "cancelled":
+                    result.cancelled = True
+                    break
+                scan_chunks = [
+                    chunk for chunk in report.chunks if "扫描" in chunk.location]
+                if scan_chunks:
+                    result.texts[entry.rel_path] = "\n".join(
+                        chunk.text for chunk in scan_chunks)
+                    result.kinds[entry.rel_path] = "正文"
+                    if report.reason:
+                        result.errors[entry.rel_path] = report.reason
+                    continue
+                if report.reason and "扫描" in report.reason:
+                    result.errors[entry.rel_path] = report.reason
+                    result.kinds[entry.rel_path] = "未支持"
+                    continue
+            result.errors[entry.rel_path] = unsupported_reason(name)
+            result.kinds[entry.rel_path] = "未支持"
             continue
 
         if ext in OCR_EXTENSIONS:

@@ -1,0 +1,15 @@
+{
+  "work": "/tmp/archivebox-release-verify-eenl0dx4",
+  "checks": {
+    "search_exit": 0,
+    "search_ok": true,
+    "backup_exit": 0,
+    "backup_ok": true,
+    "upgrade_exit": 0,
+    "upgrade_ok": true,
+    "imports_exit": 0,
+    "imports_ok": true,
+    "app_version": "1.8.1"
+  },
+  "ok": true
+}

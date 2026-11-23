@@ -525,10 +525,15 @@ def t20_scheme_name_and_default_choice():
 
 
 def t21_version_and_guide():
+    import app_metadata
     title = main_mod.APP_TITLE
     payload = CT.export_scheme_payload(default_config(), "x")
-    ok_ = (title == "归档盒 V1.7" and payload["app"]["version"] == "1.7")
-    ok("P2-21", "版本号统一为 V1.7（窗口标题 + 方案导出）", ok_,
+    ok_ = (title == app_metadata.APP_TITLE
+           and title == "归档盒 V1.8"
+           and payload["app"]["name"] == "归档盒"
+           and payload["app"]["version"] == app_metadata.APP_VERSION
+           and payload["app"]["version"] == "1.8.0")
+    ok("P2-21", "版本号在窗口标题和方案导出中一致（V1.8）", ok_,
        f"标题={title} 导出版本={payload['app']['version']}")
 
 

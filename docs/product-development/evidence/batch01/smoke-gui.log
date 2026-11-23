@@ -1,0 +1,10 @@
+qt.qpa.fonts: Populating font family aliases took 96 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
+[PASS] 启动日志不在应用包内
+日志=/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.9YBcgP/upgrade-logs/启动日志.txt
+应用包=/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.9YBcgP/Applications/归档盒.app
+[PASS] 主窗口标题带当前版本
+标题=归档盒 V1.8
+[PASS] 主窗口已创建
+visible=True
+[PASS] 离屏窗口可以关闭
+报告：/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.9YBcgP/smoke/smoke-gui.json

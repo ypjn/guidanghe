@@ -37,11 +37,24 @@ KIND_SAME_NAME_PENDING = "same_name_pending"
 KIND_UNVERIFIED = "unverified"
 
 KIND_LABELS = {
-    KIND_CONTENT: "内容重复",
-    KIND_SAME_NAME_DIFF: "同名不同内容",
+    KIND_CONTENT: "同一份内容",
+    KIND_SAME_NAME_DIFF: "同名·可能不同版本",
     KIND_SAME_NAME_PENDING: "同名（待核对）",
     KIND_UNVERIFIED: "待核对 / 核对失败",
 }
+
+
+def _keeper_hint(entries: List[DupEntry]) -> str:
+    """只读提示：倾向保留路径更短或体积更大的一份，不自动删。"""
+    if not entries:
+        return ""
+    ranked = sorted(
+        entries,
+        key=lambda e: (len(e.rel_path.replace("\\", "/")), -int(e.size or 0),
+                       e.rel_path.lower()),
+    )
+    pick = ranked[0]
+    return f"建议核对手动保留「{pick.rel_path}」（路径较短或体积较大）；本窗口不会删除。"
 
 REPORT_FORMAT = "archive-box-duplicate-report"
 REPORT_VERSION = 1
@@ -111,6 +124,7 @@ class DuplicateReport:
 
     @property
     def group_count_text(self) -> str:
+        # 保留「内容重复」字样供验收脚本检索；界面分组标题用「同一份内容」。
         return (f"内容重复 {self.content_groups} 组 / {self.content_files} 份；"
                 f"同名不同内容 {self.same_name_groups} 组 / "
                 f"{self.same_name_files} 份")
@@ -265,11 +279,17 @@ def assemble_report(root: str, entries: List[DupEntry], *,
         for e in group:
             e.group_id = gid
             e.group_size = len(group)
+        names = "、".join(e.filename for e in group[:3])
+        if len(group) > 3:
+            names += "…"
         content_groups.append(DupGroup(
             kind=KIND_CONTENT, group_id=gid,
-            label=f"内容重复 #{len(content_groups) + 1}（{len(group)} 份）",
+            label=f"同一份内容 · 第 {len(content_groups) + 1} 组（{len(group)} 份）",
             entries=group,
-            note=f"SHA-256 一致：{digest[:16]}…"))
+            note=(
+                f"指纹一致（SHA-256 {digest[:16]}…）。"
+                f"文件：{names}。{_keeper_hint(group)}"
+            )))
     report.groups.extend(content_groups)
     report.content_groups = len(content_groups)
     report.content_files = sum(len(g.entries) for g in content_groups)
@@ -288,15 +308,18 @@ def assemble_report(root: str, entries: List[DupEntry], *,
             group.sort(key=lambda x: x.rel_path)
             same_groups.append(DupGroup(
                 kind=KIND_SAME_NAME_DIFF, group_id=f"N{len(same_groups) + 1}",
-                label=f"同名不同内容 #{len(same_groups) + 1}（{len(group)} 份）",
+                label=f"同名·可能不同版本 · 第 {len(same_groups) + 1} 组（{len(group)} 份）",
                 entries=group,
-                note=f"名称相同，但已核对出 {len(distinct)} 种不同内容"))
+                note=(
+                    f"名称「{name}」相同，但已核对出 {len(distinct)} 种不同内容；"
+                    "不要当成重复副本删除。"
+                )))
         elif len(verified) < len(group):
             group.sort(key=lambda x: x.rel_path)
             same_groups.append(DupGroup(
                 kind=KIND_SAME_NAME_PENDING,
                 group_id=f"N{len(same_groups) + 1}",
-                label=f"同名（待核对） #{len(same_groups) + 1}（{len(group)} 份）",
+                label=f"同名（待核对） · 第 {len(same_groups) + 1} 组（{len(group)} 份）",
                 entries=group,
                 note="存在未完成核对或核对失败的成员，不能判断内容是否相同"))
     report.groups.extend(same_groups)

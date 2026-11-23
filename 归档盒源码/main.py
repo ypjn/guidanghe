@@ -20,6 +20,7 @@ import atexit
 import base64
 import copy
 import csv
+import html
 import json
 import os
 import re
@@ -28,20 +29,28 @@ import sys
 import tempfile
 import threading
 import time
+from datetime import datetime
 import traceback
+
+# Windows 免安装包：在导入 Qt 前登记 DLL / 插件目录。
+if sys.platform == "win32":
+    try:
+        import archivebox_dllpath  # noqa: F401
+    except Exception:
+        pass
 
 from PySide6.QtCore import (
     Qt, QThread, Signal, QTimer, QCoreApplication, QEvent, QItemSelectionModel,
     QRect, QPoint, QSize,
 )
-from PySide6.QtGui import QColor, QFont, QPalette
+from PySide6.QtGui import QAction, QColor, QFont, QPalette
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLayout,
     QPushButton, QLineEdit, QTableWidget, QTableWidgetItem,
     QLabel, QHeaderView, QFileDialog, QStatusBar, QProgressBar,
     QMessageBox, QAbstractItemView, QComboBox, QTextEdit,
     QDialog, QDialogButtonBox, QCheckBox, QInputDialog, QListWidget,
-    QScrollArea, QFrame, QSizePolicy, QSplitter,
+    QScrollArea, QFrame, QSizePolicy, QSplitter, QToolButton, QMenu,
 )
 
 from scanner import scan_directory, scan_paths, ScanResult
@@ -57,6 +66,7 @@ from ocr_engine import OcrError, collect_image_text, engine_label, ocr_supported
 from content_extract import extract_contents
 import scan_cache
 from ai_fallback import AiSettings, apply_ai_fallback, load_settings, save_settings
+from ai_settings_dialog import AiSettingsDialog
 from classification_config import (
     ClassificationConfig, ClassificationConfigError, config_summary,
     default_config, load_config, save_config, config_path,
@@ -80,6 +90,7 @@ from duplicate_report import csv_safe
 from config_transfer import create_backup, restore_latest_backup
 from intake_model import IntakeList, is_within, normalize_path
 import recent_spaces
+import learning
 from executor import (
     execute_plan, undo_latest_batch, undo_is_available,
     recover_batch, interrupted_batch_id, acknowledge_batch_handled,
@@ -88,9 +99,14 @@ from executor import (
 # 归档盒自身源码目录 —— 默认保护，防止程序移动自己
 DEFAULT_PROTECT_APP_SRC = os.path.dirname(os.path.abspath(__file__))
 
-# S3 / lead L-07：对外版本号统一为 V1.7（窗口标题、关于、使用说明）
-APP_VERSION = "V1.7"
-APP_TITLE = f"归档盒 {APP_VERSION}"
+# 名称、版本和构建身份集中在 app_metadata，窗口标题与关于页共用。
+from app_metadata import APP_TITLE, APP_VERSION_LABEL
+from ui_theme import (
+    INK, MUTE, PAPER, PAPER_DEEP, RIBBON, STAMP, STAMP_SOFT, WHITE,
+    AMBER, AMBER_BG, AMBER_LINE, app_stylesheet,
+)
+from relation_graph import RelationGraphDialog
+APP_VERSION = APP_VERSION_LABEL
 
 
 # ======================== 统一任务状态（V1.2） ========================
@@ -236,6 +252,17 @@ class TaskContext:
 
 
 # ======================== 后台线程 ========================
+
+def _format_user_time(raw: str) -> str:
+    """把记录里的 ISO 时间写成看一眼能读的日期。读不懂就原样留下。"""
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    try:
+        return datetime.fromisoformat(text).strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        return text
+
 
 def _execute_headline(result) -> str:
     """整理完成弹窗标题（S3 / guia F-09：没有移动文件时不能说「整理完成」）。"""
@@ -470,6 +497,7 @@ class PlanWorker(QThread):
                 cancel_event=self.cancel_event,
                 progress_cb=_progress,
                 root=self.scan_result.root,
+                ocr_scans=self.ocr_enabled,
             )
             if self.cancel_event.is_set() or extraction.cancelled:
                 # 取消后不发布半成品计划；界面按 seq 丢弃迟到的结果。
@@ -693,8 +721,8 @@ class ExecuteConfirmDialog(QDialog):
                  hidden_selected: int = 0, scope_note: str = ""):
         super().__init__(parent)
         self.setWindowTitle("确认整理计划")
-        self.setMinimumWidth(480)
-        self.resize(520, 340)
+        self.setMinimumWidth(560)
+        self.resize(640, 520)
 
         layout = QVBoxLayout(self)
 
@@ -708,23 +736,57 @@ class ExecuteConfirmDialog(QDialog):
                 f"<br><b>手动修正：</b>{n_override} 个文件"
                 "（仅本次计划的临时修正，不写回配置）"
             )
-        scope_html = (f"<br><b>本次范围：</b>{scope_note}" if scope_note else "")
+        scope_html = (
+            f"<br><b>本次范围：</b>{html.escape(scope_note)}" if scope_note else "")
+        selected = [
+            item for item in plan.items
+            if item.selected and not getattr(item, "skipped", False)]
+        dest_dirs = []
+        seen_dirs = set()
+        file_lines = []
+        for item in selected:
+            dest_dir = os.path.normpath(os.path.join(root, item.target_dir_rel))
+            if dest_dir not in seen_dirs:
+                seen_dirs.add(dest_dir)
+                dest_dirs.append(dest_dir)
+            dest_file = os.path.normpath(os.path.join(root, item.target_rel_path))
+            file_lines.append(f"{item.file.rel_path}  →  {dest_file}")
+        shown_dirs = dest_dirs[:8]
+        dir_html = "<br>".join(html.escape(path) for path in shown_dirs)
+        if not dir_html:
+            dir_html = "（没有勾选要移动的文件）"
+        if len(dest_dirs) > len(shown_dirs):
+            dir_html += f"<br>还有 {len(dest_dirs) - len(shown_dirs)} 个文件夹"
         info_label = QLabel(
-            f"<b>根目录：</b>{root}<br>"
-            f"<b>分类模式：</b>{MODE_LABELS.get(plan.mode, plan.mode)}<br>"
+            f"<b>根目录：</b>{html.escape(root)}<br>"
+            f"<b>分类模式：</b>{html.escape(MODE_LABELS.get(plan.mode, plan.mode))}<br>"
             f"<b>已选文件：</b>{plan.selected_count} / {plan.total}"
             f"{extra_lines}{scope_html}"
             + (
                 f"<br><b>将跳过：</b>{plan.total - plan.selected_count} 个未勾选文件"
                 if plan.total > plan.selected_count else ""
             )
-            + "<br>"
-            f"<b>目标目录：</b>{os.path.join(root, '_已整理')}/…<br>"
+            + f"<br><b>目标文件夹：</b><br>{dir_html}"
         )
         info_label.setWordWrap(True)
         info_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         info_label.setStyleSheet("color:#0F172A; background:#FFFFFF;")
         layout.addWidget(info_label)
+
+        file_title = QLabel("将移动的文件：")
+        layout.addWidget(file_title)
+        file_view = QTextEdit()
+        file_view.setReadOnly(True)
+        shown_files = file_lines[:12]
+        file_text = "\n".join(shown_files)
+        if len(file_lines) > len(shown_files):
+            file_text += f"\n还有 {len(file_lines) - len(shown_files)} 个文件"
+        if not file_text:
+            file_text = "没有勾选要移动的文件。"
+        file_view.setPlainText(file_text)
+        file_view.setMinimumHeight(96)
+        file_view.setMaximumHeight(180)
+        layout.addWidget(file_view)
 
         if plan.conflict_count:
             warn = QLabel(f"<span style='color:#E65100;'>⚠ 注意：有 {plan.conflict_count} 个目标路径磁盘上已存在同名文件，计划已自动分配唯一名称。</span>")
@@ -1884,6 +1946,12 @@ class MainWindow(QMainWindow):
         self._quiet_drop_scan = False
         self._recent_dialog = None
         self._duplicate_dialog = None
+        self._relation_dialog = None
+        self._agent_dialog = None
+        self._consult_dialog = None
+        self._index_dialog = None
+        self._search_dialog = None
+        self._backup_dialog = None
         self._duplicate_worker = None
         self._duplicate_seq = 0
         self._duplicate_cache = None
@@ -1906,15 +1974,34 @@ class MainWindow(QMainWindow):
         self._busy_started_at = 0.0
         self._interrupted_batch = None
         self._root_mismatch_note = ""
+        from folder_watch import FolderWatch
+        self._folder_watch = FolderWatch()
+        self._folder_watch_timer = QTimer(self)
+        self._folder_watch_timer.setInterval(400)
+        self._folder_watch_timer.timeout.connect(self._tick_folder_watch)
 
         self._build_ui()
         self._build_menus()
+        self._folder_watch_timer.start()
         self._attach_drop_watch(self)
         for child in self.findChildren(QWidget):
             self._attach_drop_watch(child)
 
     def _build_menus(self):
         """S3 / guib F-32：提供「帮助 / 关于 / 使用说明」入口。"""
+        settings_menu = self.menuBar().addMenu("设置")
+        act_ai = settings_menu.addAction("配置 AI 接口…")
+        act_ai.triggered.connect(self.on_ai_settings)
+        settings_menu.addSeparator()
+        self._act_folder_watch = settings_menu.addAction("文件夹监视（默认关）")
+        self._act_folder_watch.setCheckable(True)
+        try:
+            from product_prefs import load_prefs
+            self._act_folder_watch.setChecked(
+                bool(load_prefs().folder_watch_enabled))
+        except Exception:
+            self._act_folder_watch.setChecked(False)
+        self._act_folder_watch.toggled.connect(self._on_folder_watch_toggled)
         menu = self.menuBar().addMenu("帮助")
         act_guide = menu.addAction("使用说明")
         act_guide.triggered.connect(self._show_guide)
@@ -1922,15 +2009,11 @@ class MainWindow(QMainWindow):
         act_about.triggered.connect(self._show_about)
 
     def _show_about(self):
+        from app_metadata import about_html
         from scheme_store import app_data_dir
         QMessageBox.about(
             self, f"关于 {APP_TITLE}",
-            f"<b>{APP_TITLE}</b><br><br>"
-            "把散落的文件按学期、课程与类别整理到 _已整理，"
-            "并在移动前给出可核对的预览。<br><br>"
-            f"整理记录保存在：<br>{os.path.join(app_data_dir(), '')}<br>"
-            "（每个整理空间的记录在其 .organizer/history.db）<br><br>"
-            "AI 补充分类默认关闭；只有你自己打开并填写密钥后才会发请求。")
+            about_html(os.path.join(app_data_dir(), "")))
 
     def _show_guide(self):
         """打开包内的使用说明；不存在时直接说明要点，不指向不存在的文件。"""
@@ -1960,8 +2043,96 @@ class MainWindow(QMainWindow):
             "4. 需要还原时点「撤销上一次」；中断的批次会提示核对恢复。\n\n"
             "整理记录保存在每个文件夹的 .organizer 里；"
             f"方案库与最近空间在 {app_data_dir()}。\n"
-            "AI 补充分类默认关闭，程序不内置任何密钥。\n\n"
+            "AI 默认关闭，也不内置密钥。可在「设置 → 配置 AI 接口」"
+            "粘贴你自己的 Key 或厂商脚本，程序会识别常见接口。\n\n"
             "（当前包内没有附带「使用说明.txt」，以上为内置说明。）")
+
+    def _on_folder_watch_toggled(self, checked: bool) -> None:
+        """记住开关。打开后只监听当前空间，新文件不自动移动。"""
+        try:
+            from product_prefs import set_folder_watch_enabled
+            set_folder_watch_enabled(bool(checked))
+        except Exception as exc:
+            self._act_folder_watch.blockSignals(True)
+            self._act_folder_watch.setChecked(False)
+            self._act_folder_watch.blockSignals(False)
+            QMessageBox.warning(
+                self, "文件夹监视",
+                f"开关没能保存：{exc}\n\n监视仍视为关闭。")
+            return
+        if not checked:
+            self._folder_watch.stop()
+            return
+        root = self._current_root()
+        if not root or not os.path.isdir(root):
+            try:
+                from product_prefs import set_folder_watch_enabled
+                set_folder_watch_enabled(False)
+            except Exception:
+                pass
+            self._act_folder_watch.blockSignals(True)
+            self._act_folder_watch.setChecked(False)
+            self._act_folder_watch.blockSignals(False)
+            self.statusBar().showMessage(
+                "请先选择整理空间。监视只针对当前空间，不会自动移动文件。")
+            return
+        if not self._start_folder_watch(root):
+            return
+        self.statusBar().showMessage(
+            "正在监视当前空间。新文件只提示重新扫描，不会自动移动。")
+
+    def _start_folder_watch(self, root: str) -> bool:
+        """打开监视。缺少组件时关掉开关，不让界面停在已勾选。"""
+        try:
+            self._folder_watch.start(root)
+        except Exception:
+            try:
+                from product_prefs import set_folder_watch_enabled
+                set_folder_watch_enabled(False)
+            except Exception:
+                pass
+            action = getattr(self, "_act_folder_watch", None)
+            if action is not None:
+                action.blockSignals(True)
+                action.setChecked(False)
+                action.blockSignals(False)
+            self._folder_watch.stop()
+            self.statusBar().showMessage(
+                "这台电脑没有文件夹监视组件，监视保持关闭。不会自动移动。")
+            return False
+        return True
+
+    def _tick_folder_watch(self) -> None:
+        watch = getattr(self, "_folder_watch", None)
+        action = getattr(self, "_act_folder_watch", None)
+        if watch is None or action is None or not action.isChecked():
+            if watch is not None and watch.root:
+                watch.stop()
+            return
+        root = self._current_root()
+        if not root or not os.path.isdir(root):
+            if watch.root:
+                watch.stop()
+                self.statusBar().showMessage(
+                    "空间不在线，监视已停。不会自动移动。")
+            return
+        if os.path.realpath(watch.root or "") != os.path.realpath(root):
+            if not self._start_folder_watch(root):
+                return
+            self.statusBar().showMessage(
+                "正在监视当前空间。新文件只提示重新扫描，不会自动移动。")
+        batch = watch.flush()
+        if batch is None:
+            return
+        if batch.overflow:
+            self.statusBar().showMessage(
+                "发现超过 200 个变化。请重新扫描当前空间。不会自动移动。")
+            return
+        count = len(batch.paths)
+        if count:
+            self.statusBar().showMessage(
+                f"发现 {count} 个新文件。点「重新扫描」后才会进入预览。"
+                "不会自动移动。")
 
     # V1.2: 统一任务状态 —— 旧布尔位以属性形式委托到 TaskContext
     @property
@@ -2018,8 +2189,10 @@ class MainWindow(QMainWindow):
 
         def side_heading(text):
             lab = QLabel(text)
+            lab.setProperty("role", "step")
             lab.setStyleSheet(
-                "color:#64748B;font-size:11px;font-weight:600;padding:10px 8px 4px 8px;")
+                f"color:{STAMP};font-size:11px;font-weight:650;"
+                f"padding:12px 8px 4px 8px;letter-spacing:0.04em;")
             return lab
 
         def nav(btn):
@@ -2031,17 +2204,40 @@ class MainWindow(QMainWindow):
         title = QHBoxLayout()
         title.setContentsMargins(14, 8, 14, 8)
         title_name = QLabel("归档盒")
-        title_name.setStyleSheet("color:#0F172A;font-weight:600;")
+        title_name.setStyleSheet(
+            f"color:{INK};font-weight:700;font-size:18px;letter-spacing:0.02em;")
         title.addWidget(title_name)
+        self.ai_status_label = QLabel("")
+        self.ai_status_label.setStyleSheet(
+            f"color:{STAMP};background:{STAMP_SOFT};border:1px solid {STAMP};"
+            "border-radius:2px;padding:3px 10px;font-size:12px;")
+        title.addWidget(self.ai_status_label)
         title.addStretch(1)
-        title_hint = QLabel("选中一行后，右侧说明这个文件")
-        title_hint.setStyleSheet("color:#64748B;")
+        title_hint = QLabel("① 选空间　② 核对预览　③ 确认整理")
+        title_hint.setStyleSheet(f"color:{MUTE};")
         title.addWidget(title_hint)
+        title.addSpacing(10)
+        self.btn_ai_assist = QPushButton("AI 管家")
+        self.btn_ai_assist.setObjectName("aiAssist")
+        self.btn_ai_assist.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_ai_assist.setToolTip(
+            "打开 AI 整理顾问：先看这个文件夹的目录结构，再一起调整方案。\n"
+            "窗口里也可以用一句话查找。真正移动文件仍要回到这里确认。")
+        self.btn_ai_assist.clicked.connect(self.on_agent)
+        title.addWidget(self.btn_ai_assist)
+        title.addSpacing(8)
+        self.btn_ai_header = QPushButton("配置 AI")
+        self.btn_ai_header.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_ai_header.setToolTip(
+            "粘贴你自己的 API Key 或厂商脚本，自动识别 DeepSeek / OpenAI / "
+            "通义 / 智谱等 OpenAI 兼容接口")
+        self.btn_ai_header.clicked.connect(self.on_ai_settings)
+        title.addWidget(self.btn_ai_header)
         outer.addLayout(title)
 
         rule = QFrame()
         rule.setFrameShape(QFrame.Shape.HLine)
-        rule.setStyleSheet("color:#E2E8F0;")
+        rule.setStyleSheet(f"color:{PAPER_DEEP};")
         outer.addWidget(rule)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -2051,24 +2247,50 @@ class MainWindow(QMainWindow):
 
         side_inner = QWidget()
         side_inner.setObjectName("sideInner")
-        fill_panel(side_inner, "#F8FAFC")
+        fill_panel(side_inner, PAPER)
         side_lay = QVBoxLayout(side_inner)
         side_lay.setContentsMargins(8, 4, 8, 12)
         side_lay.setSpacing(2)
-        side_lay.addWidget(side_heading("文件夹"))
+
+        # —— ① 空间 ——
+        side_lay.addWidget(side_heading("① 空间"))
         self.storage_tree = StorageTree()
         self.storage_tree.folderHighlighted.connect(self._preview_sidebar_folder)
         self.storage_tree.folderActivated.connect(self._open_sidebar_space)
         self.storage_tree.setMinimumHeight(96)
-        self.storage_tree.setMaximumHeight(160)
+        self.storage_tree.setMaximumHeight(120)
         side_lay.addWidget(self.storage_tree)
-        folder_hint = QLabel("双击文件夹，设为这次要整理的位置")
+        folder_hint = QLabel("双击设为这次要整理的位置")
         folder_hint.setWordWrap(True)
         folder_hint.setStyleSheet(
-            "color:#64748B;font-size:11px;padding:2px 8px 8px 8px;")
+            f"color:{MUTE};font-size:11px;padding:2px 8px 6px 8px;")
         side_lay.addWidget(folder_hint)
+        self.btn_recent = nav(QPushButton("最近打开"))
+        self.btn_recent.setToolTip("打开最近用过的文件夹，也可以固定或移除记录")
+        self.btn_recent.clicked.connect(self.on_recent_spaces)
+        side_lay.addWidget(self.btn_recent)
+        self.btn_intake = nav(QPushButton("待整理清单"))
+        self.btn_intake.setToolTip(
+            "登记这次要整理的文件和文件夹。这里只登记，不移动文件")
+        self.btn_intake.clicked.connect(self.on_intake_dialog)
+        side_lay.addWidget(self.btn_intake)
+        self.btn_scan_intake = nav(QPushButton("只扫描清单"))
+        self.btn_scan_intake.setToolTip(
+            "只扫描「待整理清单」里登记的文件和文件夹；\n"
+            "清单以外的文件不会进入预览")
+        self.btn_scan_intake.setEnabled(False)
+        self.btn_scan_intake.clicked.connect(self.on_scan_intake)
+        side_lay.addWidget(self.btn_scan_intake)
 
-        side_lay.addWidget(side_heading("分类"))
+        # —— ② 预览 ——
+        side_lay.addWidget(side_heading("② 预览"))
+        self.btn_regenerate = nav(QPushButton("重新生成预览"))
+        self.btn_regenerate.setToolTip(
+            "规则或范围变了之后，按当前设置重新计算预览。不会移动文件")
+        self.btn_regenerate.setEnabled(False)
+        self.btn_regenerate.clicked.connect(self.on_regenerate_plan)
+        side_lay.addWidget(self.btn_regenerate)
+
         self.mode_combo = QComboBox()
         for m in ALL_MODES:
             self.mode_combo.addItem(MODE_LABELS[m], m)
@@ -2087,6 +2309,7 @@ class MainWindow(QMainWindow):
         if self._ocr_supported:
             self.ocr_check.setToolTip(
                 "生成预览时读取图片里的文字，用来匹配关键词。\n"
+                "没有可复制文字的 PDF 会识别前 5 页。\n"
                 "已经按文件夹归好的文件不会因此改判。\n"
                 "「文件名关键词」长期规则会同时看图片里的字。\n"
                 + engine_label() + "\n"
@@ -2101,46 +2324,22 @@ class MainWindow(QMainWindow):
         self.ocr_check.stateChanged.connect(self.on_plan_param_changed)
         side_lay.addWidget(self.ocr_check)
 
-        self.ai_check = QCheckBox("待定或识别失败时问 DeepSeek")
-        self.ai_check.setChecked(self._ai_settings.enabled)
-        self.ai_check.setToolTip(
-            "默认关闭。打开后，分类结果是「待定」或图片识别失败时，"
-            "会把文件名、相对路径和一段图片文字发给 api.deepseek.com。\n"
-            "需要填写你自己的密钥。程序不再内置密钥。"
-        )
-        self.ai_check.stateChanged.connect(self._on_ai_toggled)
-        side_lay.addWidget(self.ai_check)
+        self.btn_relation_graph = nav(QPushButton("卷宗关系"))
+        self.btn_relation_graph.setToolTip(
+            "用当前预览画出可核对关系：同一份内容、沾边归类、同类别。\n"
+            "只读，不移动文件。")
+        self.btn_relation_graph.setEnabled(False)
+        self.btn_relation_graph.clicked.connect(self.on_relation_graph)
+        side_lay.addWidget(self.btn_relation_graph)
 
-        self.btn_edit_rules = nav(QPushButton("课程关键词"))
-        self.btn_edit_rules.setToolTip(
-            "只在「按课程再按类型」下生效。\n"
-            "当前推荐分类方式请用「学期和目录规则」"
-        )
-        self.btn_edit_rules.clicked.connect(self.on_edit_rules)
-        side_lay.addWidget(self.btn_edit_rules)
+        self.btn_duplicates = nav(QPushButton("查看重复文件"))
+        self.btn_duplicates.setToolTip(
+            "查看同一份内容、以及同名但可能不同版本的文件。\n"
+            "这里只查看，不删除、不合并、不移动")
+        self.btn_duplicates.setEnabled(False)
+        self.btn_duplicates.clicked.connect(self.on_show_duplicates)
+        side_lay.addWidget(self.btn_duplicates)
 
-        self.btn_edit_config = nav(QPushButton("学期和目录规则"))
-        self.btn_edit_config.setToolTip(
-            "设置学期、课程目录和关键词。\n"
-            "只在「按方向/学期/类别（推荐）」下生效"
-        )
-        self.btn_edit_config.clicked.connect(self.on_edit_config)
-        side_lay.addWidget(self.btn_edit_config)
-
-        self.btn_scheme_center = nav(QPushButton("导入或保存方案"))
-        self.btn_scheme_center.setToolTip(
-            "把当前分类规则保存成方案，或把已有方案应用到这个文件夹")
-        self.btn_scheme_center.clicked.connect(self.on_scheme_center)
-        side_lay.addWidget(self.btn_scheme_center)
-
-        self.btn_regenerate = nav(QPushButton("重新生成预览"))
-        self.btn_regenerate.setToolTip(
-            "规则或范围变了之后，按当前设置重新计算预览。不会移动文件")
-        self.btn_regenerate.setEnabled(False)
-        self.btn_regenerate.clicked.connect(self.on_regenerate_plan)
-        side_lay.addWidget(self.btn_regenerate)
-
-        side_lay.addWidget(side_heading("勾选"))
         self.btn_select_visible = nav(QPushButton("勾选看到的文件"))
         self.btn_select_visible.setToolTip("只勾选表格里当前显示的文件，被筛选隐藏的不变")
         self.btn_select_visible.clicked.connect(
@@ -2156,35 +2355,97 @@ class MainWindow(QMainWindow):
         self.btn_invert_visible.clicked.connect(
             lambda: self._set_visible_checked(None, invert=True))
         side_lay.addWidget(self.btn_invert_visible)
-        self.btn_recent = nav(QPushButton("最近打开"))
-        self.btn_recent.setToolTip("打开最近用过的文件夹，也可以固定或移除记录")
-        self.btn_recent.clicked.connect(self.on_recent_spaces)
-        side_lay.addWidget(self.btn_recent)
 
-        side_lay.addWidget(side_heading("这次"))
-        self.btn_intake = nav(QPushButton("待整理清单"))
-        self.btn_intake.setToolTip(
-            "登记这次要整理的文件和文件夹。这里只登记，不移动文件")
-        self.btn_intake.clicked.connect(self.on_intake_dialog)
-        side_lay.addWidget(self.btn_intake)
+        # AI：次要，不占印章红
+        self.btn_agent = nav(QPushButton("AI 整理顾问"))
+        self.btn_agent.setToolTip(
+            "先扫描你的目录结构，再给出管理建议；\n"
+            "你可以多轮对话调整方案。真正移动仍要回主界面确认。\n"
+            "标题栏右侧的「AI 管家」打开的是同一个窗口。")
+        self.btn_agent.clicked.connect(self.on_agent)
+        side_lay.addWidget(self.btn_agent)
+        self.btn_ai_settings = nav(QPushButton("配置 AI 接口"))
+        self.btn_ai_settings.setToolTip(
+            "粘贴 API Key 或厂商脚本，自动识别接口地址与模型。\n"
+            "不内置密钥；不配置时整理仍可完全离线进行。")
+        self.btn_ai_settings.clicked.connect(self.on_ai_settings)
+        side_lay.addWidget(self.btn_ai_settings)
+        self.ai_check = QCheckBox("待定文件问 AI")
+        self.ai_check.setChecked(self._ai_settings.enabled)
+        self.ai_check.setToolTip(
+            "默认关闭。打开后，分类结果是「待定」或图片识别失败时，"
+            "会把文件名、相对路径和一段正文/图片文字发给你配置的 AI 接口。\n"
+            "需要先在「配置 AI 接口」里填写自己的密钥。"
+        )
+        self.ai_check.stateChanged.connect(self._on_ai_toggled)
+        side_lay.addWidget(self.ai_check)
+        self.ai_side_hint = QLabel("")
+        self.ai_side_hint.setWordWrap(True)
+        self.ai_side_hint.setStyleSheet(
+            f"color:{MUTE};font-size:11px;padding:2px 8px 6px 8px;")
+        side_lay.addWidget(self.ai_side_hint)
 
-        self.btn_scan_intake = nav(QPushButton("只扫描清单"))
-        self.btn_scan_intake.setToolTip(
-            "只扫描「待整理清单」里登记的文件和文件夹；\n"
-            "清单以外的文件不会进入预览")
-        self.btn_scan_intake.setEnabled(False)
-        self.btn_scan_intake.clicked.connect(self.on_scan_intake)
-        side_lay.addWidget(self.btn_scan_intake)
+        # 更多工具：收纳次要入口，主路径更清晰
+        self.btn_edit_rules = QPushButton("课程关键词")
+        self.btn_edit_rules.setToolTip(
+            "只在「按课程再按类型」下生效。\n"
+            "当前推荐分类方式请用「学期和目录规则」"
+        )
+        self.btn_edit_rules.clicked.connect(self.on_edit_rules)
+        self.btn_edit_config = QPushButton("学期和目录规则")
+        self.btn_edit_config.setToolTip(
+            "设置学期、课程目录和关键词。\n"
+            "只在「按方向/学期/类别（推荐）」下生效"
+        )
+        self.btn_edit_config.clicked.connect(self.on_edit_config)
+        self.btn_learning = QPushButton("学习建议")
+        self.btn_learning.setToolTip(
+            "根据最近的改单归纳候选偏好；确认前不会写入偏好表，"
+            "也不会移动文件")
+        self.btn_learning.clicked.connect(self.on_learning_suggestions)
+        self.btn_search = QPushButton("搜索")
+        self.btn_search.setToolTip(
+            "在已登记的空间里按文件名和正文查找。查找不会移动文件。")
+        self.btn_search.clicked.connect(self.on_search)
+        self.btn_index_spaces = QPushButton("文件空间")
+        self.btn_index_spaces.setToolTip(
+            "登记要记住的文件夹。刷新只更新本地索引，不会移动文件。")
+        self.btn_index_spaces.clicked.connect(self.on_index_spaces)
+        self.btn_backup_manage = QPushButton("版本备份")
+        self.btn_backup_manage.setToolTip(
+            "把文件夹做成可恢复的本地版本。备份不删源；"
+            "恢复写入新的空目录。与「配置备份」无关。")
+        self.btn_backup_manage.clicked.connect(self.on_backup_manage)
+        self.btn_scheme_center = QPushButton("导入或保存方案")
+        self.btn_scheme_center.setToolTip(
+            "把当前分类规则保存成方案，或把已有方案应用到这个文件夹")
+        self.btn_scheme_center.clicked.connect(self.on_scheme_center)
 
-        self.btn_duplicates = nav(QPushButton("查看重复文件"))
-        self.btn_duplicates.setToolTip(
-            "查看内容相同、以及文件名相同但内容不同的文件。\n"
-            "这里只查看，不删除、不合并、不移动")
-        self.btn_duplicates.setEnabled(False)
-        self.btn_duplicates.clicked.connect(self.on_show_duplicates)
-        side_lay.addWidget(self.btn_duplicates)
+        more = QToolButton()
+        more.setText("更多工具")
+        more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        more.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        more.setProperty("role", "nav")
+        more_menu = QMenu(more)
+        for w in (
+            self.btn_edit_config, self.btn_edit_rules, self.btn_learning,
+            self.btn_search, self.btn_index_spaces, self.btn_backup_manage,
+            self.btn_scheme_center,
+        ):
+            act = more_menu.addAction(w.text())
+            act.triggered.connect(w.click)
+        more.setMenu(more_menu)
+        side_lay.addWidget(more)
+        # 保留实体按钮供逻辑启用/禁用，但不占侧栏版面
+        for w in (
+            self.btn_edit_config, self.btn_edit_rules, self.btn_learning,
+            self.btn_search, self.btn_index_spaces, self.btn_backup_manage,
+            self.btn_scheme_center,
+        ):
+            w.hide()
 
-        side_lay.addWidget(side_heading("整理"))
+        # —— ③ 执行 ——
+        side_lay.addWidget(side_heading("③ 执行与恢复"))
         self.btn_undo = nav(QPushButton("撤销上一次"))
         self.btn_undo.setToolTip("把最近一次整理移走的文件放回原位置")
         self.btn_undo.setEnabled(False)
@@ -2215,8 +2476,10 @@ class MainWindow(QMainWindow):
         side_scroll.setWidgetResizable(True)
         side_scroll.setFrameShape(QFrame.Shape.NoFrame)
         side_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        fill_panel(side_scroll, "#F8FAFC")
+        fill_panel(side_scroll, PAPER)
         side_scroll.setWidget(side_inner)
+        side_scroll.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.side_scroll = side_scroll
         side_need = self._sidebar_width_for(side_inner)
         side_scroll.setMinimumWidth(side_need)
         side_scroll.setMaximumWidth(560)
@@ -2224,7 +2487,7 @@ class MainWindow(QMainWindow):
 
         center_host = QWidget()
         self.center_host = center_host
-        fill_panel(center_host, "#FFFFFF")
+        fill_panel(center_host, WHITE)
         center = QVBoxLayout(center_host)
         center.setContentsMargins(12, 10, 12, 10)
         center.setSpacing(8)
@@ -2246,6 +2509,35 @@ class MainWindow(QMainWindow):
         self.btn_scan.clicked.connect(self.on_scan)
         toolbar.addWidget(self.btn_scan)
         center.addLayout(toolbar)
+
+        self.ai_banner = QFrame()
+        self.ai_banner.setObjectName("aiBanner")
+        self.ai_banner.setStyleSheet(
+            f"#aiBanner{{background:{STAMP_SOFT};border:1px solid {STAMP};"
+            "border-radius:2px;}")
+        banner_lay = QHBoxLayout(self.ai_banner)
+        banner_lay.setContentsMargins(14, 10, 14, 10)
+        banner_lay.setSpacing(10)
+        banner_copy = QVBoxLayout()
+        banner_copy.setSpacing(2)
+        self.ai_banner_title = QLabel("可选：接入你自己的 AI")
+        self.ai_banner_title.setStyleSheet(
+            f"color:{STAMP};font-weight:650;font-size:13px;")
+        banner_copy.addWidget(self.ai_banner_title)
+        self.ai_banner_body = QLabel(
+            "粘贴 API Key 或厂商脚本。主流程仍是预览确认后移动；"
+            "不配置也能离线整理。")
+        self.ai_banner_body.setWordWrap(True)
+        self.ai_banner_body.setStyleSheet(f"color:{MUTE};font-size:12px;")
+        banner_copy.addWidget(self.ai_banner_body)
+        banner_lay.addLayout(banner_copy, stretch=1)
+        self.btn_ai_banner_setup = QPushButton("配置 AI 接口")
+        self.btn_ai_banner_setup.clicked.connect(self.on_ai_settings)
+        banner_lay.addWidget(self.btn_ai_banner_setup)
+        self.btn_ai_banner_later = QPushButton("稍后再说")
+        self.btn_ai_banner_later.clicked.connect(self._dismiss_ai_banner)
+        banner_lay.addWidget(self.btn_ai_banner_later)
+        center.addWidget(self.ai_banner)
 
         filters = FlowLayout(spacing=6)
         filters.addWidget(QLabel("筛选："))
@@ -2362,11 +2654,11 @@ class MainWindow(QMainWindow):
         self.progress.setTextVisible(False)
         self.progress.setStyleSheet(
             "QProgressBar {"
-            " border: none; border-radius: 6px;"
-            " background: #DBEAFE; min-height: 12px; max-height: 12px;"
+            " border: none; border-radius: 2px;"
+            f" background: {STAMP_SOFT}; min-height: 12px; max-height: 12px;"
             "}"
             "QProgressBar::chunk {"
-            " border-radius: 6px; background: #2563EB;"
+            f" border-radius: 2px; background: {STAMP};"
             "}"
         )
         self.progress_label = QLabel("进行中")
@@ -2374,7 +2666,7 @@ class MainWindow(QMainWindow):
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.progress_label.setMinimumWidth(96)
         self.progress_label.setStyleSheet(
-            "color:#1D4ED8;font-weight:650;font-size:13px;")
+            f"color:{STAMP};font-weight:650;font-size:13px;")
         progress_lay.addWidget(self.progress, 1)
         progress_lay.addWidget(self.progress_label)
         self.progress_row.hide()
@@ -2398,8 +2690,8 @@ class MainWindow(QMainWindow):
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(False)
         table_pal = self.table.palette()
-        table_pal.setColor(QPalette.ColorRole.Highlight, QColor("#EFF6FF"))
-        table_pal.setColor(QPalette.ColorRole.HighlightedText, QColor("#0F172A"))
+        table_pal.setColor(QPalette.ColorRole.Highlight, QColor(STAMP_SOFT))
+        table_pal.setColor(QPalette.ColorRole.HighlightedText, QColor(INK))
         self.table.setPalette(table_pal)
         self.table.itemSelectionChanged.connect(self._update_button_states)
         self._suppress_cell_signals = False
@@ -2422,6 +2714,7 @@ class MainWindow(QMainWindow):
         self.btn_cancel.clicked.connect(self.on_cancel_execute)
         footer.addWidget(self.btn_cancel)
         self.btn_execute = QPushButton("开始整理")
+        self.btn_execute.setProperty("role", "primary")
         self.btn_execute.setToolTip("按预览里勾选的项目移动文件。移动前会再确认一次")
         self.btn_execute.setEnabled(False)
         self.btn_execute.clicked.connect(self.on_execute)
@@ -2499,6 +2792,11 @@ class MainWindow(QMainWindow):
         self.btn_override_selected.setEnabled(False)
         self.btn_override_selected.clicked.connect(self.on_override_selected)
         insp.addWidget(self.btn_override_selected)
+        self.override_hint = QLabel("")
+        self.override_hint.setWordWrap(True)
+        self.override_hint.setStyleSheet("color:#9A3412;font-size:12px;")
+        self.override_hint.hide()
+        insp.addWidget(self.override_hint)
         quiet = QLabel("现在只是预览。点击「开始整理」才会移动。")
         quiet.setWordWrap(True)
         quiet.setStyleSheet("color:#64748B;font-size:12px;")
@@ -2536,20 +2834,57 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("请先选择文件夹，再重新扫描。")
         self._refresh_folder_list()
         self._update_inspector()
+        self._refresh_ai_presence()
         self._mark_next_action()
+        QTimer.singleShot(0, self._reset_sidebar_scroll)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        QTimer.singleShot(0, self._reset_sidebar_scroll)
+
+    def _reset_sidebar_scroll(self):
+        scroll = getattr(self, "side_scroll", None)
+        if scroll is None:
+            return
+        scroll.verticalScrollBar().setValue(0)
+
+    def _sync_override_hint(self, idle, has_plan, plan, selected_rows):
+        hint = getattr(self, "override_hint", None)
+        if hint is None:
+            return
+        if not idle:
+            text = "等当前任务结束后再改。"
+        elif not has_plan or plan is None:
+            text = "先生成有效预览，才能改这一行。"
+        elif plan.mode != MODE_BY_DIRECTION_SEMESTER:
+            label = MODE_LABELS.get(plan.mode, str(plan.mode))
+            text = (
+                f"当前是「{label}」。"
+                "修改这一行只在「按方向/学期/类别（推荐）」里可用。")
+        elif len(selected_rows) != 1:
+            text = "先在表格里选中一行。" if not selected_rows else "一次只能改一行。"
+        elif self.table.isRowHidden(next(iter(selected_rows))):
+            text = "这一行被筛选隐藏了。先清除筛选。"
+        else:
+            text = ""
+        hint.setText(text)
+        hint.setVisible(bool(text))
 
     def _sidebar_width_for(self, side_inner: QWidget) -> int:
         """侧栏要能放下最长的一行字，避免分类名和复选框被裁掉。"""
         fm = side_inner.fontMetrics()
         labels = (
-            "待定或识别失败时问 DeepSeek",
+            "AI 整理顾问",
+            "配置 AI 接口",
+            "待定文件问 AI",
             "按方向/学期/类别（推荐）",
             "勾选看到的文件",
-            "导入或保存方案",
             "重新生成预览",
             "不整理的目录",
             "将生成的目录",
             "查看重复文件",
+            "卷宗关系",
+            "③ 执行与恢复",
         )
         text_w = max(fm.horizontalAdvance(text) for text in labels)
         # 复选框方块、按钮内边距、侧栏左右留白
@@ -2809,6 +3144,8 @@ class MainWindow(QMainWindow):
             append_startup_log(self._storage.recovery_note)
             QMessageBox.warning(self, "整理记录已重建",
                                 self._storage.recovery_note)
+        # 阶段 5：打开整理空间时把历史里可复用的分类决定导入一次。
+        self._import_learning_feedback(root)
         # S2 F-05/F-06：目录改名/移动后历史与撤销仍然可用，但要说清楚
         mismatch = self._storage.root_mismatch_note()
         if mismatch and not self._closing:
@@ -3231,6 +3568,138 @@ class MainWindow(QMainWindow):
         self._touch_recent_space(path)
         self.statusBar().showMessage(f"已打开整理空间：{path}")
         self._mark_next_action()
+        return True
+
+    def on_agent(self):
+        """打开 AI 整理顾问：扫描结构 → 建议 → 多轮调整。"""
+        if self._close_pending or self._closing:
+            return
+        if self._working or self._plan_working:
+            QMessageBox.information(
+                self, "归档盒", "当前有后台任务运行，请稍后再用 AI 整理顾问。")
+            return
+        root = self._current_root()
+        if not root or not os.path.isdir(root):
+            QMessageBox.warning(
+                self, "归档盒", "请先选择一个文件夹，再打开 AI 整理顾问。")
+            return
+        from ai_consult_dialog import AiConsultDialog
+        if self._consult_dialog is not None:
+            self._consult_dialog.raise_()
+            self._consult_dialog.activateWindow()
+            return
+        dlg = AiConsultDialog(self, root, parent=self)
+        dlg.finished.connect(lambda _=0, d=dlg: self._clear_consult_dialog_ref(d))
+        self._consult_dialog = dlg
+        dlg.show()
+
+    def on_agent_quick(self):
+        """阶段 6 原入口：一句话本地查找并生成方案。"""
+        if self._close_pending or self._closing:
+            return
+        if self._working or self._plan_working:
+            QMessageBox.information(
+                self, "归档盒", "当前有后台任务运行，请稍后再用 AI 管家。")
+            return
+        root = self._current_root()
+        if not root or not os.path.isdir(root):
+            QMessageBox.warning(
+                self, "归档盒", "请先选择一个文件夹，再用 AI 管家查找。")
+            return
+        from agent_dialog import AgentDialog
+        if self._agent_dialog is not None:
+            self._agent_dialog.raise_()
+            self._agent_dialog.activateWindow()
+            return
+        protect = [(DEFAULT_PROTECT_APP_SRC, "default", "默认保护（归档盒源码）")]
+        protect.extend(manual_scan_specs(root, self.manual_protect))
+        dlg = AgentDialog(self, root, protect, parent=self)
+        dlg.finished.connect(lambda _=0, d=dlg: self._clear_agent_dialog_ref(d))
+        self._agent_dialog = dlg
+        dlg.show()
+
+    def _clear_agent_dialog_ref(self, dlg):
+        if self._agent_dialog is dlg:
+            self._agent_dialog = None
+
+    def _clear_consult_dialog_ref(self, dlg):
+        if self._consult_dialog is dlg:
+            self._consult_dialog = None
+
+    def _plan_touches_protected(self, plan) -> bool:
+        """方案里任一源/目标落到当前保护目录，就拒绝采用。"""
+        roots = [os.path.realpath(os.path.abspath(DEFAULT_PROTECT_APP_SRC))]
+        roots.extend(
+            os.path.realpath(os.path.abspath(path))
+            for path, _kind, _label in manual_scan_specs(
+                plan.root, self.manual_protect))
+
+        def under(path: str) -> bool:
+            real = os.path.realpath(os.path.abspath(path))
+            return any(real == root or real.startswith(root + os.sep)
+                       for root in roots)
+
+        for item in plan.items:
+            if under(item.file.abs_path):
+                return True
+            if item.target_rel_path and under(
+                    os.path.join(plan.root, item.target_rel_path)):
+                return True
+        return False
+
+    def adopt_agent_plan(self, plan, note: str = "",
+                         scan_result=None) -> bool:
+        """把 AI 管家/顾问方案交给现有预览；执行仍走 on_execute。"""
+        if self._close_pending or self._closing:
+            return False
+        if self._working or self._plan_working:
+            QMessageBox.information(
+                self, "归档盒", "当前有后台任务运行，方案暂不能放入预览。")
+            return False
+        if plan is None or not getattr(plan, "items", None):
+            QMessageBox.information(self, "归档盒", "这个方案没有需要移动的文件。")
+            return False
+        current = self._current_root()
+        if (not current
+                or os.path.realpath(current) != os.path.realpath(plan.root)):
+            QMessageBox.warning(
+                self, "归档盒",
+                "整理空间已经切换，请重新打开 AI 入口生成方案。")
+            return False
+        if self._plan_touches_protected(plan):
+            if self._agent_dialog is not None:
+                self._agent_dialog.invalidate_for_protect_change()
+            QMessageBox.warning(
+                self, "归档盒",
+                "这个 AI 方案碰到了受保护目录（例如归档盒源码自身）。\n"
+                "请换一个整理空间，或在「不整理的目录」里调整保护后再生成。")
+            return False
+        if self._storage is None:
+            try:
+                self._storage = Storage(plan.root)
+            except OSError as exc:
+                QMessageBox.critical(
+                    self, "归档盒",
+                    f"无法在该目录建立整理记录（.organizer）：\n{exc}")
+                return False
+        if scan_result is not None:
+            self._full_scan_result = scan_result
+            self.scan_result = scan_result
+            self.path_edit.setText(plan.root)
+            self._refresh_folder_list()
+        self.current_plan = plan
+        self._plan_valid = True
+        self._plan_scope = "space"
+        self._plan_scope_note = note or "AI 方案"
+        self._populate_table(plan, reset_filters=True)
+        self._invalidate_confirmation()
+        self._update_plan_counts()
+        self._refresh_ambiguity_panel()
+        self._update_button_states()
+        self._mark_next_action()
+        self.invalid_label.hide()
+        self.statusBar().showMessage(
+            f"{self._plan_scope_note}；请核对勾选后点「开始整理」。")
         return True
 
     def on_intake_dialog(self):
@@ -3809,6 +4278,23 @@ class MainWindow(QMainWindow):
             text += extra
         self.statusBar().showMessage(text)
 
+    def _import_learning_feedback(self, root: str):
+        """打开空间 / 执行 / 撤销后，把历史里可复用的记录导入学习反馈。
+
+        只用只读连接；旧库没有学习表或历史库不可读时不影响打开空间、
+        读取偏好与生成预览。
+        """
+        if not root or not os.path.isdir(root):
+            return None
+        try:
+            result = learning.import_history_feedback(root)
+        except Exception as e:
+            append_startup_log(f"学习反馈暂不可用，已跳过历史导入：{e}")
+            return None
+        if result.note:
+            append_startup_log(result.note)
+        return result
+
     def _load_root_config(self, root: str):
         """按根目录加载分类配置。
 
@@ -3883,13 +4369,23 @@ class MainWindow(QMainWindow):
             self.config_label.setStyleSheet("color:#B71C1C;font-size:12px;")
             self.config_label.setToolTip(self._config_error)
             return
-        which = "内置默认" if self._config_source == "default" else "这个文件夹里保存"
-        self.config_label.setText(
-            f"正在使用{which}的学期和目录规则。")
+        mode = self.mode_combo.currentData() if hasattr(self, "mode_combo") else None
+        summary = config_summary(self.classification_config)
+        if mode == MODE_BY_DIRECTION_SEMESTER:
+            which = "内置默认" if self._config_source == "default" else "这个文件夹里保存"
+            self.config_label.setText(f"正在使用{which}的学期和目录规则。")
+            self.config_label.setToolTip(summary)
+        elif mode == MODE_BY_COURSE_THEN_TYPE:
+            self.config_label.setText(
+                "当前是「按课程再按类型」。这一轮不使用学期和目录规则。")
+            self.config_label.setToolTip(
+                "课程名来自「课程关键词」。学期和目录规则只在推荐模式使用。\n" + summary)
+        else:
+            self.config_label.setText(
+                "当前是「按类型」。只按文件类型归到文件夹，不用学期和目录规则。")
+            self.config_label.setToolTip(
+                "学期和目录规则只在「按方向/学期/类别（推荐）」下使用。\n" + summary)
         self.config_label.setStyleSheet("color:#475569;font-size:12px;")
-        self.config_label.setToolTip(
-            config_summary(self.classification_config)
-            + "\n只在「按方向/学期/类别（推荐）」下使用。")
 
     def on_edit_config(self):
         """打开推荐模式配置编辑器（独立草稿，取消不改变生效配置）。"""
@@ -4051,6 +4547,100 @@ class MainWindow(QMainWindow):
         self._preference_note = ""
         self._invalidate_for_config_change()
         return self.classification_config
+
+    def on_search(self):
+        from search_dialog import SearchDialog
+        if self._search_dialog is not None:
+            self._search_dialog.raise_()
+            self._search_dialog.activateWindow()
+            return
+        dlg = SearchDialog(self)
+        dlg.finished.connect(lambda _=0, d=dlg: self._clear_search_dialog_ref(d))
+        self._search_dialog = dlg
+        dlg.show()
+
+    def _clear_search_dialog_ref(self, dlg):
+        if self._search_dialog is dlg:
+            self._search_dialog = None
+
+    def on_index_spaces(self):
+        from index_dialog import IndexSpacesDialog
+        if self._index_dialog is not None:
+            self._index_dialog.raise_()
+            self._index_dialog.activateWindow()
+            return
+        dlg = IndexSpacesDialog(self)
+        dlg.finished.connect(lambda _=0, d=dlg: self._clear_index_dialog_ref(d))
+        self._index_dialog = dlg
+        dlg.show()
+
+    def _clear_index_dialog_ref(self, dlg):
+        if self._index_dialog is dlg:
+            self._index_dialog = None
+
+    def on_backup_manage(self):
+        from backup_dialog import BackupManageDialog
+        if self._backup_dialog is not None:
+            self._backup_dialog.raise_()
+            self._backup_dialog.activateWindow()
+            return
+        root = self.path_edit.text().strip()
+        dlg = BackupManageDialog(self, default_source=root)
+        dlg.finished.connect(lambda _=0, d=dlg: self._clear_backup_dialog_ref(d))
+        self._backup_dialog = dlg
+        dlg.show()
+
+    def _clear_backup_dialog_ref(self, dlg):
+        if self._backup_dialog is dlg:
+            self._backup_dialog = None
+
+    # ============== 学习建议（阶段 5） ==============
+
+    def on_learning_suggestions(self):
+        """展示由历史改单归纳出的候选；确认前不写偏好表、不移动文件。"""
+        if self._close_pending or self._closing:
+            return
+        root = self.path_edit.text().strip()
+        if not root or not os.path.isdir(root):
+            QMessageBox.warning(self, "归档盒", "请先选择一个有效的文件夹。")
+            return
+        self._import_learning_feedback(root)
+        try:
+            learning.build_candidates(root)
+        except Exception as e:
+            QMessageBox.warning(self, "学习建议", f"读取学习候选失败：\n{e}")
+            return
+        from learning_dialog import LearningCandidatesDialog
+        dlg = LearningCandidatesDialog(
+            root,
+            lambda: learning.list_candidates(root),
+            self._confirm_learning_candidate,
+            lambda cid: learning.reject_candidate(root, cid),
+            lambda cid: self._disable_learning_candidate(root, cid),
+            parent=self)
+        dlg.exec()
+
+    def _confirm_learning_candidate(self, candidate_id: str, scope: str):
+        root = self.path_edit.text().strip()
+        if not root or not os.path.isdir(root):
+            raise learning.LearningError("当前没有有效的整理空间，未保存。")
+        # 复用现有单条保存：校验、路径约束、JSON 镜像与失败回滚都不另写一套。
+        learning.confirm_candidate(
+            root, candidate_id, scope,
+            saver=lambda pref: self._save_preference(root, pref))
+        self.statusBar().showMessage(
+            "学习建议已保存为偏好；下一次预览生效，文件仍要勾选并确认后才会移动。")
+
+    def _disable_learning_candidate(self, root: str, candidate_id: str):
+        learning.disable_candidate(root, candidate_id)
+        try:
+            self._load_root_config(root)
+            if self._plan_valid:
+                self._invalidate_for_config_change()
+        except Exception as e:
+            append_startup_log(f"停用学习偏好后刷新配置失败：{e}")
+        self.statusBar().showMessage(
+            "已停用该学习偏好；偏好行仍保留，下一次预览不再采用。")
 
     # ============== 整理方案：导入 / 导出 / 方案库 / 回退（V1.6） ==============
 
@@ -4290,6 +4880,18 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(
             "保护配置已更改，旧预览已失效。请点击「重新扫描」重新生成。"
         )
+        # AI 管家镜像：旧方案与仍在后台的旧查找结果一并作废。
+        if self._agent_dialog is not None:
+            try:
+                root_now = self._current_root()
+                protect = [(DEFAULT_PROTECT_APP_SRC, "default",
+                            "默认保护（归档盒源码）")]
+                if root_now:
+                    protect.extend(
+                        manual_scan_specs(root_now, self.manual_protect))
+                self._agent_dialog.invalidate_for_protect_change(protect)
+            except RuntimeError:
+                self._agent_dialog = None
 
     def on_plan_param_changed(self, *_):
         if self.current_plan is not None:
@@ -4297,21 +4899,37 @@ class MainWindow(QMainWindow):
             self.invalid_label.setText("⚠ 计划已失效（规则/模式/目录已更改）")
             self.invalid_label.show()
             self.statusBar().showMessage("计划参数已更改，请点击「重新生成预览」生成新计划。")
+        self._update_config_label()
         self._update_button_states()
+        self._update_plan_counts()
 
     def _ai_snapshot(self) -> AiSettings:
         current = self._ai_settings
-        return AiSettings(api_key=current.api_key, enabled=bool(current.enabled))
+        return AiSettings(
+            base_url=current.base_url,
+            model=current.model,
+            api_key=current.api_key,
+            enabled=bool(current.enabled),
+            provider_id=current.provider_id,
+            setup_dismissed=bool(current.setup_dismissed),
+        )
 
     def _set_ai_checked(self, checked: bool) -> None:
         self.ai_check.blockSignals(True)
         self.ai_check.setChecked(checked)
         self.ai_check.blockSignals(False)
 
+    def _ai_endpoint_host(self) -> str:
+        from urllib.parse import urlparse
+        host = urlparse((self._ai_settings.base_url or "").strip()).netloc
+        return host or (self._ai_settings.base_url or "你配置的 AI 接口")
+
     def _ai_consent_text(self) -> str:
+        label = self._ai_settings.provider_label()
+        host = self._ai_endpoint_host()
         return (
-            "打开后，预览里仍是「待定」或图片识别失败的文件，会把下面这些内容"
-            "发给 api.deepseek.com：\n\n"
+            f"打开后，预览里仍是「待定」或图片识别失败的文件，会把下面这些内容"
+            f"发给 {label}（{host}）：\n\n"
             "• 文件名\n"
             "• 相对路径\n"
             "• 文件类型\n"
@@ -4324,37 +4942,97 @@ class MainWindow(QMainWindow):
 
     def _ask_ai_consent(self) -> bool:
         reply = QMessageBox.question(
-            self, "打开 DeepSeek 分类", self._ai_consent_text(),
+            self, "打开 AI 补充分类", self._ai_consent_text(),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
         return reply == QMessageBox.Yes
 
-    def _on_ai_toggled(self, *_):
-        checked = self.ai_check.isChecked()
-        if checked and not self._ai_settings.enabled:
-            if not self._ask_ai_consent():
-                self._set_ai_checked(False)
-                return
-            self._ai_consent_given = True
-            if not self._ai_settings.api_key.strip():
-                key, ok = QInputDialog.getText(
-                    self, "DeepSeek 密钥",
-                    "粘贴你自己的 DeepSeek 密钥。留空则保持关闭。",
-                )
-                if not ok or not str(key).strip():
-                    self._set_ai_checked(False)
-                    return
-                self._ai_settings.api_key = str(key).strip()
-        self._ai_settings.enabled = checked
+    def _refresh_ai_presence(self) -> None:
+        settings = self._ai_settings
+        status = settings.status_text()
+        if hasattr(self, "ai_status_label"):
+            self.ai_status_label.setText(status)
+            if settings.ready() and settings.enabled:
+                color = ("color:#166534;background:#ECFDF5;border:1px solid #A7F3D0;")
+            elif settings.ready():
+                color = ("color:#1D4ED8;background:#EFF6FF;border:1px solid #BFDBFE;")
+            else:
+                color = ("color:#9A3412;background:#FFF7ED;border:1px solid #FED7AA;")
+            self.ai_status_label.setStyleSheet(
+                color + "border-radius:999px;padding:3px 10px;font-size:12px;")
+        if hasattr(self, "ai_side_hint"):
+            if settings.ready():
+                self.ai_side_hint.setText(
+                    f"当前：{settings.provider_label()} · {settings.model}")
+            else:
+                self.ai_side_hint.setText("还没有密钥。配置后可对「待定」文件问 AI。")
+        if hasattr(self, "btn_ai_header"):
+            self.btn_ai_header.setText(
+                "管理 AI" if settings.ready() else "配置 AI")
+        if hasattr(self, "btn_ai_settings"):
+            self.btn_ai_settings.setText(
+                "管理 AI 接口" if settings.ready() else "配置 AI 接口")
+        show_banner = (
+            hasattr(self, "ai_banner")
+            and not settings.ready()
+            and not settings.setup_dismissed
+        )
+        if hasattr(self, "ai_banner"):
+            self.ai_banner.setVisible(show_banner)
+        self._set_ai_checked(bool(settings.enabled and settings.ready()))
+
+    def _persist_ai_settings(self) -> bool:
         try:
             save_settings(self._ai_settings)
+            return True
         except OSError as exc:
             append_startup_log(f"AI 设置保存失败：{exc}")
             QMessageBox.warning(
                 self, "AI 设置",
                 f"AI 设置没能保存到磁盘（%APPDATA% 不可写或被占用）：\n{exc}\n\n"
                 "本次运行仍按当前选择生效，下次启动需要重新设置。")
+            return False
+
+    def _dismiss_ai_banner(self) -> None:
+        self._ai_settings.setup_dismissed = True
+        self._persist_ai_settings()
+        self._refresh_ai_presence()
+
+    def on_ai_settings(self) -> None:
+        dlg = AiSettingsDialog(self._ai_settings, self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._ai_settings = dlg.result_settings()
+        self._ai_consent_given = False
+        self._refresh_ai_presence()
+        self.on_plan_param_changed()
+        self.statusBar().showMessage(self._ai_settings.status_text())
+
+    def _on_ai_toggled(self, *_):
+        checked = self.ai_check.isChecked()
+        if checked and not self._ai_settings.enabled:
+            if not self._ai_settings.ready():
+                self._set_ai_checked(False)
+                self.on_ai_settings()
+                if not (self._ai_settings.ready() and self._ai_settings.enabled):
+                    self._set_ai_checked(False)
+                    self._refresh_ai_presence()
+                    return
+                self._ai_consent_given = True
+                self._refresh_ai_presence()
+                self.on_plan_param_changed()
+                return
+            if not self._ask_ai_consent():
+                self._set_ai_checked(False)
+                return
+            self._ai_consent_given = True
+        self._ai_settings.enabled = bool(checked and self._ai_settings.ready())
+        if checked and not self._ai_settings.ready():
+            self._set_ai_checked(False)
+            self._ai_settings.enabled = False
+        self._persist_ai_settings()
+        self._refresh_ai_presence()
         self.on_plan_param_changed()
 
     def on_regenerate_plan(self):
@@ -4424,7 +5102,8 @@ class MainWindow(QMainWindow):
         if use_ocr:
             parts.append("识别图片文字")
         if use_ai:
-            parts.append("对待定或识别失败的文件询问 DeepSeek")
+            parts.append(
+                f"对待定或识别失败的文件询问 {self._ai_settings.provider_label()}")
         phase = ("、".join(parts) + "并生成计划" if parts
                  else "生成计划中（计算 SHA-256 指纹）")
         self._plan_working = True
@@ -4908,8 +5587,7 @@ class MainWindow(QMainWindow):
             w.blockSignals(False)
         self._visible_flags = []
         self._plan_identity = None
-        if hasattr(self, "plan_counts_label"):
-            self.plan_counts_label.setText("")
+        self._clear_move_counts()
         self._close_tree_dialog()
 
     def _clear_plan_filters(self):
@@ -4936,8 +5614,7 @@ class MainWindow(QMainWindow):
         plan = self.current_plan
         if plan is None or not self._plan_valid:
             self._visible_flags = []
-            if hasattr(self, "plan_counts_label"):
-                self.plan_counts_label.setText("")
+            self._clear_move_counts()
             return
         text = self.plan_search.text().strip().lower()
         ftype = self.type_filter.currentData() or ""
@@ -5069,9 +5746,21 @@ class MainWindow(QMainWindow):
                          if i.file.rel_path == source_rel), None)
         if item is None or not item.ambiguity:
             return False
+        before_target = item.target_dir_rel
         updated = skip_plan_item(plan, item.file.rel_path)
         if updated is None:
             return False
+        # 阶段 5：「跳过，保持原位」是用户明确决定；记录后不再被候选归入。
+        root = self.path_edit.text().strip()
+        if root and os.path.isdir(root):
+            try:
+                learning.record_skip(
+                    root, updated.file.rel_path,
+                    before_target=before_target or "",
+                    rule_key=updated.rule_key or "",
+                    rule_applied=updated.rule_applied or "")
+            except Exception as e:
+                append_startup_log(f"记录学习反馈失败：{e}")
         self._after_plan_mutation(
             f"已跳过 {updated.file.rel_path}，源文件保持原位")
         return True
@@ -5082,12 +5771,18 @@ class MainWindow(QMainWindow):
     def on_skip_ambiguity(self):
         self.skip_ambiguity()
 
+    def _clear_move_counts(self):
+        if hasattr(self, "plan_counts_label"):
+            self.plan_counts_label.setText("")
+        if hasattr(self, "impact_label"):
+            self.impact_label.setText("")
+
     def _update_plan_counts(self):
         if not hasattr(self, "plan_counts_label"):
             return
         plan = self.current_plan
-        if plan is None:
-            self.plan_counts_label.setText("")
+        if plan is None or not self._plan_valid:
+            self._clear_move_counts()
             return
         flags = self._visible_flags
         if len(flags) != plan.total:
@@ -5242,6 +5937,72 @@ class MainWindow(QMainWindow):
                     f"扫描纳入 {len(self.scan_result.files) if self.scan_result else 0} 个文件")
         n = len(self.scan_result.files) if self.scan_result else 0
         return f"整个整理空间：当前扫描纳入 {n} 个文件"
+
+    def on_relation_graph(self):
+        """只读：用当前预览画卷宗关系，不移动文件。"""
+        if self._close_pending or self._closing:
+            return
+        if self._working or self._plan_working:
+            QMessageBox.information(
+                self, "归档盒", "当前有后台任务运行，请等待任务结束后再打开卷宗关系。")
+            return
+        plan = self.current_plan
+        if plan is None or not self._plan_valid:
+            QMessageBox.information(
+                self, "归档盒", "请先生成预览，再查看卷宗关系。")
+            return
+        if self._relation_dialog is not None:
+            try:
+                self._relation_dialog.close()
+            except Exception:
+                pass
+            self._relation_dialog = None
+        dlg = RelationGraphDialog(plan, self)
+        dlg.focusPath.connect(self._focus_plan_path)
+        dlg.finished.connect(lambda _=0: self._on_relation_dialog_closed(dlg))
+        self._relation_dialog = dlg
+        dlg.show()
+
+    def _on_relation_dialog_closed(self, dlg):
+        if self._relation_dialog is dlg:
+            self._relation_dialog = None
+
+    def _focus_plan_path(self, rel_path: str):
+        """卷宗关系图点选文件后，在预览表定位该行。"""
+        plan = self.current_plan
+        if plan is None or not rel_path:
+            return
+        want = os.path.normcase(os.path.normpath(rel_path))
+        row = None
+        for index, item in enumerate(plan.items):
+            key = os.path.normcase(os.path.normpath(item.file.rel_path))
+            if key == want:
+                row = index
+                break
+        if row is None:
+            self.statusBar().showMessage(f"预览里找不到：{rel_path}")
+            return
+        if self.table.isRowHidden(row):
+            # 被筛选隐藏时清掉筛选，再定位
+            if hasattr(self, "preview_filter_edit"):
+                self.preview_filter_edit.clear()
+            self._apply_preview_filters()
+        self.table.clearSelection()
+        selection = self.table.selectionModel()
+        if selection is not None:
+            flags = (QItemSelectionModel.SelectionFlag.Select
+                     | QItemSelectionModel.SelectionFlag.Rows)
+            selection.select(self.table.model().index(row, 1), flags)
+            selection.setCurrentIndex(
+                self.table.model().index(row, 1),
+                QItemSelectionModel.SelectionFlag.Current)
+        cell = self.table.item(row, 1)
+        if cell is not None:
+            self.table.scrollToItem(cell)
+        self._update_inspector()
+        self.statusBar().showMessage(f"已定位：{rel_path}")
+        self.raise_()
+        self.activateWindow()
 
     def on_show_duplicates(self):
         if self._close_pending or self._closing:
@@ -5415,7 +6176,7 @@ class MainWindow(QMainWindow):
             "plan" if plan is not None else "scan")
 
     def _set_button_role(self, btn, role: str):
-        """同一时刻只把下一步操作标成蓝色主按钮。"""
+        """同一时刻只把下一步操作标成印章红主按钮。"""
         if (btn.property("role") or "") == role:
             return
         btn.setProperty("role", role)
@@ -5445,15 +6206,21 @@ class MainWindow(QMainWindow):
             self.btn_edit_config.setEnabled(False)
             self.btn_edit_protect.setEnabled(False)
             self.btn_override_selected.setEnabled(False)
+            if hasattr(self, "override_hint"):
+                self.override_hint.setText("等当前任务结束后再改。")
+                self.override_hint.show()
             self.btn_history.setEnabled(False)
             self.mode_combo.setEnabled(False)
             self.ocr_check.setEnabled(False)
             self.ai_check.setEnabled(False)
             self.btn_scheme_center.setEnabled(False)
             self.btn_recent.setEnabled(False)
+            self.btn_agent.setEnabled(False)
+            self.btn_ai_assist.setEnabled(False)
             self.btn_intake.setEnabled(False)
             self.btn_scan_intake.setEnabled(False)
             self.btn_duplicates.setEnabled(False)
+            self.btn_relation_graph.setEnabled(False)
             self._set_preview_controls_enabled(False)
             self._mark_next_action()
             self._sync_intake_label()
@@ -5464,6 +6231,14 @@ class MainWindow(QMainWindow):
         # 历史页面是只读视图，有数据库即可查看；
         # 其内部的撤销/恢复/导出按钮会按任务状态自行禁用
         self.btn_history.setEnabled(self._storage is not None)
+        # AI 管家：选好文件夹且空闲时可用；查找本身不移动文件
+        agent_ready = (
+            bool(self.path_edit.text().strip())
+            and not self._working and not self._plan_working
+            and not self._close_pending and not self._closing
+        )
+        self.btn_agent.setEnabled(agent_ready)
+        self.btn_ai_assist.setEnabled(agent_ready)
 
         plan = self.current_plan
         has_plan = plan is not None and self._plan_valid
@@ -5498,11 +6273,13 @@ class MainWindow(QMainWindow):
         # 本轮只支持推荐模式（其他模式的自动分类快照不含方向/学期/类别，
         # 无法"恢复自动"），与 btn_edit_config 保持同一模式边界。
         selected_rows = {r.row() for r in self.table.selectedIndexes()}
-        self.btn_override_selected.setEnabled(
+        can_override = (
             idle and has_plan
             and plan.mode == MODE_BY_DIRECTION_SEMESTER
             and len(selected_rows) == 1
             and not self.table.isRowHidden(next(iter(selected_rows))))
+        self.btn_override_selected.setEnabled(can_override)
+        self._sync_override_hint(idle, has_plan, plan, selected_rows)
         self.mode_combo.setEnabled(idle)
         self.ocr_check.setEnabled(idle and self._ocr_supported)
         self.ai_check.setEnabled(idle)
@@ -5513,6 +6290,7 @@ class MainWindow(QMainWindow):
         self.btn_scan_intake.setEnabled(
             idle and bool(self.path_edit.text().strip()) and len(self.intake) > 0)
         self.btn_duplicates.setEnabled(idle and self.scan_result is not None)
+        self.btn_relation_graph.setEnabled(idle and has_plan)
         self._set_preview_controls_enabled(idle and has_plan)
         # V1.2 第三轮：任务状态变化同步已打开的历史窗口（轻量按钮刷新）
         self._refresh_undo_button_label()
@@ -5563,6 +6341,8 @@ class MainWindow(QMainWindow):
             return "手动修正"
         if (item.direction or "") == "待定":
             return "待定"
+        if not item.selected and "默认不移动" in (item.rule_applied or ""):
+            return "留在原处"
         if not item.selected:
             return "未勾选"
         return "将移动"
@@ -5861,6 +6641,9 @@ class MainWindow(QMainWindow):
             return
         # 文件已移动：旧重复核对结果与目标位置均失效
         self._invalidate_duplicate_cache(close=True)
+        # 阶段 5：现场记下的改单与执行历史合并成同一条判断。
+        if self._storage is not None:
+            self._import_learning_feedback(self._storage.display_root)
         self._discard_plan("整理已结束，本次预览已失效；如需再次整理请重新扫描生成预览")
         # 刷新按钮状态（撤销现在应该可用）
         self._update_button_states()
@@ -5911,8 +6694,37 @@ class MainWindow(QMainWindow):
 
         if result.failed > 0:
             QMessageBox.warning(self, "归档盒", "\n".join(msg_lines))
-        else:
-            QMessageBox.information(self, "归档盒", "\n".join(msg_lines))
+            return
+        if result.moved > 0 and not result.was_cancelled:
+            self._show_execute_success("\n".join(msg_lines))
+            return
+        QMessageBox.information(self, "归档盒", "\n".join(msg_lines))
+
+    def _show_execute_success(self, text: str):
+        """整理成功不卡住主窗口，并可以直接撤销。"""
+        previous = getattr(self, "_execute_result_box", None)
+        if previous is not None:
+            previous.close()
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle("归档盒")
+        box.setText(text)
+        box.setWindowModality(Qt.WindowModality.NonModal)
+        box.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+        box.addButton("知道了", QMessageBox.ButtonRole.AcceptRole)
+        undo_btn = box.addButton("撤销上一次", QMessageBox.ButtonRole.ActionRole)
+        undo_btn.clicked.connect(lambda: self._undo_from_success(box))
+        box.finished.connect(self._drop_execute_result_box)
+        self._execute_result_box = box
+        box.show()
+        box.raise_()
+
+    def _drop_execute_result_box(self, *_):
+        self._execute_result_box = None
+
+    def _undo_from_success(self, box):
+        box.close()
+        self.on_undo()
 
     def _on_execute_failed(self, err: str):
         self._discard_plan("整理失败，本次预览已失效；请排查后重新扫描生成预览")
@@ -5964,20 +6776,24 @@ class MainWindow(QMainWindow):
                               if action.status in ("moved", "conflict"))
             except Exception:
                 moved_n = 0
-        reply = QMessageBox.question(
-            self, "归档盒",
+        reply = QMessageBox(self)
+        reply.setIcon(QMessageBox.Icon.Question)
+        reply.setWindowTitle("撤销上一次")
+        when_text = _format_user_time(when)
+        reply.setText(
             f"将撤销批次 #{batch_no}"
-            + (f"（{when}）" if when else "")
+            + (f"（{when_text}）" if when_text else "")
             + f"，共 {moved_n} 个文件。\n\n"
-            "⚠ 注意：\n"
+            "注意：\n"
             "• 如果某些目标文件后来被你修改过，撤销时会保留你的修改\n"
             "• 如果原路径现在有新文件，撤销不会覆盖新文件\n"
-            "• 只会恢复本批次实际移动成功的文件\n\n"
-            "确定要撤销吗？",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
+            "• 只会恢复本批次实际移动成功的文件"
         )
-        if reply != QMessageBox.Yes:
+        undo_btn = reply.addButton("撤销", QMessageBox.ButtonRole.AcceptRole)
+        keep_btn = reply.addButton("留下", QMessageBox.ButtonRole.RejectRole)
+        reply.setDefaultButton(keep_btn)
+        reply.exec()
+        if reply.clickedButton() is not undo_btn:
             return
 
         self._set_working(True, "撤销中……")
@@ -6003,6 +6819,9 @@ class MainWindow(QMainWindow):
             return
         # 撤销后路径变化：旧重复核对结果失效
         self._invalidate_duplicate_cache(close=True)
+        # 阶段 5：撤销不是分类决定；只把「无逐文件原因」记为一条待核对线索。
+        if self._storage is not None:
+            self._import_learning_feedback(self._storage.display_root)
         self._update_button_states()
 
         self.statusBar().showMessage(
@@ -6187,6 +7006,10 @@ class MainWindow(QMainWindow):
                     "该文件没有可用的自动分类快照（可能是旧历史里恢复的），"
                     "无法恢复自动分类。")
                 return
+            try:
+                learning.withdraw_decision(root, source_rel)
+            except Exception as e:
+                append_startup_log(f"撤回学习反馈失败：{e}")
             self._populate_table(self.current_plan)
             n, _ = summarize_manual_overrides(self.current_plan)
             self.statusBar().showMessage(
@@ -6197,12 +7020,33 @@ class MainWindow(QMainWindow):
             return
 
         # 应用手动修正
+        before_target = next(
+            (i.target_dir_rel for i in self.current_plan.items
+             if i.file.rel_path == source_rel), "")
         try:
             applied = apply_override_to_plan(
                 self.current_plan, source_rel, dlg.params)
         except OverrideValidationError as e:
             QMessageBox.warning(self, "归档盒", str(e))
             return
+
+        # 阶段 5：只在结果与自动快照不同（真正的「仅改本次」）时记一条判断；
+        # 改回自动快照则撤回该文件的判断。对话框取消、取消勾选都不写。
+        try:
+            if applied.is_manual_overridden:
+                learning.record_override(
+                    root, source_rel,
+                    before_target=before_target or "",
+                    after_target=applied.target_dir_rel,
+                    direction=applied.direction or "",
+                    semester=applied.semester or "",
+                    category=applied.category or "",
+                    rule_key=applied.rule_key or "",
+                    rule_applied=applied.rule_applied or "")
+            else:
+                learning.withdraw_decision(root, source_rel)
+        except Exception as e:
+            append_startup_log(f"记录学习反馈失败：{e}")
 
         self._populate_table(self.current_plan)
         n, lines = summarize_manual_overrides(self.current_plan)
@@ -6399,6 +7243,25 @@ class MainWindow(QMainWindow):
             getattr(self, "_recover_worker", None),
             getattr(self, "_duplicate_worker", None),
         ]
+        agent_dialog = getattr(self, "_agent_dialog", None)
+        if agent_dialog is not None:
+            getter = getattr(agent_dialog, "running_workers", None)
+            if callable(getter):
+                candidates.extend(getter())
+            else:
+                candidates.append(getattr(agent_dialog, "_worker", None))
+        consult_dialog = getattr(self, "_consult_dialog", None)
+        if consult_dialog is not None:
+            getter = getattr(consult_dialog, "running_workers", None)
+            if callable(getter):
+                candidates.extend(getter())
+        backup_dialog = getattr(self, "_backup_dialog", None)
+        if backup_dialog is not None:
+            getter = getattr(backup_dialog, "running_workers", None)
+            if callable(getter):
+                candidates.extend(getter())
+            else:
+                candidates.append(getattr(backup_dialog, "_worker", None))
         candidates.extend(getattr(self, "_plan_workers", []) or [])
         candidates.extend(getattr(self, "_rule_preview_workers", []) or [])
         out, seen = [], set()
@@ -6410,6 +7273,9 @@ class MainWindow(QMainWindow):
         return out
 
     def closeEvent(self, event):
+        watch = getattr(self, "_folder_watch", None)
+        if watch is not None:
+            watch.stop()
         if self._closing:
             event.accept()
             return
@@ -6477,7 +7343,9 @@ class MainWindow(QMainWindow):
     def _close_child_windows(self):
         """S3 / guia F-19：关闭主窗口时一并关闭所有非模态子窗口。"""
         for attr in ("_history_dialog", "_intake_dialog", "_tree_dialog",
-                     "_duplicate_dialog", "_recent_dialog"):
+                     "_duplicate_dialog", "_recent_dialog", "_agent_dialog",
+                     "_consult_dialog",
+                     "_index_dialog", "_search_dialog", "_backup_dialog"):
             dlg = getattr(self, attr, None)
             if dlg is None:
                 continue
@@ -6518,20 +7386,89 @@ def _combo_arrow_url() -> str:
     return path.replace("\\", "/")
 
 
-def startup_log_path() -> str:
-    """免安装包根目录的「启动日志.txt」。源码运行时写到源码目录。"""
-    app_dir = os.path.dirname(os.path.abspath(__file__))
+def _checkbox_checked_url() -> str:
+    """蓝底白勾。样式表接管后，系统对勾不会再画在色块上。"""
+    path = os.path.join(tempfile.gettempdir(), "archivebox-checkbox-checked.png")
+    if not os.path.exists(path):
+        raw = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAA0ElEQVR4nO2XQQ4C"
+            "IQxFoffQrZ5Gz6qn0S0eZMwYJ8EGWlpsu9C/mUBI3ysDyUxOKLvTbUmGeVyPuR6D"
+            "J7zFAE94iwXecCyRI+DdMxARCKH+jEC5HOIEyhvOSYAlvB73RMAavmV/vvsISOBr"
+            "wLp7Cv5VgZETrxYoTHHpexcJFOY6zcBJgdbV4cZSOCnQK8LtiAROCmiKSdezAr2i"
+            "muumFrAOjCziutN2PyxAQWbgIoEahp8zyf+P0hQcwP9qnlnZrx2IkNiYgCc84R8C"
+            "XhKY8QSE0mCyMDUgYwAAAABJRU5ErkJggg=="
+        )
+        with open(path, "wb") as f:
+            f.write(raw)
+    return path.replace("\\", "/")
+
+
+def _path_in_app_bundle(path: str) -> bool:
+    """路径是否落在某个 .app 包内。安装后的日志不能写进包里。"""
+    return any(
+        part.endswith(".app")
+        for part in os.path.abspath(path).split(os.sep) if part)
+
+
+def _windows_portable_root(module_file: str) -> str:
+    """旧版 Windows 免安装目录。macOS .app 不走这里。"""
+    app_dir = os.path.dirname(os.path.abspath(module_file))
     package_root = os.path.dirname(app_dir)
-    packaged = (
+    markers = (
         os.path.isdir(os.path.join(package_root, "runtime"))
         or os.path.isfile(os.path.join(package_root, "归档盒.exe"))
         or os.path.isfile(os.path.join(package_root, "启动归档盒.exe"))
     )
-    path = os.path.join(package_root if packaged else app_dir, "启动日志.txt")
+    if markers and not _path_in_app_bundle(package_root):
+        return package_root
+    return ""
+
+
+def user_log_directory() -> str:
+    """用户日志目录。ARCHIVEBOX_LOG_DIR 只覆盖日志，不改变整理数据目录。"""
+    override = os.environ.get("ARCHIVEBOX_LOG_DIR", "").strip()
+    if override:
+        return os.path.abspath(os.path.expanduser(override))
+    if sys.platform == "darwin":
+        base = os.path.join(os.path.expanduser("~"), "Library", "Logs")
+    elif os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or os.path.join(
+            os.path.expanduser("~"), "AppData", "Local")
+    else:
+        base = os.environ.get("XDG_STATE_HOME") or os.path.join(
+            os.path.expanduser("~"), ".local", "state")
+    return os.path.join(base, "归档盒")
+
+
+def _writable_log_file(directory: str) -> str:
+    os.makedirs(directory, exist_ok=True)
+    path = os.path.join(directory, "启动日志.txt")
+    if _path_in_app_bundle(path) or not os.access(directory, os.W_OK):
+        raise OSError(f"日志目录不可用：{directory}")
+    return path
+
+
+def startup_log_path() -> str:
+    """源码运行可写源码目录；安装包/免安装包/冻结运行写用户日志目录，避免改包指纹。"""
+    module_file = os.path.abspath(__file__)
+    frozen = bool(getattr(sys, "frozen", False))
+    forced = bool(os.environ.get("ARCHIVEBOX_LOG_DIR", "").strip())
+    portable = _windows_portable_root(module_file)
+    if frozen or _path_in_app_bundle(module_file) or forced or portable:
+        try:
+            return _writable_log_file(user_log_directory())
+        except OSError:
+            return os.path.join(tempfile.gettempdir(), "归档盒-启动日志.txt")
+    directory = os.path.dirname(module_file)
+    path = os.path.join(directory, "启动日志.txt")
     parent = os.path.dirname(path)
-    if os.path.isdir(parent) and os.access(parent, os.W_OK):
+    if (os.path.isdir(parent) and os.access(parent, os.W_OK)
+            and not _path_in_app_bundle(path)):
         return path
-    return os.path.join(tempfile.gettempdir(), "归档盒-启动日志.txt")
+    try:
+        return _writable_log_file(user_log_directory())
+    except OSError:
+        return os.path.join(tempfile.gettempdir(), "归档盒-启动日志.txt")
 
 
 def append_startup_log(text: str) -> None:
@@ -6582,6 +7519,9 @@ def _install_qt_chinese(app) -> None:
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "--product-acceptance":
+        import product_acceptance
+        raise SystemExit(product_acceptance.main(sys.argv))
     _install_crash_logging()
     app = QApplication(sys.argv)
     _install_qt_chinese(app)
@@ -6639,6 +7579,20 @@ def main():
         }
         QPushButton:hover { background: #ECEFF1; }
         QPushButton:disabled { color: #5F6B76; background: #EDF1F4; }
+        QPushButton#aiAssist {
+            background: #EFF6FF;
+            color: #1E3A8A;
+            border: 1px solid #1D4ED8;
+            font-weight: 650;
+            padding: 6px 14px;
+        }
+        QPushButton#aiAssist:hover { background: #DBEAFE; }
+        QPushButton#aiAssist:pressed { background: #BFDBFE; }
+        QPushButton#aiAssist:disabled {
+            color: #64748B;
+            background: #F8FAFC;
+            border: 1px solid #CBD5E1;
+        }
         QPushButton[role="primary"] {
             background: #2563EB;
             color: white;
@@ -6739,14 +7693,17 @@ def main():
             background: #FFFFFF;
         }
         QCheckBox::indicator:checked {
-            background: #1D4ED8;
-            border: 1px solid #1D4ED8;
+            width: 16px;
+            height: 16px;
+            border: none;
+            image: url("__CHECK_MARK__");
         }
         QListWidget, QTreeView, QTextEdit, QPlainTextEdit {
             background: #FFFFFF;
             color: #0F172A;
         }
-    """.replace("__COMBO_ARROW__", _combo_arrow_url()))
+    """.replace("__COMBO_ARROW__", _combo_arrow_url()).replace(
+        "__CHECK_MARK__", _checkbox_checked_url()))
 
     win = MainWindow()
     win.show()

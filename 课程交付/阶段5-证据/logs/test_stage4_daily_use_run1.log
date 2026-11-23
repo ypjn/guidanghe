@@ -1,0 +1,66 @@
+qt.qpa.fonts: Populating font family aliases took 96 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support raise()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+[PASS] S401 扫描阶段报告已发现数量与当前路径；旧扫描完成信号不写入新扫描
+文件数=650 回调=6 首=[(0, ''), (1, '目录1/文件183.txt')] 末=[(600, '目录4/文件326.txt'), (650, '')]
+worker seq 全为 7=True worker 末=[(7, 650, '')]
+旧 seq 被忽略=True 当前 seq 写入=True
+[PASS] S402 增量缓存复用未变化文件；新增/修改/删除/改名正确失效且分类一致
+首次={'cache_hits': 0, 'cache_misses': 4, 'content_reused': 0, 'content_read': 3, 'cache_note': '', 'sha_reused': 0, 'sha_computed': 4, 'cache_files': 4, 'cache_saved': True}
+第二次={'cache_hits': 4, 'cache_misses': 0, 'content_reused': 3, 'content_read': 0, 'cache_note': '', 'sha_reused': 4, 'sha_computed': 0, 'cache_files': 4, 'cache_saved': True}
+变化后={'cache_hits': 1, 'cache_misses': 3, 'content_reused': 1, 'content_read': 2, 'cache_note': '', 'sha_reused': 1, 'sha_computed': 3, 'cache_files': 4, 'cache_saved': True}
+首次与第二次计划一致=True 增量与全量一致=True 文件集合一致=True
+增量计划=[('下载/Word笔记.docx', ('_已整理/高等数学/文档/Word笔记.docx', 'course_rule:1', True)), ('下载/手册改名.pdf', ('_已整理/未分类课程/文档/手册改名.pdf', 'course_rule:unmatched', True)), ('下载/新文件.txt', ('_已整理/未分类课程/文档/新文件.txt', 'course_rule:unmatched', True)), ('课程/高等数学/笔记.txt', ('_已整理/高等数学/文档/笔记.txt', 'course_rule:1', True))]
+[PASS] S403 缓存损坏回退全量；预览后源文件变化仍被拒绝，其他项不受影响
+缓存说明='缓存损坏，已回退全量扫描' 计划缓存={'cache_hits': 0, 'cache_misses': 2, 'content_reused': 0, 'content_read': 2, 'cache_note': '缓存损坏，已回退全量扫描', 'sha_reused': 0, 'sha_computed': 2, 'cache_files': 2, 'cache_saved': True}
+moved=1 skipped=1 errors=['跳过（源文件内容已变化）：课程/高等数学/笔记.txt']
+源文件保留新内容=True 其他项未被误报=True
+[PASS] S404 docx/pptx/xlsx 正文可读；损坏、无权限、未支持各有原因且不挡其他文件
+正文={'下载/课程笔记.docx': '高等数学 课件正文', '下载/答辩.pptx': '项目 答辩 演示', '下载/成绩.xlsx': '数据结构 成绩'}
+kinds={'下载/坏文件.docx': '读取失败', '下载/成绩.xlsx': '正文', '下载/无权限.txt': '读取失败', '下载/普通.txt': '正文', '下载/答辩.pptx': '正文', '下载/课程笔记.docx': '正文', '下载/资料.pdf': '未支持'}
+errors={'下载/坏文件.docx': '无法读取正文：不是有效的 Office 压缩包或文件已损坏', '下载/无权限.txt': '无法读取正文：Permission denied', '下载/资料.pdf': '未支持：当前版本没有 PDF 解析库，未读取正文'}
+普通文本='普通正文内容'
+[PASS] S405 预览筛选只改视图；取消可见勾选不影响被筛掉的行，计数一致
+全部已选=8 可见=4 筛掉=4
+取消可见勾选后仍选=['下载/课程0.txt', '下载/课程1.txt', '下载/课程2.txt', '下载/课程3.txt']
+计数标签='计划 8｜可见 4｜已勾选 4｜隐藏但仍勾选 4'
+[PASS] S406 历史定位跟随文件当前位置；目标/原位置都不在时不返回同名文件
+目标存在时='/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_xxoahrj7/reveal/_已整理/课程/高等数学/笔记.txt' 撤销后='/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_xxoahrj7/reveal/下载/笔记.txt' 都不存在=''
+[PASS] S407 缓存替换前复核实际目录；空间外文件不覆盖，正常目录仍可读写
+save 失败=True 空间外 SHA 不变=True
+正常读写=True 缓存文件符号链接被拒=True 链接目标不变=True
+victim before=e7c7c70601b3a341efef02e30247c2ba71ad82da54d47c504188209e081f9174 after=e7c7c70601b3a341efef02e30247c2ba71ad82da54d47c504188209e081f9174
+[PASS] S408 同大小/同 mtime/inode 下正文变化不复用旧缓存，执行不被旧指纹跳过
+inode/大小/mtime 不变=True 首次命中=0
+变化后分类=_已整理/未分类课程/文档/笔记.txt SHA与磁盘一致=True 缓存未命中=True
+第二次重扫复用新指纹=True 执行=1/0
+计划后改内容再执行=0/1 errors=['跳过（源文件内容已变化）：下载/第二次.txt']
+[PASS] S409 打开已有批次的空间后历史/撤销立即可用，撤销恢复原路径与 SHA
+打开=True 执行=1 历史可点=True 撤销可点=True
+撤销完成=True 原 SHA=039c9f4fd98b0173f9c0baa4068b472de928725db54d39167fdebe14eb338a1f 恢复 SHA=039c9f4fd98b0173f9c0baa4068b472de928725db54d39167fdebe14eb338a1f 目标仍存在=False
+[PASS] S410 历史定位只返回空间内解析结果；绝对路径/../符号链接越界返回空
+正常='/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_xxoahrj7/reveal_boundary/下载/正常.txt'
+绝对='' ../='' 符号链接=''
+空间外内容='空间外\n'
+[PASS] S411 辅助功能可按下「选择第 N 行明细」；进程存活，定位目标/原路径
+明细行=1 NoSelection=True 保留 item wrapper=True
+辅助按钮=['选择第 1 行明细'] 辅助接口计数=('Table', 16)
+整理后辅助按下=True 定位按钮可点=True
+整理后定位目标=True 撤销=True 撤销后辅助按下=True 撤销后定位原路径=True
+[PASS] S412 明细滚出视口的行按钮隐藏，刷新/搜索/上一页不被遮挡
+顶部: 可见按钮=13 越界=[] 压分页=[] 对齐=True 命中刷新=True 命中搜索=True 命中上一页=True 命中下一页=True 刷新=True 行=-1/-1/-1 搜索聚焦=True
+中段: 可见按钮=13 越界=[] 压分页=[] 对齐=True 命中刷新=True 命中搜索=True 命中上一页=True 命中下一页=True 刷新=True 行=-1/-1/-1 搜索聚焦=True
+底部: 可见按钮=13 越界=[] 压分页=[] 对齐=True 命中刷新=True 命中搜索=True 命中上一页=True 命中下一页=True 刷新=True 行=-1/-1/-1 搜索聚焦=True
+820×490: 可见按钮=5 越界=[] 压分页=[] 对齐=True 命中刷新=True 命中搜索=True 命中上一页=True 命中下一页=True
+移动事件: 触发重排=True 对齐=True 可见=5 越界=[] 压分页=[]
+中段辅助 Press 行=42 成功=True 按钮可见=True
+[PASS] S413 最近空间不用 item view；辅助功能/键盘选中并打开不崩溃
+行数=5 无 item view=True 单选按钮=['选择空间：recent_second，/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_xxoahrj7/recent_second，最近打开 2026-11-20T08:48:53.420230，固定否，状态 可用', '选择空间：recent_first，/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_xxoahrj7/recent_first，最近打开 2026-11-20T08:48:53.417881，固定否，状态 可用', '选择空间：history_picker_clip，/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_xxoahrj7/history_picker_clip，最近打开 2026-11-20T08:48:49.634416，固定否，状态 可用', '选择空间：history_accessibility，/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_xxoahrj7/history_accessibility，最近打开 2026-11-20T08:48:47.977369，固定否，状态 可用', '选择空间：reopen_space，/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_xxoahrj7/reopen_space，最近打开 2026-11-20T08:48:47.321707，固定否，状态 可用']
+辅助树单选='选择空间：recent_second，/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_xxoahrj7/recent_second，最近打开 2026-11-20T08:48:53.420230，固定否，状态 可用' 辅助按下=True 选中=/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/stage4_daily_xxoahrj7/recent_second 打开按钮可点=True
+打开回调=True 窗口已关=True 键盘下移=True
+
+合计 13 项：通过 13 / 未通过 0

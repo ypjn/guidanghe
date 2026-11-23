@@ -1,0 +1,13 @@
+qt.qpa.fonts: Populating font family aliases took 47 ms. Replace uses of missing font family "Sans Serif" with one that exists to avoid this cost. 
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+This plugin does not support propagateSizeHints()
+STALE_INITIAL_PLAN ['大二上/受保护的实验/数据结构实验报告B.md', '大二上/待整理/数据结构实验报告A.md']
+STALE_APPLY_MAIN_ITEMS ['大二上/受保护的实验/数据结构实验报告B.md', '大二上/待整理/数据结构实验报告A.md']
+STALE_PROTECTED_STILL_EXISTS False
+STALE_HISTORY [('大二上/受保护的实验/数据结构实验报告B.md', 'moved'), ('大二上/待整理/数据结构实验报告A.md', 'moved')]
+INFLIGHT_RESULT_EXISTS True
+INFLIGHT_PLAN ['大二上/受保护的实验/数据结构实验报告D.md', '大二上/待整理/数据结构实验报告C.md']

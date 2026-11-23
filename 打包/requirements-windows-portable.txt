@@ -1,0 +1,4 @@
+# Core portable runtime. OCR (rapidocr/onnxruntime/winrt) is optional and large;
+# install separately when packaging a vision-enabled build.
+PySide6==6.12.0
+pypdf==6.4.0

@@ -22,6 +22,17 @@ import recent_spaces
 from intake_model import IntakeList, is_within, normalize_path
 
 
+def _format_opened(raw: str) -> str:
+    text = (raw or "").strip()
+    if not text:
+        return "—"
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(text).strftime("%Y-%m-%d %H:%M")
+    except ValueError:
+        return text
+
+
 def _elide_text(text: str, limit: int = 72) -> str:
     text = text or ""
     return text if len(text) <= limit else text[:limit - 1] + "…"
@@ -40,7 +51,8 @@ class RecentSpacesDialog(QDialog):
     def __init__(self, open_callback: Callable[[str], bool], parent=None):
         super().__init__(parent)
         self.setWindowTitle("最近整理空间")
-        self.resize(900, 520)
+        self.setMinimumWidth(860)
+        self.resize(980, 520)
         self.open_callback = open_callback
         self._records = []
         self._row_group = None
@@ -114,7 +126,11 @@ class RecentSpacesDialog(QDialog):
         for col, text in enumerate(headers):
             label = QLabel(text)
             label.setStyleSheet("color:#546E7A;font-weight:600;")
+            label.setMinimumWidth(label.fontMetrics().horizontalAdvance(text) + 12)
             self.rows_grid.addWidget(label, 0, col)
+        self.rows_grid.setColumnMinimumWidth(0, 64)
+        self.rows_grid.setColumnMinimumWidth(1, 96)
+        self.rows_grid.setColumnMinimumWidth(3, 132)
 
     def refresh(self):
         self._clear_rows()
@@ -140,9 +156,10 @@ class RecentSpacesDialog(QDialog):
                 status += f"：{rec.status_reason}"
             pick = QRadioButton()
             pick.setFixedWidth(24)
+            opened = _format_opened(rec.last_opened)
             pick.setAccessibleName(
                 f"选择空间：{rec.name}，{rec.path}，"
-                f"最近打开 {rec.last_opened or '无记录'}，"
+                f"最近打开 {opened}，"
                 f"固定{'是' if rec.pinned else '否'}，状态 {status}")
             pick.setToolTip("选择这一行，再点「打开空间」")
             pick.installEventFilter(self)
@@ -160,7 +177,9 @@ class RecentSpacesDialog(QDialog):
             path_label.setMinimumWidth(180)
             self.rows_grid.addWidget(path_label, r + 1, 2)
 
-            opened_label = QLabel(rec.last_opened or "—")
+            opened_label = QLabel(opened)
+            opened_label.setMinimumWidth(132)
+            opened_label.setMinimumWidth(132)
             self.rows_grid.addWidget(opened_label, r + 1, 3)
 
             pin_label = QLabel("是" if rec.pinned else "否")

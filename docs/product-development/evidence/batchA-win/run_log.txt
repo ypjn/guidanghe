@@ -1,0 +1,4 @@
+offscreen backup UI screenshots ok
+source=C:\Users\Lenovo\Desktop\归档盒-Windows-免安装\guidanghe\归档盒源码\archivebox_shot_f1_pqvyv\来源 资料夹
+vault=C:\Users\Lenovo\Desktop\归档盒-Windows-免安装\guidanghe\归档盒源码\archivebox_shot_f1_pqvyv\备份 仓库
+status=恢复目标必须是新的空目录（演示错误态）

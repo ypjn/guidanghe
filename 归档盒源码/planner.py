@@ -487,12 +487,53 @@ def _text_has(phrase: str, text_lower: str) -> bool:
     return needle in text_lower
 
 
+def _map_get(mapping: Optional[Dict[str, str]], rel_path: str) -> Optional[str]:
+    """按相对路径取值；兼容 Windows 反斜杠与测试里的正斜杠键。"""
+    if not mapping or not rel_path:
+        return None
+    if rel_path in mapping:
+        return mapping[rel_path]
+    alt = rel_path.replace("\\", "/")
+    if alt in mapping:
+        return mapping[alt]
+    alt2 = rel_path.replace("/", "\\")
+    if alt2 in mapping:
+        return mapping[alt2]
+    return None
+
+
+def _format_neighbor_reason(
+        prior: str, sample: str, category: str, direction: str,
+        semester: str, evidence: List[str], keep_inner: str) -> str:
+    """归档盒口吻的沾边依据：可核对、不装作「语义已懂」。"""
+    where = direction + (f"/{semester}" if semester else "") + f"/{category}"
+    lines = [
+        f"{prior}。沾边归类建议（未自动勾选）。",
+        f"参照「{sample}」归入{where}。",
+    ]
+    if evidence:
+        lines.append("依据：" + "；".join(evidence) + "。")
+    if keep_inner:
+        lines.append(f"保留原有「{keep_inner}」子路径，避免整夹无关文件一起挪走。")
+    # 保留「重合」字样，兼容既有邻域回归
+    if evidence:
+        lines.append(f"与旁边的「{sample}」存在可核对重合。")
+    return "".join(lines)
+
+
 def _group_unregistered_with_neighbors(items: List[PlanItem], root: str) -> None:
     """没登记的文件对照旁边已经归好的文件。
 
-    只看文件名、图片文字和对方的类别名。对得上同一类，就归进那一类，
-    并留下原来的目录，避免把整夹无关照片一起拖走。两边都能对上时不改。
+    只看文件名、图片文字、对方的类别名，以及可选的拍摄设备/日期软提示。
+    对得上同一类，就归进那一类，并留下原来的目录，避免把整夹无关照片
+    一起拖走。两边都能对上时不改。EXIF 单独命中不足以归类。
     """
+    try:
+        from media_hints import capture_hint, is_image_path
+    except Exception:  # pragma: no cover - 模块缺失时退回纯文本邻域
+        capture_hint = None  # type: ignore
+        is_image_path = lambda _p: False  # noqa: E731
+
     for _ in range(4):
         donors: dict = {}
         for item in items:
@@ -501,7 +542,11 @@ def _group_unregistered_with_neighbors(items: List[PlanItem], root: str) -> None
             if not item.category:
                 continue
             key = (item.direction, item.semester or "", item.category)
-            bucket = donors.setdefault(key, {"stems": set(), "phrases": set(), "sample": ""})
+            bucket = donors.setdefault(
+                key,
+                {"stems": set(), "phrases": set(), "sample": "",
+                 "media": set()},
+            )
             stem = _neighbor_stem(item.file.filename)
             if stem:
                 bucket["stems"].add(stem)
@@ -510,12 +555,18 @@ def _group_unregistered_with_neighbors(items: List[PlanItem], root: str) -> None
             blob = item.file.filename
             if item.ocr_text:
                 blob = blob + "\n" + item.ocr_text[:500]
+            if item.content_text:
+                blob = blob + "\n" + item.content_text[:500]
             if len(bucket["phrases"]) < 80:
                 for phrase in _CJK_RUN.findall(blob):
                     if phrase not in _NEIGHBOR_GENERIC:
                         bucket["phrases"].add(phrase)
                     if len(bucket["phrases"]) >= 80:
                         break
+            if capture_hint is not None and is_image_path(item.file.abs_path):
+                hint = capture_hint(item.file.abs_path)
+                if hint.usable:
+                    bucket["media"].add((hint.device_key, hint.day_bucket))
 
         adopted = 0
         for item in items:
@@ -524,38 +575,57 @@ def _group_unregistered_with_neighbors(items: List[PlanItem], root: str) -> None
             pending_bits = [item.file.filename]
             if item.ocr_text:
                 pending_bits.append(item.ocr_text[:2000])
+            if item.content_text:
+                pending_bits.append(item.content_text[:2000])
             pending_text = "\n".join(pending_bits).lower()
             pending_stem = _neighbor_stem(item.file.filename)
+            pending_hint = None
+            if capture_hint is not None and is_image_path(item.file.abs_path):
+                pending_hint = capture_hint(item.file.abs_path)
             best = None
             best_score = 0
             second = 0
-            best_token = ""
+            best_evidence: List[str] = []
             best_sample = ""
             for (direction, semester, category), bucket in donors.items():
                 score = 0
-                token = ""
+                evidence: List[str] = []
                 if len(category) >= 2 and _text_has(category, pending_text):
                     score += 3
-                    token = category
+                    evidence.append(f"出现类别名「{category}」")
                 for stem in bucket["stems"]:
                     if _text_has(stem, pending_text) or (
                             pending_stem and (
                                 _text_has(pending_stem, stem)
                                 or _text_has(stem, pending_stem))):
                         score += 2
-                        token = token or stem
+                        evidence.append(f"文件名主干「{stem}」重合")
                         break
                 if score < 3:
                     for phrase in bucket["phrases"]:
                         if _text_has(phrase, pending_text):
                             score += 2
-                            token = token or phrase
+                            evidence.append(f"正文片段「{phrase}」重合")
                             break
+                # 拍摄设备+同日只作软加分，不能单独够门槛
+                if (
+                    pending_hint is not None
+                    and pending_hint.usable
+                    and bucket["media"]
+                ):
+                    key_pair = (pending_hint.device_key, pending_hint.day_bucket)
+                    if key_pair in bucket["media"] and (
+                            pending_hint.device_key or pending_hint.day_bucket):
+                        # 要求设备与日期都对上才 +1，避免「同日所有图」误绑
+                        if pending_hint.device_key and pending_hint.day_bucket:
+                            score += 1
+                            evidence.append(
+                                f"同设备同日拍摄（{pending_hint.day_bucket}）")
                 if score > best_score:
                     second = best_score
                     best_score = score
                     best = (direction, semester, category)
-                    best_token = token
+                    best_evidence = evidence
                     best_sample = bucket["sample"]
                 elif score > second:
                     second = score
@@ -564,12 +634,9 @@ def _group_unregistered_with_neighbors(items: List[PlanItem], root: str) -> None
             direction, semester, category = best
             parts = item.file.rel_path.split(os.sep)
             inner = os.sep.join(parts[:-1])
-            reason = (
-                f"{item.rule_applied}。与旁边的「{best_sample}」重合「{best_token}」，"
-                f"建议归入{direction}"
-                + (f"/{semester}" if semester else "")
-                + f"/{category}。建议，未自动勾选"
-            )
+            reason = _format_neighbor_reason(
+                item.rule_applied, best_sample, category, direction,
+                semester or "", best_evidence, inner)
             item.direction = direction
             item.semester = semester or None
             item.category = category
@@ -577,6 +644,7 @@ def _group_unregistered_with_neighbors(items: List[PlanItem], root: str) -> None
             item.inner_path = inner or None
             item.rule_key = f"neighbor:{direction}/{semester}/{category}"
             item.rule_applied = reason
+            item.decision_evidence = "；".join(best_evidence) or reason
             item.auto_direction = item.direction
             item.auto_semester = item.semester
             item.auto_category = item.category
@@ -785,6 +853,30 @@ def _append_evidence(rule_desc: str, extra_source: str, used_extra: bool,
     return rule_desc + "；" + "；".join(bits)
 
 
+_INBOX_DIRS = frozenset({
+    "下载", "downloads", "download", "桌面", "desktop",
+    "待整理", "inbox", "收件箱",
+})
+
+
+def _leave_unchecked(rel_path: str, mode: str, target_dir_rel: str) -> bool:
+    """按类型、按课程再按类型时，自有文件夹里的文件默认不勾选。
+
+    空间根目录和常见收件箱里的散文件仍默认勾选。推荐模式不走这里，
+    它会按原有课程目录归位。已经就在计划目标文件夹里的文件，任何模式都不勾。
+    """
+    parent = os.path.normpath(os.path.dirname(rel_path or ""))
+    if parent == ".":
+        parent = ""
+    target = os.path.normpath(target_dir_rel or "")
+    if parent and parent == target:
+        return True
+    if mode == MODE_BY_DIRECTION_SEMESTER or not parent:
+        return False
+    top = parent.split(os.sep)[0].casefold()
+    return top not in _INBOX_DIRS
+
+
 def classify_entries(
     scan_result: ScanResult,
     mode: str,
@@ -827,12 +919,14 @@ def classify_entries(
         extra_source = "image"
         body = ""
         if content_texts:
-            body = (content_texts.get(fentry.rel_path) or "").strip()
+            body = (_map_get(content_texts, fentry.rel_path) or "").strip()
         if body:
             extra = body[:4096]
             extra_source = "body"
-        elif ocr_texts and fentry.rel_path in ocr_texts:
-            extra = (ocr_texts[fentry.rel_path] or "").strip()[:8000]
+        else:
+            ocr_hit = _map_get(ocr_texts, fentry.rel_path) if ocr_texts else None
+            if ocr_hit is not None:
+                extra = (ocr_hit or "").strip()[:8000]
 
         if mode == MODE_BY_COURSE_THEN_TYPE:
             course, rule_idx, rule_desc = _match_course(
@@ -984,10 +1078,14 @@ def classify_entries(
             path_evidence=path_evidence,
             decision_evidence=decision_evidence,
         )
-        if ocr_texts is not None and fentry.rel_path in ocr_texts:
-            item.ocr_text = ocr_texts[fentry.rel_path] or ""
-        if ocr_errors and fentry.rel_path in ocr_errors:
-            item.ocr_error = ocr_errors[fentry.rel_path] or ""
+        if ocr_texts is not None:
+            ocr_val = _map_get(ocr_texts, fentry.rel_path)
+            if ocr_val is not None:
+                item.ocr_text = ocr_val or ""
+        if ocr_errors:
+            err_val = _map_get(ocr_errors, fentry.rel_path)
+            if err_val is not None:
+                item.ocr_error = err_val or ""
         items.append(item)
 
         if progress_cb and total > 0:
@@ -1000,6 +1098,16 @@ def classify_entries(
 
     # 全部分类/归组完成后再统一分配唯一名（稳定、大小写归一，见函数说明）
     assign_unique_targets(items, root)
+
+    for item in items:
+        # 已经放在自有文件夹里的文件，不要在「按类型」里默认勾走。
+        # 推荐模式仍默认勾选：它会按原有课程目录归位，而不是拆成类型文件夹。
+        if _leave_unchecked(item.file.rel_path, mode, item.target_dir_rel):
+            item.selected = False
+            note = "已在自有文件夹中，默认不移动"
+            applied = item.rule_applied or ""
+            if note not in applied:
+                item.rule_applied = f"{applied}；{note}" if applied else note
 
     if mode == MODE_BY_DIRECTION_SEMESTER:
         for item in items:

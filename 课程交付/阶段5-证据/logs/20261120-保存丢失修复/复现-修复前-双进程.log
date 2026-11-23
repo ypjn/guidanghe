@@ -1,0 +1,32 @@
+===== override / history_first
+HISTORY_EXIT 0
+HISTORY_IMPORT_OK 1
+USER_EXIT 2
+USER_SAVE_ERROR IntegrityError UNIQUE constraint failed: learning_feedback.evidence_key
+DB_ROW ('history', 'judgment', '_已整理/项目/历史目录', 0, '历史类别', 1, 1)
+FINAL history
+exit=0
+===== override / user_first
+USER_EXIT 0
+USER_SAVE_OK True
+HISTORY_EXIT 0
+HISTORY_IMPORT_OK 0
+DB_ROW ('live', 'judgment', '_已整理/项目/现场目录', 0, '现场类别', None, 1)
+FINAL live
+exit=0
+===== skip / history_first
+HISTORY_EXIT 0
+HISTORY_IMPORT_OK 1
+USER_EXIT 2
+USER_SAVE_ERROR IntegrityError UNIQUE constraint failed: learning_feedback.evidence_key
+DB_ROW ('history', 'judgment', '_已整理/项目/历史目录', 0, '历史类别', 1, 1)
+FINAL history
+exit=0
+===== skip / user_first
+USER_EXIT 0
+USER_SAVE_OK True
+HISTORY_EXIT 0
+HISTORY_IMPORT_OK 0
+DB_ROW ('skip', 'judgment', '', 1, '', None, 1)
+FINAL live
+exit=0

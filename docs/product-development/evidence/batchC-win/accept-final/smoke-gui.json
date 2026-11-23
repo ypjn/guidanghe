@@ -1,0 +1,28 @@
+{
+  "command": "smoke-gui",
+  "ok": true,
+  "executable": "C:\\Users\\Lenovo\\Desktop\\归档盒-Windows-免安装\\guidanghe\\打包\\dist\\归档盒-windows\\runtime\\pythonw.exe",
+  "frozen": false,
+  "checks": [
+    {
+      "name": "启动日志不在应用包内",
+      "ok": true,
+      "detail": "日志=C:\\Users\\Lenovo\\Desktop\\归档盒-Windows-免安装\\guidanghe\\docs\\product-development\\evidence\\batchC-win\\accept-final\\logs\\启动日志.txt\n应用包=C:\\Users\\Lenovo\\Desktop\\归档盒-Windows-免安装\\guidanghe\\打包\\dist\\归档盒-windows"
+    },
+    {
+      "name": "主窗口标题带当前版本",
+      "ok": true,
+      "detail": "标题=归档盒 V1.8.1"
+    },
+    {
+      "name": "主窗口已创建",
+      "ok": true,
+      "detail": "visible=True"
+    },
+    {
+      "name": "离屏窗口可以关闭",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

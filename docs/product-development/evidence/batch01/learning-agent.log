@@ -1,0 +1,14 @@
+[PASS] 启动日志不在应用包内
+日志=/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.9YBcgP/learning/logs/启动日志.txt
+应用包=/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.9YBcgP/Applications/归档盒.app
+[PASS] 学习建议待确认
+待确认=[('lc-0cb7725fc26957a7', ['周报'], 'pending')]
+[PASS] 确认后的建议被后续预览复用
+确认前=_已整理/校园事务/周报/文档
+确认后=_已整理/项目/周报
+[PASS] 管家找到文件并给出方案
+问题=None 学期=大二上 命中=1 方案项=1
+[PASS] 未确认方案不移动文件
+变化=[]
+[PASS] 学习确认本身不移动样本
+报告：/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.9YBcgP/learning/learning-agent.json

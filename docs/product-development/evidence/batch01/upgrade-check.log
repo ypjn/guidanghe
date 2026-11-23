@@ -1,0 +1,13 @@
+[PASS] 启动日志不在应用包内
+日志=/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.9YBcgP/upgrade-logs/启动日志.txt
+应用包=/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.9YBcgP/Applications-replaced/归档盒.app
+[PASS] 旧方案还在且文件未被重写
+方案=['旧方案']
+[PASS] 旧全局偏好还在
+偏好=['旧全局偏好']
+[PASS] 最近空间还在且文件未被重写
+最近=['/private/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.9YBcgP/upgrade/old-space']
+[PASS] 旧历史可打开并撤销
+found=True restored=1 errors=[]
+[PASS] 范围外哨兵未变
+报告：/var/folders/gl/crw__slj3qg7zbxjj_zc__gh0000gn/T/archivebox-accept.9YBcgP/upgrade/upgrade-check.json
