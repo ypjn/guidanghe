@@ -2146,6 +2146,16 @@ class MainWindow(QMainWindow):
         title_hint = QLabel("① 选空间　② 核对预览　③ 确认整理")
         title_hint.setStyleSheet(f"color:{MUTE};")
         title.addWidget(title_hint)
+        title.addSpacing(10)
+        self.btn_ai_assist = QPushButton("AI 管家")
+        self.btn_ai_assist.setObjectName("aiAssist")
+        self.btn_ai_assist.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_ai_assist.setToolTip(
+            "打开 AI 整理顾问：先看这个文件夹的目录结构，再一起调整方案。\n"
+            "窗口里也可以用一句话查找。真正移动文件仍要回到这里确认。")
+        self.btn_ai_assist.clicked.connect(self.on_agent)
+        title.addWidget(self.btn_ai_assist)
+        title.addSpacing(8)
         self.btn_ai_header = QPushButton("配置 AI")
         self.btn_ai_header.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_ai_header.setToolTip(
@@ -2280,7 +2290,8 @@ class MainWindow(QMainWindow):
         self.btn_agent = nav(QPushButton("AI 整理顾问"))
         self.btn_agent.setToolTip(
             "先扫描你的目录结构，再给出管理建议；\n"
-            "你可以多轮对话调整方案。真正移动仍要回主界面确认。")
+            "你可以多轮对话调整方案。真正移动仍要回主界面确认。\n"
+            "标题栏右侧的「AI 管家」打开的是同一个窗口。")
         self.btn_agent.clicked.connect(self.on_agent)
         side_lay.addWidget(self.btn_agent)
         self.btn_ai_settings = nav(QPushButton("配置 AI 接口"))
@@ -6076,6 +6087,7 @@ class MainWindow(QMainWindow):
             self.btn_scheme_center.setEnabled(False)
             self.btn_recent.setEnabled(False)
             self.btn_agent.setEnabled(False)
+            self.btn_ai_assist.setEnabled(False)
             self.btn_intake.setEnabled(False)
             self.btn_scan_intake.setEnabled(False)
             self.btn_duplicates.setEnabled(False)
@@ -6091,11 +6103,13 @@ class MainWindow(QMainWindow):
         # 其内部的撤销/恢复/导出按钮会按任务状态自行禁用
         self.btn_history.setEnabled(self._storage is not None)
         # AI 管家：选好文件夹且空闲时可用；查找本身不移动文件
-        self.btn_agent.setEnabled(
+        agent_ready = (
             bool(self.path_edit.text().strip())
             and not self._working and not self._plan_working
             and not self._close_pending and not self._closing
         )
+        self.btn_agent.setEnabled(agent_ready)
+        self.btn_ai_assist.setEnabled(agent_ready)
 
         plan = self.current_plan
         has_plan = plan is not None and self._plan_valid
@@ -7206,6 +7220,23 @@ def _combo_arrow_url() -> str:
     return path.replace("\\", "/")
 
 
+def _checkbox_checked_url() -> str:
+    """蓝底白勾。样式表接管后，系统对勾不会再画在色块上。"""
+    path = os.path.join(tempfile.gettempdir(), "archivebox-checkbox-checked.png")
+    if not os.path.exists(path):
+        raw = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAA0ElEQVR4nO2XQQ4C"
+            "IQxFoffQrZ5Gz6qn0S0eZMwYJ8EGWlpsu9C/mUBI3ysDyUxOKLvTbUmGeVyPuR6D"
+            "J7zFAE94iwXecCyRI+DdMxARCKH+jEC5HOIEyhvOSYAlvB73RMAavmV/vvsISOBr"
+            "wLp7Cv5VgZETrxYoTHHpexcJFOY6zcBJgdbV4cZSOCnQK8LtiAROCmiKSdezAr2i"
+            "muumFrAOjCziutN2PyxAQWbgIoEahp8zyf+P0hQcwP9qnlnZrx2IkNiYgCc84R8C"
+            "XhKY8QSE0mCyMDUgYwAAAABJRU5ErkJggg=="
+        )
+        with open(path, "wb") as f:
+            f.write(raw)
+    return path.replace("\\", "/")
+
+
 def _path_in_app_bundle(path: str) -> bool:
     """路径是否落在某个 .app 包内。安装后的日志不能写进包里。"""
     return any(
@@ -7382,6 +7413,20 @@ def main():
         }
         QPushButton:hover { background: #ECEFF1; }
         QPushButton:disabled { color: #5F6B76; background: #EDF1F4; }
+        QPushButton#aiAssist {
+            background: #EFF6FF;
+            color: #1E3A8A;
+            border: 1px solid #1D4ED8;
+            font-weight: 650;
+            padding: 6px 14px;
+        }
+        QPushButton#aiAssist:hover { background: #DBEAFE; }
+        QPushButton#aiAssist:pressed { background: #BFDBFE; }
+        QPushButton#aiAssist:disabled {
+            color: #64748B;
+            background: #F8FAFC;
+            border: 1px solid #CBD5E1;
+        }
         QPushButton[role="primary"] {
             background: #2563EB;
             color: white;
@@ -7482,14 +7527,17 @@ def main():
             background: #FFFFFF;
         }
         QCheckBox::indicator:checked {
-            background: #1D4ED8;
-            border: 1px solid #1D4ED8;
+            width: 16px;
+            height: 16px;
+            border: none;
+            image: url("__CHECK_MARK__");
         }
         QListWidget, QTreeView, QTextEdit, QPlainTextEdit {
             background: #FFFFFF;
             color: #0F172A;
         }
-    """.replace("__COMBO_ARROW__", _combo_arrow_url()))
+    """.replace("__COMBO_ARROW__", _combo_arrow_url()).replace(
+        "__CHECK_MARK__", _checkbox_checked_url()))
 
     win = MainWindow()
     win.show()

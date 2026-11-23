@@ -137,6 +137,8 @@ def main() -> None:
     assert hasattr(window, "ai_banner")
     assert "配置 AI" in window.btn_ai_header.text() or "管理 AI" in window.btn_ai_header.text()
     assert window.btn_agent.text() == "AI 整理顾问"
+    assert window.btn_ai_assist.text() == "AI 管家"
+    assert window.btn_ai_assist.objectName() == "aiAssist"
     dlg = AiSettingsDialog(window._ai_settings, window)
     assert dlg.windowTitle() == "配置 AI 接口"
     dlg.reject()
