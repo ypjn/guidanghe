@@ -10,10 +10,19 @@
 
 | 平台 | 形态 | 获取 |
 | --- | --- | --- |
-| **Windows x64** | 免安装 ZIP（解压后双击 `归档盒.exe`） | [Release v1.8.2](https://github.com/ypjn/guidanghe/releases/tag/v1.8.2) |
-| **macOS Apple 芯片** | `.app` + 只读 DMG | 同上 |
+| **Windows x64** | 免安装 ZIP（解压后双击 `归档盒.exe`） | [归档盒-1.8.2-windows-x64.zip](https://github.com/ypjn/guidanghe/releases/download/v1.8.2/归档盒-1.8.2-windows-x64.zip) |
+| **macOS Apple 芯片** | `.app` + 只读 DMG | [归档盒-1.8.2-macos-arm64.dmg](https://github.com/ypjn/guidanghe/releases/download/v1.8.2/归档盒-1.8.2-macos-arm64.dmg) |
 
-两个安装包都从当前主分支构建。校验值写在该 Release 的说明里，也写在构建机的 `打包/dist/SHA256SUMS.txt` 与 `打包/dist/SHA256SUMS-windows.txt`。Windows 包未签名，SmartScreen 可能提示未知发布者，请先对照哈希。Mac 包是本机 ad-hoc 签名，没有 Apple 公证。
+发布页：[v1.8.2](https://github.com/ypjn/guidanghe/releases/tag/v1.8.2)。两个包都从提交 `ab6697a` 构建。
+
+**SHA-256**
+
+```
+a0413c78505bef3a11dbde116fdf96798af3ef2273fd77adc9bfe0df99390eb1  归档盒-1.8.2-windows-x64.zip
+0dedfa0eed1302bc72c2854acef578e3f5f74751f74b79e5df7abf86ffc63597  归档盒-1.8.2-macos-arm64.dmg
+```
+
+Windows 包约 91 MB，未签名，SmartScreen 可能提示未知发布者，请先对照哈希。Mac 包约 152 MB，是本机 ad-hoc 签名，没有 Apple 公证。
 
 Windows 标准 ZIP 只带界面和 PDF 文字提取（PySide6 6.12.0、pypdf 6.4.0）。文件夹监视、扫描版 PDF 渲染和 RapidOCR 不在这个 ZIP 里。Mac 包包含这些组件，监视和扫描识别默认都不开。
 
