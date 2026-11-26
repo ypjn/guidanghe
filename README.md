@@ -46,7 +46,7 @@ Windows 标准 ZIP 只带界面和 PDF 文字提取（PySide6 6.12.0、pypdf 6.4
 
 语义检索还没有做，搜索窗口里写了这一点。程序不内置任何 AI 密钥。
 
-分类手册在 `docs/handbooks/2026-11-23-classification-handbook.md`。它描述财务、证件、健康等标准名，并可以用 `handbook_session.py` 把一次分类记录存下来。主窗口的整理和补充分类仍使用课程、竞赛、项目、校园事务，不会自动改用这本手册。
+分类手册在 `docs/handbooks/2026-11-23-classification-handbook.md`。主窗口的分类包默认是学习，仍使用课程、竞赛、项目、校园事务。换成财务、证件等包之后，一次只带那个包的标准名；模型不能自造类别，路径由程序填写。分过的文件记在该文件夹的 `.organizer/handbook/`，下次打开沿用。按类型整理不使用这本手册。
 
 ## Mac / Windows 两套方案（对照）
 
@@ -129,4 +129,4 @@ QT_QPA_PLATFORM=offscreen ../.venv/bin/python tests/desktop_check_ai_consult_flo
 
 ## 还没做
 
-Apple 开发者签名/公证，Windows 代码签名，Windows 真盘拔插与原生窗口完整点击验收。主窗口还没有改用分类手册。同步、NAS 和手机不在这一版里。
+Apple 开发者签名/公证，Windows 代码签名，Windows 真盘拔插与原生窗口完整点击验收。同步、NAS 和手机不在这一版里。

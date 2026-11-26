@@ -12,7 +12,6 @@ import threading
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QComboBox,
     QDialog,
     QGroupBox,
     QHBoxLayout,
@@ -29,6 +28,8 @@ from PySide6.QtWidgets import (
 )
 
 import agent
+from fit_combo import FitComboBox as QComboBox
+from operation_feedback import install
 
 
 class AgentWorker(QThread):
@@ -180,6 +181,7 @@ class AgentDialog(QDialog):
         self.btn_apply.clicked.connect(self.apply_plan)
         bottom.addWidget(self.btn_apply)
         outer.addLayout(bottom)
+        self.feedback = install(outer, self.hint)
 
     @staticmethod
     def _setup_table(table: QTableWidget):

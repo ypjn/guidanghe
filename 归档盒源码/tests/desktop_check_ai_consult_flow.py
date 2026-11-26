@@ -112,7 +112,9 @@ def main() -> int:
     window.show()
     app.processEvents()
 
-    check("主入口是 AI 整理顾问", window.btn_agent.text() == "AI 整理顾问")
+    check("侧栏是根目录总管家", window.btn_agent.text() == "总管家")
+    check("标题栏是根目录总管家", window.btn_ai_assist.text() == "总管家")
+    check("预览旁是这个文件夹的管家", window.btn_folder_ai.text() == "AI 管家")
     check("标题栏有配置 AI",
           "配置 AI" in window.btn_ai_header.text()
           or "管理 AI" in window.btn_ai_header.text())

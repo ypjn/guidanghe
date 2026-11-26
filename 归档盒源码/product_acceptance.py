@@ -135,7 +135,8 @@ def cmd_imports(report: Report, workdir: str, extra: list[str]) -> None:
         "learning", "learning_dialog", "agent", "agent_dialog",
         "ocr_engine", "app_metadata", "preferences", "content_extract",
         "backup_dialog", "backup_worker", "backup_service", "volume_identity",
-        "ai_consult", "ai_consult_dialog", "relation_graph", "index_service",
+        "ai_consult", "ai_consult_dialog", "consult_chat_format",
+        "relation_graph", "index_service",
         "content_search", "ui_theme", "media_hints",
     ):
         try:

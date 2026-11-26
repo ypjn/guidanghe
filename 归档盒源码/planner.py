@@ -134,6 +134,8 @@ class PlanItem:
     ambiguity: Optional[dict] = None  # 会改变落点的歧义（候选与原因）
     user_resolved: bool = False     # 用户已在预览里改选
     skipped: bool = False           # 用户已在预览里跳过，保持原位
+    # 保护目录整包：预览只显示文件夹名，执行时移动整个目录
+    is_package: bool = False
 
     @property
     def has_duplicates(self) -> bool:
@@ -279,7 +281,11 @@ def assign_unique_targets(items: List[PlanItem], root: str) -> None:
 
     for item in order:
         base_name = item.file.filename
-        stem, ext = os.path.splitext(base_name)
+        # 文件夹名里的点不是扩展名，避免把「项目.v2」收成「项目 (1).v2」。
+        if getattr(item, "is_package", False):
+            stem, ext = base_name, ""
+        else:
+            stem, ext = os.path.splitext(base_name)
         candidate = base_name
         counter = 1
         while True:
@@ -877,6 +883,91 @@ def _leave_unchecked(rel_path: str, mode: str, target_dir_rel: str) -> bool:
     return top not in _INBOX_DIRS
 
 
+PACKAGE_RULE_KEY = "package"
+
+
+def _path_is_inside(child: str, parent: str) -> bool:
+    """child 是否位于 parent 里面（不含两者相同）。"""
+    child_key = os.path.normcase(os.path.abspath(child))
+    parent_key = os.path.normcase(os.path.abspath(parent))
+    return child_key.startswith(parent_key + os.sep)
+
+
+def outermost_paths(paths: List[str]) -> List[str]:
+    """丢掉已经落在另一个路径里面的目录，只留最外层。"""
+    ordered = sorted(paths, key=lambda path: (
+        os.path.normcase(os.path.abspath(path)).count(os.sep),
+        os.path.normcase(os.path.abspath(path)),
+    ))
+    kept: List[str] = []
+    for path in ordered:
+        if any(_path_is_inside(path, earlier) for earlier in kept):
+            continue
+        kept.append(path)
+    return kept
+
+
+def package_items_for_scan(scan_result: ScanResult) -> List[PlanItem]:
+    """把自动识别和手动保护的目录收成整包条目。
+
+    嵌套的项目标记不再各占一行。归档盒自身的默认保护目录不移动。
+    """
+    if scan_result is None:
+        return []
+    eligible: List[str] = []
+    for path, kinds in (scan_result.protected_kinds or {}).items():
+        kind_set = {part for part in str(kinds).split(",") if part}
+        if "default" in kind_set or not ({"auto", "manual"} & kind_set):
+            continue
+        if os.path.islink(path) or not os.path.isdir(path):
+            continue
+        eligible.append(path)
+    if not eligible:
+        return []
+
+    root = os.path.abspath(scan_result.root)
+    items: List[PlanItem] = []
+    for path in outermost_paths(eligible):
+        rel = os.path.relpath(path, root)
+        if rel.startswith("..") or os.path.isabs(rel):
+            continue
+        name = os.path.basename(path.rstrip("\\/")) or rel
+        prefix = os.path.normcase(os.path.abspath(path))
+        inside = 0
+        for entry in scan_result.skipped or []:
+            entry_path = os.path.normcase(os.path.abspath(entry.abs_path))
+            if entry_path == prefix or entry_path.startswith(prefix + os.sep):
+                inside += 1
+        target_dir = os.path.join(TARGET_ROOT, "项目")
+        target_rel = os.path.join(target_dir, name)
+        already = os.path.normcase(rel) == os.path.normcase(target_rel)
+        rule = f"整包归档：文件夹「{name}」内部 {inside} 个文件不拆开，整个文件夹一起移动"
+        if already:
+            rule += "；已经在项目文件夹里，默认不移动"
+        items.append(PlanItem(
+            file=FileEntry(
+                abs_path=os.path.abspath(path),
+                rel_path=rel,
+                filename=name,
+                file_type="项目",
+                size=0,
+                size_display="整包",
+            ),
+            course="项目",
+            file_type="项目",
+            rule_applied=rule,
+            rule_key=PACKAGE_RULE_KEY,
+            target_dir_rel=target_dir,
+            target_filename=name,
+            target_rel_path=target_rel,
+            direction="项目",
+            category=name,
+            selected=not already,
+            is_package=True,
+        ))
+    return items
+
+
 def classify_entries(
     scan_result: ScanResult,
     mode: str,
@@ -1096,10 +1187,16 @@ def classify_entries(
         _group_unregistered_with_neighbors(items, root)
         _detect_ambiguities(items, compiled)
 
+    # 保护目录不逐个文件分类。每个最外层文件夹变成一条整包，
+    # 预览里只出现文件夹名，内部文件留在这个文件夹里一起移动。
+    items.extend(package_items_for_scan(scan_result))
+
     # 全部分类/归组完成后再统一分配唯一名（稳定、大小写归一，见函数说明）
     assign_unique_targets(items, root)
 
     for item in items:
+        if getattr(item, "is_package", False):
+            continue
         # 已经放在自有文件夹里的文件，不要在「按类型」里默认勾走。
         # 推荐模式仍默认勾选：它会按原有课程目录归位，而不是拆成类型文件夹。
         if _leave_unchecked(item.file.rel_path, mode, item.target_dir_rel):

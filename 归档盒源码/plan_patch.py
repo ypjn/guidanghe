@@ -64,11 +64,12 @@ def _ensure_qt():
         from PySide6.QtCore import Qt
         from PySide6.QtWidgets import (
             QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
-            QLineEdit, QComboBox, QLabel, QDialogButtonBox, QPushButton,
+            QLineEdit, QLabel, QDialogButtonBox, QPushButton,
             QMessageBox, QCheckBox, QTextEdit,
         )
+        from fit_combo import FitComboBox
         return (Qt, QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
-                QLineEdit, QComboBox, QLabel, QDialogButtonBox, QPushButton,
+                QLineEdit, FitComboBox, QLabel, QDialogButtonBox, QPushButton,
                 QMessageBox, QCheckBox, QTextEdit), None
     except Exception as e:
         _MANUAL_OVERRIDE_IMPORT_FAIL = e

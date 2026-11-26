@@ -74,6 +74,12 @@ Get-ChildItem $Src -File | Where-Object {
 } | ForEach-Object {
     Copy-Item $_.FullName (Join-Path $AppDir $_.Name) -Force
 }
+$Handbook = Join-Path (Split-Path $Src -Parent) "docs\handbooks\2026-11-23-classification-handbook.md"
+if (Test-Path $Handbook) {
+    $HandbookDir = Join-Path $AppDir "handbooks"
+    New-Item -ItemType Directory -Path $HandbookDir -Force | Out-Null
+    Copy-Item $Handbook (Join-Path $HandbookDir "2026-11-23-classification-handbook.md") -Force
+}
 Get-ChildItem $Src -Directory | Where-Object { $_.Name -notin $SkipDirs } | ForEach-Object {
     $dest = Join-Path $AppDir $_.Name
     Copy-Item $_.FullName $dest -Recurse -Force

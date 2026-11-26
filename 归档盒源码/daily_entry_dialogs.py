@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 
 import recent_spaces
 from intake_model import IntakeList, is_within, normalize_path
+from operation_feedback import install
 
 
 def _format_opened(raw: str) -> str:
@@ -105,6 +106,7 @@ class RecentSpacesDialog(QDialog):
         bb.rejected.connect(self.reject)
         bb.accepted.connect(self.reject)
         lay.addWidget(bb)
+        self.feedback = install(lay)
 
     def _clear_rows(self):
         for i in range(self.rows_grid.rowCount()):
@@ -138,6 +140,7 @@ class RecentSpacesDialog(QDialog):
             self._records = recent_spaces.list_spaces()
         except recent_spaces.RecentSpacesError as exc:
             self._records = []
+            self.feedback.reflect(f"最近空间读取失败：{exc}")
             QMessageBox.warning(self, "最近整理空间", str(exc))
             self._update_buttons()
             return
@@ -147,6 +150,7 @@ class RecentSpacesDialog(QDialog):
             empty.setStyleSheet("color:#78909C;padding:8px;")
             self.rows_grid.addWidget(empty, 1, 0, 1, 6)
             self._update_buttons()
+            self.feedback.reflect("还没有最近打开的空间。")
             return
         self._row_group = QButtonGroup(self)
         self._row_group.setExclusive(True)
@@ -190,6 +194,7 @@ class RecentSpacesDialog(QDialog):
             self.rows_grid.addWidget(status_label, r + 1, 5)
         self.rows_grid.setRowStretch(len(self._records) + 1, 1)
         self._update_buttons()
+        self.feedback.reflect(f"已列出 {len(self._records)} 个最近空间。")
 
     def row_count(self) -> int:
         return len(self._records)
@@ -238,6 +243,8 @@ class RecentSpacesDialog(QDialog):
         if rec is None:
             return
         if not rec.usable:
+            self.feedback.reflect(
+                f"打不开「{rec.name}」：{rec.status_reason or rec.status}")
             QMessageBox.warning(
                 self, "无法打开空间",
                 f"目录当前不可用：\n{rec.path}\n\n{rec.status_reason or rec.status}\n"
@@ -250,12 +257,15 @@ class RecentSpacesDialog(QDialog):
         rec = self._selected()
         if rec is None:
             return
+        now_pinned = not rec.pinned
         try:
-            recent_spaces.set_pinned(rec.path, not rec.pinned)
+            recent_spaces.set_pinned(rec.path, now_pinned)
         except recent_spaces.RecentSpacesError as exc:
+            self.feedback.reflect(f"固定失败：{exc}")
             QMessageBox.warning(self, "最近整理空间", str(exc))
             return
         self.refresh()
+        self.feedback.reflect("已固定这个空间。" if now_pinned else "已取消固定。")
 
     def on_remove(self):
         rec = self._selected()
@@ -270,9 +280,11 @@ class RecentSpacesDialog(QDialog):
         try:
             recent_spaces.remove(rec.path)
         except recent_spaces.RecentSpacesError as exc:
+            self.feedback.reflect(f"移除失败：{exc}")
             QMessageBox.warning(self, "最近整理空间", str(exc))
             return
         self.refresh()
+        self.feedback.reflect("已从最近记录中移除。文件夹本身还在。")
 
 
 class _DropListWidget(QListWidget):
@@ -366,6 +378,7 @@ class IntakeDialog(QDialog):
         bb.accepted.connect(self.reject)
         lay.addWidget(bb)
         self.list_widget.itemSelectionChanged.connect(self._update_buttons)
+        self.feedback = install(lay, self.message, hide_source=False)
 
     def refresh(self, select_paths=None):
         root = self.get_root()

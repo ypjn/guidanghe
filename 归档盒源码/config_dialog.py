@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QTabWidget, QTextEdit, QVBoxLayout, QWidget,
 )
 
+from operation_feedback import install
 from classification_config import (
     CONFIG_VERSION, DIRECTIONS, LONG_TERM_DIRECTIONS,
     INNER_CLEAR, INNER_KEEP, INNER_REPLACE,
@@ -383,6 +384,8 @@ class ClassificationConfigDialog(QDialog):
         self.buttons.rejected.connect(self.reject)
         bottom.addWidget(self.buttons)
         lay.addLayout(bottom)
+        self.feedback = install(lay, self.preview_label)
+        self.feedback.follow(self.error_label, hide_source=False)
 
     def _tab_page(self, table: QTableWidget, defaults: List[str]) -> QWidget:
         page = QWidget()
@@ -517,14 +520,14 @@ class ClassificationConfigDialog(QDialog):
                 for r in cfg.long_term_rules
             ]
         _set_rows(self.table_longterm, rows)
+        self.preview_label.setText(
+            "当前使用内置默认配置" if using_defaults
+            else "当前使用该目录的自定义配置")
         if self.config_error:
             self.error_label.setText(
                 f"当前配置不可用，已阻止推荐模式生成计划：\n{self.config_error}\n"
                 "保存将用当前草稿覆盖损坏/不兼容的配置文件。")
             self.error_label.show()
-        self.preview_label.setText(
-            "当前使用内置默认配置" if using_defaults
-            else "当前使用该目录的自定义配置")
 
     @staticmethod
     def _inner_display(rule: LongTermRule) -> str:

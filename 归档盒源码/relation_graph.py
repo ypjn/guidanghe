@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget,
 )
 
+from operation_feedback import install
 from ui_theme import INK, LINE, MUTE, PAPER, RIBBON, STAMP, STAMP_SOFT, WHITE
 
 
@@ -348,3 +349,6 @@ class RelationGraphDialog(QDialog):
         bb.rejected.connect(self.reject)
         bb.button(QDialogButtonBox.StandardButton.Close).setText("关闭")
         lay.addWidget(bb)
+        self.feedback = install(lay)
+        self.feedback.reflect(
+            f"已载入 {len(graph.nodes)} 个节点、{len(graph.edges)} 条关系。")

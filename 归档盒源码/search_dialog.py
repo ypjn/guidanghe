@@ -8,11 +8,13 @@ import sys
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QHBoxLayout, QLabel, QLineEdit, QListWidget,
+    QDialog, QHBoxLayout, QLabel, QLineEdit, QListWidget,
     QPushButton, QVBoxLayout,
 )
 
 from index_store import IndexStore
+from fit_combo import FitComboBox as QComboBox
+from operation_feedback import install
 from search_intent import understand
 from search_session import SearchSession, locate_hit, run_lookup
 
@@ -99,6 +101,7 @@ class SearchDialog(QDialog):
         layout.addWidget(self.results, 1)
         layout.addWidget(self.status)
         layout.addLayout(actions)
+        self.feedback = install(layout, self.status)
         self._load_spaces()
 
     def _load_spaces(self) -> None:
@@ -119,7 +122,9 @@ class SearchDialog(QDialog):
         self.understood = understand(self.query.text())
         self.summary.setText(self.understood.summary())
         if self.understood.action == "organize":
-            self.status.setText("这句话是整理。请先查看结果，再选择要移动的文件。")
+            self.status.setText("正在搜索……这句话是整理。请先查看结果，再选择要移动的文件。")
+        else:
+            self.status.setText("正在搜索……")
         space_id = self.spaces.currentData()
         space_ids = [space_id] if space_id else []
         self.worker = _LookupThread(

@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import time
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ["ARCHIVEBOX_APP_DIR"] = tempfile.mkdtemp(prefix="archivebox_ai_")
@@ -136,9 +137,88 @@ def main() -> None:
     assert hasattr(window, "btn_ai_header")
     assert hasattr(window, "ai_banner")
     assert "配置 AI" in window.btn_ai_header.text() or "管理 AI" in window.btn_ai_header.text()
-    assert window.btn_agent.text() == "AI 整理顾问"
-    assert window.btn_ai_assist.text() == "AI 管家"
+    assert window.btn_agent.text() == "总管家"
+    assert window.btn_ai_assist.text() == "总管家"
     assert window.btn_ai_assist.objectName() == "aiAssist"
+    assert "根目录" in window.btn_ai_assist.toolTip()
+    assert window.btn_folder_ai.text() == "AI 管家"
+    assert window.btn_folder_ai.parent() is window.classifying_bar
+    assert window.classifying_bar.parent() is window.table.parent()
+    window.path_edit.setText("/tmp/课程资料")
+    window._update_button_states()
+    assert window.classifying_name.text() == "课程资料"
+    assert window.btn_folder_ai.isEnabled()
+    window.resize(1200, 800)
+    window.show()
+    app.processEvents()
+    header_y = window.btn_ai_assist.mapTo(
+        window, window.btn_ai_assist.rect().center()).y()
+    bar_top = window.classifying_bar.mapTo(
+        window, window.classifying_bar.rect().topLeft()).y()
+    table_top = window.table.mapTo(
+        window, window.table.rect().topLeft()).y()
+    folder_x = window.btn_folder_ai.mapTo(
+        window, window.btn_folder_ai.rect().center()).x()
+    name_x = window.classifying_name.mapTo(
+        window, window.classifying_name.rect().center()).x()
+    assert header_y < bar_top
+    assert bar_top < table_top
+    assert folder_x > name_x
+    from ai_consult_dialog import AiConsultDialog
+    old_scan = AiConsultDialog.start_scan_and_analyze
+    AiConsultDialog.start_scan_and_analyze = lambda self: None
+    try:
+        root_dlg = AiConsultDialog(window, "/tmp/课程资料", role="root")
+        folder_dlg = AiConsultDialog(window, "/tmp/课程资料", role="folder")
+        assert root_dlg.windowTitle() == "总管家 · 根目录"
+        assert folder_dlg.windowTitle() == "AI 管家 · 课程资料"
+        assert "总管家" in root_dlg.scope_note
+        assert "这个文件夹" in folder_dlg.scope_note
+        assert "当前分类预览" not in folder_dlg._goal_for_model()
+        embedded = AiConsultDialog(
+            window, "/tmp/课程资料", role="folder", embedded=True)
+        assert embedded.embedded
+        assert not hasattr(embedded, "snapshot_view")
+        assert all("总管家" not in text for _role, text in embedded._messages)
+        embedded._on_scan_done(
+            type("Snap", (), {"text": "摘要", "file_count": 2, "dir_count": 1})(),
+            False)
+        assert embedded.snapshot.text == "摘要"
+        assert embedded.status.text().startswith("扫描完成")
+        root_dlg.close()
+        folder_dlg.close()
+        embedded.close()
+        space = tempfile.mkdtemp(prefix="folder_ai_")
+        window.path_edit.setText(space)
+        window.on_folder_agent()
+        deadline = time.time() + 1.2
+        while time.time() < deadline:
+            app.processEvents()
+            if window.main_splitter.sizes()[3] >= 300:
+                break
+            time.sleep(0.02)
+        app.processEvents()
+        rail = window._folder_consult_dialog
+        assert rail is not None and rail.embedded and not rail.isWindow()
+        assert rail.parent() is window.folder_ai_host
+        assert window.folder_ai_host.isVisible()
+        assert window.main_splitter.sizes()[3] >= 300
+        assert window.btn_folder_ai.text() == "收起"
+        window._set_inspector_open(True)
+        window._set_inspector_open(False)
+        assert len(window.main_splitter.sizes()) == 4
+        window.on_folder_agent()
+        deadline = time.time() + 1.2
+        while time.time() < deadline:
+            app.processEvents()
+            if not window.folder_ai_host.isVisible():
+                break
+            time.sleep(0.02)
+        app.processEvents()
+        assert window.btn_folder_ai.text() == "AI 管家"
+        assert not window.folder_ai_host.isVisible()
+    finally:
+        AiConsultDialog.start_scan_and_analyze = old_scan
     dlg = AiSettingsDialog(window._ai_settings, window)
     assert dlg.windowTitle() == "配置 AI 接口"
     dlg.reject()

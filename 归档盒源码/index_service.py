@@ -22,6 +22,7 @@ from index_store import (
     IndexStore, IndexStoreError, IndexUpdateReport, SpaceSpec,
 )
 from scan_cache import file_identity, identity_matches
+from safe_root import affected_reason, unsafe_root_reason
 from scanner import _is_junction_or_reparse, _looks_like_project_root, classify_type
 from volume_identity import identity_mismatch_message, probe_volume, volumes_match
 
@@ -35,6 +36,9 @@ def register_space(root: str, name: str = "", policy: Optional[dict] = None,
     root = os.path.realpath(os.path.abspath(os.path.expanduser(root)))
     if not os.path.isdir(root):
         raise IndexStoreError(f"无法登记，目录不存在：{root}")
+    blocked = unsafe_root_reason(root)
+    if blocked:
+        raise IndexStoreError(blocked)
     own = store is None
     store = store or IndexStore()
     try:
@@ -219,6 +223,10 @@ def overlap_notes(store: IndexStore) -> dict[str, str]:
 
 def _scan(store, spec, generation, report, listed, seen, excluded_prefixes,
           cancel_event, progress_cb) -> None:
+    blocked = unsafe_root_reason(spec.root)
+    if blocked:
+        report.errors.append(blocked)
+        return
     protected = _protected_rels(spec.root)
     policy = dict(spec.policy)
     policy["protected_prefixes"] = protected
@@ -273,6 +281,11 @@ def _scan(store, spec, generation, report, listed, seen, excluded_prefixes,
                 report.errors.append(f"{child}：{exc.strerror or exc}")
                 continue
             if is_dir:
+                danger = affected_reason(entry.path, is_dir=True)
+                if danger:
+                    excluded_prefixes.append((child, danger))
+                    report.excluded += 1
+                    continue
                 reason = _looks_like_project_root(entry.path)
                 if reason and child not in policy["protected_prefixes"]:
                     policy["protected_prefixes"] = list(
@@ -286,6 +299,11 @@ def _scan(store, spec, generation, report, listed, seen, excluded_prefixes,
                 if report.superseded or report.cancelled:
                     finished = False
                     break
+                continue
+            danger = affected_reason(entry.path, is_dir=False)
+            if danger:
+                excluded_prefixes.append((child, danger))
+                report.excluded += 1
                 continue
             _remember_file(
                 store, spec, generation, child, entry.path, policy, report, seen)

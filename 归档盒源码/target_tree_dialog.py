@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
     QTreeWidget, QTreeWidgetItem, QVBoxLayout,
 )
 
+from operation_feedback import install
+
 
 class TargetTreeDialog(QDialog):
     def __init__(self, plan, visible_flags, parent=None):
@@ -58,6 +60,7 @@ class TargetTreeDialog(QDialog):
         bb.rejected.connect(self.reject)
         bb.accepted.connect(self.reject)
         lay.addWidget(bb)
+        self.feedback = install(lay, self.info, hide_source=False)
 
     def set_visible_flags(self, flags: List[bool]):
         """由主窗口筛选变化调用（建议节流后调用）。"""

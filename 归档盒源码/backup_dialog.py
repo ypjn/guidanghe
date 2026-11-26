@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 
 from backup_service import list_backup_versions
 from backup_store import validate_vault_placement
+from operation_feedback import install
 from backup_worker import (
     BackupPreviewWorker,
     BackupRestoreWorker,
@@ -202,6 +203,7 @@ class BackupManageDialog(QDialog):
         self.status.setWordWrap(True)
         self.status.setStyleSheet("color:#334155;")
         root.addWidget(self.status)
+        self.feedback = install(root, self.status)
 
         bottom = QHBoxLayout()
         bottom.addStretch(1)

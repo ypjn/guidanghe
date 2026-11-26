@@ -325,6 +325,54 @@ def _one_date(text: str) -> tuple[str, str, str]:
     return "", "", ""
 
 
+SCHOOL_PACK = "学习"
+
+
+def list_packs(rules: list[HandbookRule]) -> list[str]:
+    """手册里实际有记录的包，按出现顺序。学习包不在其中。"""
+    found: list[str] = []
+    for rule in rules:
+        if rule.pack and rule.pack not in found:
+            found.append(rule.pack)
+    return found
+
+
+def priority_for_pack(pack: str) -> str:
+    """一次只描述当前这一个包，不把其他包的标准名塞进提示。"""
+    name = (pack or "").strip()
+    limit = (
+        f"只从「{name}」包的标准名里选。"
+        "category 必须与某个标准名完全一致，不要写包名、路径、已付或未付。"
+        "对不上这个包就 action 设为 skip，category 留空。"
+    )
+    if name == "财务":
+        return (
+            "文件名或正文能读出发票、收据、工资、报销、纳税时，"
+            "归本包里的对应标准名，即使对方是医院、航空公司或供电局。"
+            + limit
+        )
+    return limit
+
+
+def open_pack_session(store_path: str, handbook_path: str, pack: str) -> HandbookSession:
+    """打开这个空间里某一个包的分类记录。没有记录时从手册抽出该包再保存。"""
+    chosen = (pack or "").strip()
+    if not chosen or chosen == SCHOOL_PACK:
+        raise ValueError("学习包不使用这本手册的记录")
+    if os.path.isfile(store_path):
+        session = HandbookSession.load(store_path)
+        packs = {rule.pack for rule in session.rules}
+        if packs != {chosen}:
+            raise ValueError("这份分类记录不是当前选择的包")
+        return session
+    rules = [rule for rule in parse_handbook(handbook_path) if rule.pack == chosen]
+    if not rules:
+        raise ValueError(f"手册里没有「{chosen}」包")
+    session = HandbookSession(store_path, rules, priority_for_pack(chosen), {})
+    session.save()
+    return session
+
+
 def _parse_object(raw: str) -> dict | None:
     text = (raw or "").strip()
     start = text.find("{")

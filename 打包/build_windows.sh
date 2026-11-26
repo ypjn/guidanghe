@@ -89,6 +89,11 @@ printf 'import archivebox_dllpath\n' > "$SITE/archivebox_dllpath.pth"
 for src in "$ROOT/归档盒源码"/*.py; do
   cp "$src" "$DIST/app/"
 done
+HANDBOOK="$ROOT/docs/handbooks/2026-11-23-classification-handbook.md"
+if [[ -f "$HANDBOOK" ]]; then
+  mkdir -p "$DIST/app/handbooks"
+  cp "$HANDBOOK" "$DIST/app/handbooks/"
+fi
 
 # S3 / lead L-01/L-06：去掉 macOS AppleDouble、.DS_Store 与 Python 缓存，
 # 否则发行包里会出现成百上千个 ._* 和 __pycache__。

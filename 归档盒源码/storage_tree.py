@@ -195,7 +195,9 @@ class StorageTree(QTreeWidget):
         self.setMaximumHeight(280)
         self.setAccessibleName("计算机文件夹")
         self.setAccessibleDescription("展开磁盘和文件夹。双击把文件夹设为整理空间。")
-        self.setToolTip("单击查看路径。双击把这个文件夹设为这次要整理的位置。")
+        self.setToolTip(
+            "单击查看路径。双击把资料夹设为整理位置。"
+            "磁盘、主目录和系统目录不能选。")
         self.setStyleSheet(
             "QTreeWidget { background: #F8FAFC; border: 1px solid #E2E8F0;"
             " border-radius: 6px; color: #0F172A; outline: none; }"

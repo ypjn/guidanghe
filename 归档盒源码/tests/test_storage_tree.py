@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+import time
 
 SRC = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, SRC)
@@ -20,8 +21,22 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 from intake_model import normalize_path
 from main import MainWindow
 from storage_tree import (
-    ROLE_PATH, Place, StorageTree, list_child_dirs, list_places, posix_drives,
+    ROLE_LOADED, ROLE_PATH, Place, StorageTree, list_child_dirs, list_places,
+    posix_drives,
 )
+
+
+def wait_loaded(item, timeout=2.0):
+    """目录列表在后台线程里，展开后要等这一层真正读完。"""
+    app = QApplication.instance()
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if app is not None:
+            app.processEvents()
+        if item is not None and item.data(0, ROLE_LOADED):
+            return True
+        time.sleep(0.02)
+    return False
 
 RESULTS = []
 BASE = "/tmp/_storage_tree"
@@ -87,6 +102,7 @@ def main():
         ]
         tree = StorageTree(places)
         home_item = tree.topLevelItem(1)
+        wait_loaded(home_item)
         shown = [home_item.child(i).text(0) for i in range(home_item.childCount())]
         highlighted = []
         activated = []
@@ -103,11 +119,13 @@ def main():
                     and not current.isExpanded())
         empty = tree.topLevelItem(0)
         tree.expandItem(empty)
+        wait_loaded(empty)
         empty_child = None
         for i in range(empty.childCount()):
             if empty.child(i).text(0) == "空文件夹":
                 empty_child = empty.child(i)
         tree.expandItem(empty_child)
+        wait_loaded(empty_child)
         no_arrow = (empty_child.childCount() == 0
                     and empty_child.childIndicatorPolicy()
                     == empty_child.ChildIndicatorPolicy.DontShowIndicator)
@@ -159,6 +177,66 @@ def main():
         app.processEvents()
     except Exception as e:
         rec("S05", "主窗口侧栏", False, f"异常：{e}")
+
+    try:
+        import main as main_mod
+        w = MainWindow()
+        target = os.path.join(BASE, "picked")
+        os.makedirs(target, exist_ok=True)
+        calls = []
+
+        def fake_choose(parent, caption, start):
+            calls.append((caption, start))
+            return target if len(calls) == 1 else ""
+
+        real = main_mod.choose_system_folder
+        main_mod.choose_system_folder = fake_choose
+        try:
+            w.btn_pick_folder.click()
+            opened = os.path.normcase(os.path.realpath(w.path_edit.text().strip())) == (
+                os.path.normcase(os.path.realpath(target)))
+            w._working = True
+            w.btn_pick_folder.click()
+            w.btn_browse.click()
+            stayed = os.path.normcase(os.path.realpath(w.path_edit.text().strip())) == (
+                os.path.normcase(os.path.realpath(target)))
+            w._working = False
+            w._refresh_busy_ui()
+            enabled_idle = w.btn_pick_folder.isEnabled() and w.btn_browse.isEnabled()
+            w._working = True
+            w._refresh_busy_ui()
+            disabled_busy = (not w.btn_pick_folder.isEnabled()
+                             and not w.btn_browse.isEnabled())
+        finally:
+            main_mod.choose_system_folder = real
+        routed = False
+        if sys.platform == "darwin":
+            seen = {}
+
+            def fake_mac(_parent, caption, start):
+                seen["caption"] = caption
+                seen["start"] = start
+                return target
+
+            real_mac = main_mod._mac_choose_folder
+            main_mod._mac_choose_folder = fake_mac
+            try:
+                got = main_mod.choose_system_folder(w, "选择这次要整理的文件夹", target)
+            finally:
+                main_mod._mac_choose_folder = real_mac
+            routed = got == target and seen.get("caption") == "选择这次要整理的文件夹"
+        else:
+            routed = True
+        ok = (w.btn_pick_folder.text() == "选择文件夹…"
+              and calls == [("选择这次要整理的文件夹", "")]
+              and opened and stayed and enabled_idle and disabled_busy and routed)
+        rec("S06", "侧栏按钮打开系统文件夹窗口，忙碌时不弹、不切换", ok,
+            f"调用={calls} 已打开={opened} 忙碌保持={stayed} "
+            f"空闲可用={enabled_idle} 忙碌禁用={disabled_busy} 走系统面板={routed}")
+        w.close()
+        app.processEvents()
+    except Exception as e:
+        rec("S06", "侧栏选择按钮", False, f"异常：{e}")
 
     failed = sum(1 for ok in RESULTS if not ok)
     print(f"\n合计 {len(RESULTS)} 项：未通过 {failed}")

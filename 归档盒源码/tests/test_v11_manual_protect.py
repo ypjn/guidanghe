@@ -98,7 +98,8 @@ def main():
     sr = scan_directory(root, protect_dirs=manual_scan_specs(root, [priv]),
                         detect_project_roots=False)
     rels = plan_rel_paths(sr)
-    m1_ok = (rels == {"课程/讲义.pdf", "课程/作业.docx"}
+    m1_ok = (rels == {"课程/讲义.pdf", "课程/作业.docx", "私有资料"}
+             and "私有资料/secret.txt" not in rels
              and sr.protected_count == 2
              and "用户手动保护" in sr.protected_roots.get(priv, "")
              and sr.protected_kinds.get(priv) == "manual")
@@ -122,10 +123,10 @@ def main():
     sr = scan_directory(root, protect_dirs=manual_scan_specs(root, [parent, child]),
                         detect_project_roots=False)
     rels = plan_rel_paths(sr)
-    m2_ok = (rels == {"外部/d.txt"}
+    m2_ok = (rels == {"外部/d.txt", "父"}
              and sr.protected_count == 3
              and len(sr.protected_roots) == 2
-             and not any(r.startswith("父/") for r in rels))
+             and not any(r.startswith("父/") or r.startswith("父\\") for r in rels))
     rec(
         "M2",
         "父子目录同时保护：深层文件仅计一次且全部跳过",

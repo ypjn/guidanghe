@@ -73,6 +73,8 @@ class PackagingIdentityTests(unittest.TestCase):
         self.assertIn("backup_dialog", spec)
         self.assertIn("backup_worker", spec)
         self.assertIn("relation_graph", spec)
+        self.assertIn("handbook_apply", spec)
+        self.assertIn("2026-11-23-classification-handbook.md", spec)
         self.assertIn("归档盒.icns", spec)
         icon = os.path.join(ROOT, "打包", "assets", "归档盒.icns")
         self.assertTrue(os.path.isfile(icon))

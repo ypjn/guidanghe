@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from safe_root import affected_reason, unsafe_root_reason
 from utils import win_long_path, strip_long_prefix
 
 
@@ -208,6 +209,8 @@ def _find_all_project_roots(root_dir: str,
                 full = os.path.join(dirpath, name)
                 if not os.path.islink(full) and _is_junction_or_reparse(full):
                     continue
+                if affected_reason(full, is_dir=True):
+                    continue
                 kept.append(name)
             dirnames[:] = kept
             reason = _looks_like_project_root(dirpath)
@@ -383,6 +386,11 @@ def _prune_dirnames(result: "ScanResult", dirpath: str, dirnames: List[str]) -> 
             result.hidden_count += 1
             result.add_skipped_dir(full, "隐藏目录（点号开头）")
             continue
+        danger = affected_reason(full, is_dir=True)
+        if danger:
+            result.skipdir_count += 1
+            result.add_skipped_dir(full, danger)
+            continue
         kept.append(name)
     dirnames[:] = kept
 
@@ -408,6 +416,15 @@ def _consider_file(result: "ScanResult", root: str, full_path: str) -> None:
             abs_path=strip_long_prefix(full_path), rel_path="", filename=fname,
             file_type="", size=0, size_display="",
             skipped_reason="符号链接",
+        ))
+        return
+    danger = affected_reason(full_path, is_dir=False)
+    if danger:
+        result.skipdir_count += 1
+        result.skipped.append(FileEntry(
+            abs_path=strip_long_prefix(full_path), rel_path="", filename=fname,
+            file_type="", size=0, size_display="",
+            skipped_reason=danger,
         ))
         return
     if fname.startswith("."):
@@ -531,6 +548,8 @@ def scan_directory(
     - 跳过 .git、_已整理、.organizer 目录
     - 跳过以 '.' 开头的隐藏文件/目录（保留隐藏目录中的 .git 等显式规则已覆盖）
     - 跳过符号链接（os.path.islink 为 True 的）
+    - 磁盘根、用户主目录、资源库和系统目录直接拒绝，不往下走
+    - 软件包、备份和落在系统位置的子目录整夹跳过
     - 只读扫描，不创建任何文件或目录
 
     V1.1 新增：
@@ -541,6 +560,11 @@ def scan_directory(
     root = os.path.abspath(root_path)
     result = ScanResult(root=root)
     protect_dirs = protect_dirs or []
+    blocked = unsafe_root_reason(root)
+    if blocked:
+        result.errors.append(blocked)
+        result.add_skipped_dir(root, blocked)
+        return result
 
     if not os.path.exists(win_long_path(root)):
         result.errors.append(f"路径不存在: {root}")
@@ -635,6 +659,11 @@ def scan_paths(
     root = os.path.abspath(root_path)
     result = ScanResult(root=root)
     protect_dirs = protect_dirs or []
+    blocked = unsafe_root_reason(root)
+    if blocked:
+        result.errors.append(blocked)
+        result.add_skipped_dir(root, blocked)
+        return result
     if not os.path.isdir(root):
         result.errors.append(f"路径不是目录: {root}")
         return result
@@ -669,6 +698,11 @@ def scan_paths(
             checked_dirs.add(directory)
 
     def walk_dir(start: str):
+        danger = affected_reason(start, is_dir=True)
+        if danger:
+            result.skipdir_count += 1
+            result.add_skipped_dir(start, danger)
+            return
         if not os.path.islink(start) and _is_junction_or_reparse(start):
             result.junction_dirs.append(os.path.abspath(start))
             result.add_skipped_dir(start, "junction / 重解析点（目录联接）")

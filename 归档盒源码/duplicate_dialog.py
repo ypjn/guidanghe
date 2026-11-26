@@ -14,7 +14,7 @@ from typing import List, Optional
 from PySide6.QtCore import Qt, QThread, Signal, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
+    QAbstractItemView, QDialog, QDialogButtonBox, QFileDialog,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QProgressBar,
     QPushButton, QTextEdit, QTreeWidget, QTreeWidgetItem, QVBoxLayout,
 )
@@ -25,6 +25,9 @@ from duplicate_report import (
     export_csv_text, export_json_text, verify_entries,
     write_csv_file,
 )
+from operation_feedback import install
+from fit_combo import FitComboBox as QComboBox
+from ui_theme import STAMP, STAMP_SOFT
 from main import _reveal_in_file_manager
 
 
@@ -96,10 +99,25 @@ class DuplicateDialog(QDialog):
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
+        self.progress.setFixedHeight(16)
+        self.progress.setTextVisible(True)
+        self.progress.setFormat("%v / %m")
+        self.progress.setAccessibleName("加载进度")
+        self.progress.setStyleSheet(
+            "QProgressBar {"
+            "border:none; border-radius:2px;"
+            f"background:{STAMP_SOFT}; min-height:16px; max-height:16px;"
+            "text-align:center; color:#16324F; font-size:11px;"
+            "}"
+            "QProgressBar::chunk {"
+            f"border-radius:2px; background:{STAMP};"
+            "}"
+        )
         lay.addWidget(self.progress)
         self.progress_label = QLabel("")
         self.progress_label.setWordWrap(True)
         lay.addWidget(self.progress_label)
+        self.feedback = install(lay, self.progress_label, show_bar=False)
 
         row = QHBoxLayout()
         self.search = QLineEdit()
@@ -199,7 +217,8 @@ class DuplicateDialog(QDialog):
         self.report = report
         self._running = False
         self.progress.setVisible(False)
-        self.progress_label.setText("")
+        self.progress_label.setText(
+            f"核对完成：{report.group_count_text}；{report.status_text}")
         self.info.setText(
             "<span style='color:#0F172A;'>"
             f"<b>范围：</b>{report.scope_note}<br>"

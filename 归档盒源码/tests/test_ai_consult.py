@@ -21,6 +21,8 @@ from ai_fallback import AiSettings  # noqa: E402
 from ai_prompts import (  # noqa: E402
     CLASSIFY_SYSTEM_PROMPT, CONSULT_PLAN_SYSTEM_PROMPT, CONSULT_SYSTEM_PROMPT,
 )
+from consult_chat_format import render_transcript  # noqa: E402
+from ui_theme import AMBER_BG  # noqa: E402
 
 
 class AiConsultTests(unittest.TestCase):
@@ -43,6 +45,8 @@ class AiConsultTests(unittest.TestCase):
         self.assertIn("归档助手", CLASSIFY_SYSTEM_PROMPT)
         self.assertIn("整理顾问", CONSULT_SYSTEM_PROMPT)
         self.assertIn("不声称已经移动", CONSULT_SYSTEM_PROMPT)
+        self.assertIn("## 需要你确认", CONSULT_SYSTEM_PROMPT)
+        self.assertIn("## 现状判断", CONSULT_SYSTEM_PROMPT)
         self.assertIn("只输出一个 JSON 对象", CONSULT_PLAN_SYSTEM_PROMPT)
 
     def test_build_preview_plan_from_consult(self):
@@ -123,6 +127,54 @@ class AiConsultTests(unittest.TestCase):
         messages = build_initial_messages(snap, goal="只收拾下载区")
         self.assertEqual(messages[0]["content"], CONSULT_SYSTEM_PROMPT)
         self.assertIn("只收拾下载区", messages[1]["content"])
+
+
+class ConsultChatFormatTests(unittest.TestCase):
+    def test_user_bubble_is_right_aligned_and_escaped(self):
+        rendered = render_transcript([("user", "<script>alert(1)</script>")])
+        self.assertIn('width="28%"', rendered)
+        self.assertIn('width="72%"', rendered)
+        self.assertNotIn("<script>", rendered)
+        self.assertIn("&lt;script&gt;", rendered)
+        self.assertIn(">我</p>", rendered)
+
+    def test_thinking_row_is_separate(self):
+        rendered = render_transcript([("thinking", "AI 思考中…")])
+        self.assertIn("AI 思考中…", rendered)
+        self.assertIn(">AI</td>", rendered)
+
+    def test_assistant_sections_highlight_questions(self):
+        text = (
+            "## 现状判断\n根目录散落文件多。\n\n"
+            "## 建议怎么收\n- `下载/`：先收拢\n\n"
+            "## 先做哪几步\n1. 可直接整理：收下载区\n\n"
+            "## 需要你确认\n- 项目目录要不要动？\n\n"
+            "## 这轮改了什么\n这是第一轮建议。\n"
+        )
+        rendered = render_transcript([("assistant", text)])
+        self.assertIn("顾问", rendered)
+        self.assertIn("需要你确认", rendered)
+        self.assertLess(rendered.find("需要你确认"), rendered.find("现状判断"))
+        self.assertIn(AMBER_BG, rendered)
+        self.assertNotIn("##", rendered)
+        self.assertNotIn("`下载/`", rendered)
+        self.assertIn("下载/", rendered)
+        self.assertIn("这是第一轮建议", rendered)
+
+    def test_legacy_numbered_advice_splits(self):
+        text = (
+            "1. 现状判断\n根目录有散落文件。\n"
+            "2. 建议目标结构（在现有基础上增量调整，不推倒）\n"
+            "– `mathorcup/`：先别动\n"
+            "4. 需要确认\n项目目录是否保留？\n"
+        )
+        rendered = render_transcript([("assistant", text)])
+        self.assertIn(AMBER_BG, rendered)
+        self.assertIn("在现有基础上增量调整，不推倒", rendered)
+        self.assertIn("mathorcup/", rendered)
+        self.assertNotIn("`mathorcup/`", rendered)
+        self.assertNotIn("1. 现状判断", rendered)
+        self.assertIn("项目目录是否保留？", rendered)
 
 
 if __name__ == "__main__":

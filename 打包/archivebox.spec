@@ -21,6 +21,11 @@ from app_metadata import (  # noqa: E402
 
 datas = []
 binaries = []
+_handbook = os.path.abspath(os.path.join(
+    SPECPATH, "..", "docs", "handbooks",
+    "2026-11-23-classification-handbook.md"))
+if os.path.isfile(_handbook):
+    datas.append((_handbook, "handbooks"))
 hiddenimports = [
     "ai_fallback",
     "ai_settings_dialog",
@@ -28,6 +33,7 @@ hiddenimports = [
     "ai_consult",
     "ai_consult_store",
     "ai_consult_dialog",
+    "consult_chat_format",
     "app_metadata",
     "agent",
     "agent_dialog",
@@ -42,6 +48,8 @@ hiddenimports = [
     "duplicate_report",
     "executor",
     "general_catalog",
+    "handbook_session",
+    "handbook_apply",
     "backup_dialog",
     "backup_worker",
     "backup_service",
@@ -67,6 +75,7 @@ hiddenimports = [
     "protect_config",
     "recent_spaces",
     "relation_graph",
+    "operation_feedback",
     "ui_theme",
     "media_hints",
     "rule_preview",

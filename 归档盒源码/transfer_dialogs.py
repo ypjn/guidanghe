@@ -14,7 +14,7 @@ from typing import Callable, Dict, List, Optional
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
-    QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
+    QAbstractItemView, QDialog, QDialogButtonBox, QFileDialog,
     QHBoxLayout, QHeaderView, QInputDialog, QLabel, QMessageBox,
     QPushButton, QRadioButton, QTableWidget, QTableWidgetItem, QTextEdit,
     QVBoxLayout, QButtonGroup,
@@ -24,6 +24,8 @@ from classification_config import (
     ClassificationConfig, ClassificationConfigError, clone_config,
     config_summary,
 )
+from operation_feedback import install
+from fit_combo import FitComboBox as QComboBox
 from config_transfer import (
     ConfigDiff, MergeConflict, MergeResult, config_diff, merge_configs,
     backup_summary, list_backups, restore_latest_backup,
@@ -296,6 +298,7 @@ class ApplyPreviewDialog(QDialog):
         self.bb.accepted.connect(self.accept)
         self.bb.rejected.connect(self.reject)
         lay.addWidget(self.bb)
+        self.feedback = install(lay, self.status)
 
         self._start_impact()
 
@@ -455,6 +458,7 @@ class SchemeCenterDialog(QDialog):
             "color:#B71C1C;background:#FFEBEE;padding:6px;border-radius:4px;")
         self.error_label.hide()
         lay.addWidget(self.error_label)
+        self.feedback = install(lay, self.error_label, hide_source=False)
 
         row1 = QHBoxLayout()
         self.btn_save_current = QPushButton("从当前配置保存为方案…")
@@ -549,7 +553,13 @@ class SchemeCenterDialog(QDialog):
     def _show_error(self, message: str):
         self.error_label.setText(message)
         self.error_label.show()
+        self.feedback.reflect(message)
         QMessageBox.warning(self, "整理方案", message)
+
+    def _note(self, message: str) -> None:
+        self.error_label.hide()
+        self.error_label.setText("")
+        self.feedback.reflect(message)
 
     # ---- 方案操作 ----
     def on_save_current(self):
@@ -563,6 +573,7 @@ class SchemeCenterDialog(QDialog):
             self._show_error(str(e))
             return
         self.refresh_list()
+        self._note("已保存到本地方案库。")
         QMessageBox.information(self, "整理方案", "已保存到本地方案库。")
 
     def on_duplicate(self):
@@ -579,12 +590,14 @@ class SchemeCenterDialog(QDialog):
             self._show_error(str(e))
             return
         self.refresh_list()
+        self._note(f"已复制为「{name.strip()}」。")
 
     def on_rename(self):
         rec = self._selected()
         if rec is None or not rec.usable:
             return
         if rec.builtin:
+            self.feedback.reflect("内置方案只读，请先复制。")
             QMessageBox.information(self, "整理方案", "内置方案只读，请先复制。")
             return
         name, ok = QInputDialog.getText(
@@ -601,12 +614,14 @@ class SchemeCenterDialog(QDialog):
             self._show_error(str(e))
             return
         self.refresh_list()
+        self._note(f"已修改方案「{name.strip()}」。")
 
     def on_delete(self):
         rec = self._selected()
         if rec is None or not rec.usable:
             return
         if rec.builtin:
+            self.feedback.reflect("内置方案只读，不能删除。")
             QMessageBox.information(self, "整理方案", "内置方案只读，不能删除。")
             return
         if QMessageBox.question(
@@ -621,6 +636,7 @@ class SchemeCenterDialog(QDialog):
             self._show_error(str(e))
             return
         self.refresh_list()
+        self._note(f"已删除方案「{rec.name}」。已经应用到其他目录的配置不受影响。")
 
     def on_import(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -634,6 +650,7 @@ class SchemeCenterDialog(QDialog):
             self._show_error(f"导入失败：{e}")
             return
         self.refresh_list()
+        self._note(f"已导入到方案库：{rec.name}。可在列表中查看差异并应用。")
         QMessageBox.information(
             self, "导入方案",
             f"已导入到方案库：{rec.name}\n可在列表中查看差异并应用。")
@@ -653,6 +670,7 @@ class SchemeCenterDialog(QDialog):
         except ClassificationConfigError as e:
             self._show_error(str(e))
             return
+        self._note(f"已导出：{path}")
         QMessageBox.information(self, "导出方案", f"已导出：{path}")
 
     def on_export_selected(self):
@@ -669,6 +687,7 @@ class SchemeCenterDialog(QDialog):
         except ClassificationConfigError as e:
             self._show_error(str(e))
             return
+        self._note(f"已导出：{path}")
         QMessageBox.information(self, "导出方案", f"已导出：{path}")
 
     def on_apply(self):
@@ -704,6 +723,7 @@ class SchemeCenterDialog(QDialog):
         self.current_config = clone_config(cfg)
         self.refresh_list()
         self.backup_label.setText(backup_summary(self.root))
+        self._note("方案已应用到当前目录。旧预览已失效，请重新生成预览后再整理。")
         QMessageBox.information(
             self, "应用方案",
             "方案已应用到当前目录。旧预览已失效，请点击「重新生成预览」"
@@ -728,4 +748,5 @@ class SchemeCenterDialog(QDialog):
             return
         self.refresh_list()
         self.backup_label.setText(backup_summary(self.root))
+        self._note(message)
         QMessageBox.information(self, "恢复配置", message)

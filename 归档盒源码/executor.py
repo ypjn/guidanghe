@@ -38,6 +38,7 @@ from storage import (
     BATCH_UNDONE, BATCH_PARTIAL_UNDONE, BATCH_PARTIAL_FAILED_UNDONE,
     BATCH_PENDING_STATUSES,
 )
+from safe_root import affected_reason, unsafe_root_reason
 from utils import sha256_file, win_long_path, strip_long_prefix
 
 # 执行/撤销期间把状态写库的缓冲大小：同一批次批量写入，避免每项两次 commit。
@@ -168,6 +169,11 @@ def execute_plan(
         )
         return result
 
+    unsafe = unsafe_root_reason(root)
+    if unsafe:
+        result.errors.append(f"已停止整理：{unsafe}")
+        return result
+
     selected_items = [i for i in plan.items if i.selected]
     result.batch_id = storage.create_batch(plan, f"待执行 {len(selected_items)} 项")
 
@@ -177,6 +183,10 @@ def execute_plan(
     # S3 / F-20：整批一次性写入（单次 commit），不再每个动作单独 commit。
     sha_by_index: List[str] = []
     for item in selected_items:
+        if getattr(item, "is_package", False):
+            # 整包是目录，不能按文件计算指纹。撤销时按文件夹路径移回。
+            sha_by_index.append("")
+            continue
         src_path = os.path.join(root, item.file.rel_path)
         sha_by_index.append(item.source_sha256 or sha256_file(src_path) or "")
     try:
@@ -258,8 +268,49 @@ def execute_plan(
                 f"失败（源越出整理空间）：{item.file.rel_path}")
             continue
 
+        package = bool(getattr(item, "is_package", False))
+        danger = affected_reason(src_path, is_dir=package)
+        if not danger:
+            danger = affected_reason(target_path, is_dir=package)
+        if danger:
+            _record(idx, STATUS_SKIPPED, error=f"未移动：{danger}")
+            result.skipped += 1
+            result.errors.append(
+                f"跳过（{danger}）：{item.file.rel_path}")
+            continue
+
         if progress_cb:
             progress_cb(idx + 1, len(selected_items), item.file.rel_path)
+
+        if getattr(item, "is_package", False):
+            if not os.path.isdir(win_long_path(target_dir)):
+                try:
+                    for rel_dir in _makedirs_tracked(root, target_dir):
+                        if rel_dir not in created_dirs:
+                            storage.record_created_dir(result.batch_id, rel_dir)
+                            created_dirs.add(rel_dir)
+                except OSError as e:
+                    _record(idx, STATUS_FAILED, error=f"创建目录失败：{e}")
+                    result.failed += 1
+                    result.errors.append(
+                        f"失败（创建目标目录）：{item.file.rel_path} → "
+                        f"{item.target_rel_path}：{e}")
+                    continue
+            moved_ok, move_err, is_conflict = _move_package(
+                src_path, target_path, root)
+            if not moved_ok:
+                if is_conflict:
+                    _record(idx, STATUS_SKIPPED, error=f"未移动：{move_err}")
+                    result.skipped += 1
+                else:
+                    _record(idx, STATUS_FAILED, error=f"移动失败：{move_err}")
+                    result.failed += 1
+                result.errors.append(
+                    f"整包未移动（文件夹仍在原处）：{item.file.rel_path} → {move_err}")
+                continue
+            _record(idx, STATUS_MOVED)
+            result.moved += 1
+            continue
 
         # ---- 核验 ----
         if not os.path.isfile(win_long_path(src_path)):
@@ -432,6 +483,55 @@ def undo_latest_batch(
         if not _is_within_root(target_abs, root):
             _mark_conflict(
                 action, "目标路径越出整理空间（符号链接逃逸），无法恢复")
+            _flush_undo()
+            continue
+
+        if (action.rule_key or "") == "package":
+            if os.path.islink(target_abs) or not os.path.isdir(win_long_path(target_abs)):
+                _mark_conflict(action, "目标文件夹已消失，无法恢复（需人工核对）")
+                _flush_undo()
+                continue
+            if os.path.lexists(win_long_path(source_abs)):
+                _mark_conflict(action, "原路径已被占用，不能恢复")
+                _flush_undo()
+                continue
+            try:
+                source_dir = os.path.dirname(source_abs)
+                if source_dir:
+                    for rel_dir in _makedirs_tracked(root, source_dir):
+                        if rel_dir not in batch.created_dirs:
+                            try:
+                                storage.record_created_dir(batch.batch_id, rel_dir)
+                            except Exception:
+                                pass
+                            batch.created_dirs.append(rel_dir)
+            except OSError as e:
+                pending_updates.append(
+                    (action.action_index, STATUS_CONFLICT,
+                     f"恢复失败（创建父目录）：{e}"))
+                result.errors += 1
+                result.errors_list.append(
+                    f"恢复失败：{action.source_rel} ← 创建父目录：{e}")
+                _flush_undo()
+                continue
+            moved_ok, move_err, is_conflict = _move_package(
+                target_abs, source_abs, root)
+            if not moved_ok:
+                pending_updates.append(
+                    (action.action_index, STATUS_CONFLICT,
+                     f"恢复失败：{move_err}"))
+                if is_conflict:
+                    result.conflict += 1
+                    result.conflicts.append(f"{action.source_rel}：{move_err}")
+                else:
+                    result.errors += 1
+                result.errors_list.append(
+                    f"恢复失败：{action.source_rel} ← {move_err}")
+                _flush_undo()
+                continue
+            pending_updates.append(
+                (action.action_index, STATUS_UNDONE, "整包文件夹已移回原处"))
+            result.restored += 1
             _flush_undo()
             continue
 
@@ -639,6 +739,23 @@ def recover_batch(storage: Storage, batch_id: Optional[int] = None,
 
         src_abs = os.path.join(root, action.source_rel)
         tgt_abs = os.path.join(root, action.target_rel)
+
+        if (action.rule_key or "") == "package":
+            src_dir = os.path.isdir(win_long_path(src_abs)) and not os.path.islink(src_abs)
+            tgt_dir = os.path.isdir(win_long_path(tgt_abs)) and not os.path.islink(tgt_abs)
+            if src_dir and not tgt_dir:
+                result.still_planned += 1
+            elif not src_dir and tgt_dir:
+                storage.update_action(
+                    batch_id, action.action_index, STATUS_MOVED,
+                    error="[恢复补记] 整包文件夹已在目标位置")
+                result.recovered_moved += 1
+            else:
+                storage.update_action(
+                    batch_id, action.action_index, STATUS_PAUSED,
+                    error="[恢复] 整包文件夹的原位置和目标位置无法核对，需人工确认")
+                result.paused += 1
+            continue
 
         src_exists = os.path.isfile(win_long_path(src_abs))
         tgt_exists = os.path.isfile(win_long_path(tgt_abs))
@@ -1191,6 +1308,35 @@ def _spill_from_fd(read_fd: int, dst_path: str, root: str,
         except OSError:
             pass
     return os.path.relpath(spill_path, root), ""
+
+
+def _move_package(src_path: str, dst_path: str, root: str) -> tuple[bool, str, bool]:
+    """把一个文件夹整包改名到目标位置。目标已存在时不覆盖。
+
+    返回 (是否成功, 说明, 是否因为目标已存在而没动)。
+    跨卷时不复制整棵目录，文件夹留在原地。
+    """
+    if not _is_within_root(src_path, root) or not _is_within_root(dst_path, root):
+        return False, "整包路径越出整理空间，未移动", False
+    if os.path.islink(src_path) or not os.path.isdir(src_path):
+        return False, "整包来源不是普通文件夹，未移动", False
+    if os.path.lexists(dst_path):
+        return False, "目标位置已存在，为避免覆盖未移动", True
+    src_key = os.path.normcase(os.path.abspath(src_path))
+    dst_key = os.path.normcase(os.path.abspath(dst_path))
+    if dst_key == src_key or dst_key.startswith(src_key + os.sep):
+        return False, "目标落在被移动的文件夹里面，未移动", False
+    status, detail = _rename_no_replace(
+        win_long_path(src_path), win_long_path(dst_path))
+    if status == "ok":
+        if os.path.isdir(dst_path) and not os.path.exists(src_path):
+            return True, "", False
+        return False, "重命名后文件夹不在目标位置，未继续处理", False
+    if status == "exists":
+        return False, "目标位置已存在，为避免覆盖未移动", True
+    if status == "unsupported":
+        return False, "整包移动需要同一块磁盘，文件夹仍在原处", False
+    return False, f"整包移动失败：{detail or '重命名没有完成'}", False
 
 
 def _move_file(src_path: str, dst_path: str, root: str,

@@ -5,7 +5,6 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
-    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -18,6 +17,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from operation_feedback import install
+from fit_combo import FitComboBox as QComboBox
 from ai_fallback import (
     AiSettings,
     apply_provider_defaults,
@@ -120,6 +121,7 @@ class AiSettingsDialog(QDialog):
         buttons.accepted.connect(self._on_save)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
+        self.feedback = install(root, self.detect_label, hide_source=False)
 
     def _load_into_form(self) -> None:
         idx = self.provider_combo.findData(self._settings.provider_id)
@@ -167,9 +169,11 @@ class AiSettingsDialog(QDialog):
         api_key = self.key_edit.text().strip()
         enabled = bool(self.enabled_check.isChecked())
         if enabled and not api_key:
+            self.feedback.reflect("要启用联网 AI，请先填写 API Key。")
             QMessageBox.warning(self, "配置 AI 接口", "要启用联网 AI，请先填写 API Key。")
             return
         if enabled and not base_url:
+            self.feedback.reflect("要启用联网 AI，请先填写接口地址。")
             QMessageBox.warning(self, "配置 AI 接口", "要启用联网 AI，请先填写接口地址。")
             return
         if provider_id != "custom" and (not base_url or not model):
@@ -185,6 +189,7 @@ class AiSettingsDialog(QDialog):
         try:
             save_settings(self._settings)
         except OSError as exc:
+            self.feedback.reflect(f"设置没能保存到磁盘：{exc}")
             QMessageBox.warning(
                 self, "配置 AI 接口",
                 f"设置没能保存到磁盘：\n{exc}")

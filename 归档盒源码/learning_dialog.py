@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 
 import learning
 import preferences
+from operation_feedback import install
 
 
 class LearningCandidatesDialog(QDialog):
@@ -112,6 +113,7 @@ class LearningCandidatesDialog(QDialog):
         btn_close.clicked.connect(self.accept)
         row.addWidget(btn_close)
         lay.addLayout(row)
+        self.feedback = install(lay, self.status)
 
     # ---- 数据刷新 ----
 
@@ -145,6 +147,11 @@ class LearningCandidatesDialog(QDialog):
         else:
             self.detail.setPlainText("还没有可展示的学习建议。")
         self._refresh_buttons()
+        if not (self.status.text() or "").strip():
+            count = len(self._candidates)
+            self.status.setText(
+                f"已载入 {count} 条学习建议。" if count
+                else "还没有可展示的学习建议。")
 
     def _selected(self):
         rows = {i.row() for i in self.table.selectedIndexes()}

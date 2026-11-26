@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 
 from PySide6.QtWidgets import (
-    QDialog, QFileDialog, QHBoxLayout, QLabel, QListWidget, QMessageBox,
-    QPushButton, QVBoxLayout,
+    QApplication, QDialog, QFileDialog, QHBoxLayout, QLabel, QListWidget,
+    QMessageBox, QPushButton, QVBoxLayout,
 )
 
 from index_service import (
@@ -14,6 +14,7 @@ from index_service import (
     update_space,
 )
 from index_store import IndexStore
+from operation_feedback import install
 from volume_identity import probe_volume
 
 
@@ -58,6 +59,8 @@ class IndexSpacesDialog(QDialog):
         layout.addWidget(self.list, 1)
         layout.addWidget(self.detail)
         layout.addLayout(buttons)
+        self.feedback = install(layout)
+        self._refreshing = False
         self._reload()
 
     def _reload(self) -> None:
@@ -125,29 +128,53 @@ class IndexSpacesDialog(QDialog):
         try:
             register_space(path, store=self.store)
         except Exception as exc:
+            self.feedback.reflect(f"登记失败：{exc}")
             QMessageBox.warning(self, "文件空间", str(exc))
             return
         self._reload()
+        self.feedback.reflect(f"已登记：{path}")
 
     def _refresh(self) -> None:
+        if self._refreshing:
+            return
         spec = self._current()
         if spec is None:
+            self.feedback.reflect("请先选择一个文件空间。")
             return
-        report = update_space(
-            spec.space_id, store=self.store,
-            ocr_scans=self._ocr_scans_enabled())
+        self._refreshing = True
+        self.feedback.reflect("正在刷新索引……")
+        QApplication.processEvents()
+        report = None
+        error = ""
+        try:
+            report = update_space(
+                spec.space_id, store=self.store,
+                ocr_scans=self._ocr_scans_enabled())
+        except Exception as exc:
+            error = str(exc)
+        finally:
+            self._refreshing = False
+        if error:
+            self.feedback.reflect(f"刷新索引失败：{error}")
+            QMessageBox.warning(self, "文件空间", error)
+            return
         title = "文件空间"
         if report.coverage == "identity_mismatch":
+            self.feedback.reflect("卷身份不一致，没有刷新索引。可点「重新关联卷」。")
             QMessageBox.warning(
                 self, title,
                 "\n".join(report.errors)
                 + "\n\n若确认是新盘占用了同一路径，可点「重新关联卷」。")
         elif report.coverage == "offline":
+            self.feedback.reflect("空间离线。仍可搜索上次索引；打开和定位已禁用。")
             QMessageBox.information(
                 self, title,
                 "\n".join(report.errors)
                 + "\n离线时仍可搜索上次索引；打开/定位已禁用。")
         else:
+            self.feedback.reflect(
+                f"已刷新索引：新增 {report.added}，更新 {report.updated}，"
+                f"删除 {report.deleted}，复用 {report.reused}，重读 {report.reread}。")
             QMessageBox.information(
                 self, title,
                 f"覆盖范围：{report.coverage}\n"
@@ -159,13 +186,18 @@ class IndexSpacesDialog(QDialog):
     def _toggle(self) -> None:
         spec = self._current()
         if spec is None:
+            self.feedback.reflect("请先选择一个文件空间。")
             return
-        set_space_enabled(spec.space_id, not spec.enabled, store=self.store)
+        enabled = not spec.enabled
+        set_space_enabled(spec.space_id, enabled, store=self.store)
         self._reload()
+        self.feedback.reflect(
+            "已启用这个空间。" if enabled else "已暂停这个空间。搜索仍可用上次索引。")
 
     def _reassociate(self) -> None:
         spec = self._current()
         if spec is None:
+            self.feedback.reflect("请先选择一个文件空间。")
             return
         reply = QMessageBox.question(
             self, "重新关联卷",
@@ -179,17 +211,22 @@ class IndexSpacesDialog(QDialog):
         try:
             reassociate_space(spec.space_id, store=self.store)
         except Exception as exc:
+            self.feedback.reflect(f"重新关联失败：{exc}")
             QMessageBox.warning(self, "文件空间", str(exc))
             return
         self._reload()
+        self.feedback.reflect("已重新关联卷。请再刷新索引。")
         QMessageBox.information(self, "文件空间", "已重新关联。请再点「刷新索引」。")
 
     def _remove(self) -> None:
         spec = self._current()
         if spec is None:
+            self.feedback.reflect("请先选择一个文件空间。")
             return
+        name = spec.name
         remove_space(spec.space_id, store=self.store)
         self._reload()
+        self.feedback.reflect(f"已移除「{name}」的登记。来源文件还在原处。")
 
     def closeEvent(self, event):
         try:

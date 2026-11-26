@@ -25,7 +25,9 @@ from planner import (
     MODE_BY_DIRECTION_SEMESTER, MODE_BY_TYPE, OrganizePlan, PlanItem, generate_plan,
 )
 from recent_spaces import touch
-from scanner import FileEntry, scan_directory
+from executor import execute_plan, undo_latest_batch
+from scanner import FileEntry, ScanResult, scan_directory
+from storage import Storage
 
 
 def _write(root: str, rel: str, text: str = "x") -> None:
@@ -279,6 +281,101 @@ class FlowPolishTests(unittest.TestCase):
         self.assertFalse(first.selected)
         self.assertFalse(second.selected)
         window.close()
+
+    def test_scan_notice_caps_protected_roots(self):
+        root = tempfile.mkdtemp(prefix="archivebox_notice_")
+        result = ScanResult(root=root)
+        result.protected_roots = {}
+        for index in range(30):
+            path = os.path.join(root, f"project-{index:02d}")
+            os.makedirs(path)
+            result.protected_roots[path] = "自动识别（项目标记 package.json 存在）"
+        result.protected_kinds = {path: "auto" for path in result.protected_roots}
+        result.protected_count = 400
+        text = "\n".join(main.build_scan_notices(result))
+        self.assertIn("project-00", text)
+        self.assertIn("project-19", text)
+        self.assertNotIn("project-20", text)
+        self.assertNotIn(os.path.join(root, "project-00"), text)
+        self.assertIn("还有 10 个文件夹未列出", text)
+        self.assertIn("不拆开", text)
+
+    def test_protected_folder_is_one_package(self):
+        root = tempfile.mkdtemp(prefix="archivebox_pkg_")
+        project = os.path.join(root, "mathorcup")
+        os.makedirs(os.path.join(project, ".git"))
+        os.makedirs(os.path.join(project, "web"))
+        with open(os.path.join(project, "main.py"), "w", encoding="utf-8") as handle:
+            handle.write("print(1)\n")
+        with open(os.path.join(project, "data.csv"), "w", encoding="utf-8") as handle:
+            handle.write("a,b\n")
+        with open(os.path.join(project, "web", "package.json"), "w", encoding="utf-8") as handle:
+            handle.write("{}\n")
+        with open(os.path.join(project, "web", "index.js"), "w", encoding="utf-8") as handle:
+            handle.write("console.log(1)\n")
+        with open(os.path.join(root, "散页.txt"), "w", encoding="utf-8") as handle:
+            handle.write("note\n")
+
+        plan = generate_plan(scan_directory(root), MODE_BY_TYPE, [])
+        rels = [item.file.rel_path for item in plan.items]
+        self.assertIn("mathorcup", rels)
+        self.assertNotIn(os.path.join("mathorcup", "main.py"), rels)
+        self.assertNotIn(os.path.join("mathorcup", "web"), rels)
+        self.assertTrue(any(item.file.filename == "散页.txt" for item in plan.items))
+        package = next(item for item in plan.items if item.file.filename == "mathorcup")
+        self.assertTrue(package.is_package)
+        self.assertEqual(package.file.filename, "mathorcup")
+        self.assertIn("项目", package.target_rel_path)
+        self.assertTrue(package.target_rel_path.endswith("mathorcup"))
+        self.assertTrue(package.selected)
+
+        for item in plan.items:
+            item.selected = item.is_package
+        storage = Storage(root)
+        try:
+            executed = execute_plan(plan, storage)
+            self.assertEqual(executed.moved, 1, executed.errors)
+            self.assertFalse(os.path.exists(project))
+            moved = os.path.join(root, "_已整理", "项目", "mathorcup")
+            self.assertTrue(os.path.isfile(os.path.join(moved, "main.py")))
+            self.assertTrue(os.path.isfile(os.path.join(moved, "web", "index.js")))
+            undone = undo_latest_batch(storage)
+            self.assertEqual(undone.restored, 1, undone.errors_list)
+            self.assertTrue(os.path.isfile(os.path.join(project, "main.py")))
+            self.assertTrue(os.path.isfile(os.path.join(project, "web", "index.js")))
+            self.assertFalse(os.path.exists(moved))
+        finally:
+            storage.close()
+
+    def test_scan_notice_dialog_keeps_confirm_on_screen(self):
+        dialog = main.ScanNoticeDialog("保护目录\n" * 800)
+        dialog.show()
+        self.app.processEvents()
+        screen = dialog.screen().availableGeometry()
+        self.assertLessEqual(dialog.frameGeometry().height(), screen.height())
+        self.assertLessEqual(dialog.frameGeometry().width(), screen.width())
+        button = dialog.findChild(QDialogButtonBox)
+        self.assertEqual(button.button(QDialogButtonBox.Ok).text(), "知道了")
+        self.assertLess(button.geometry().bottom(), dialog.height())
+        self.assertGreaterEqual(button.geometry().top(), 0)
+        dialog.close()
+
+    def test_protect_dialog_stays_within_screen(self):
+        root = tempfile.mkdtemp(prefix="archivebox_protect_")
+        readonly = [
+            (os.path.join(root, f"project-{index:03d}"), "auto",
+             "自动识别（项目标记 package.json 存在）")
+            for index in range(200)
+        ]
+        dialog = main.ProtectDirDialog(root, [], readonly, skipped_count=2000)
+        dialog.show()
+        self.app.processEvents()
+        screen = dialog.screen().availableGeometry()
+        self.assertLessEqual(dialog.frameGeometry().height(), screen.height())
+        box = dialog.findChild(QDialogButtonBox)
+        self.assertEqual(box.button(QDialogButtonBox.Ok).text(), "应用")
+        self.assertLess(box.geometry().bottom(), dialog.height())
+        dialog.close()
 
     def test_sidebar_opens_at_top(self):
         window = main.MainWindow()

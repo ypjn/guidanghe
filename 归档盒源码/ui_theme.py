@@ -107,12 +107,12 @@ def app_stylesheet(combo_arrow_url: str) -> str:
         }}
         QComboBox {{
             combobox-popup: 0;
-            padding: 4px 22px 4px 8px;
+            padding: 6px 22px 6px 8px;
             border: 1px solid {LINE};
             border-radius: 2px;
             background: white;
             color: {INK};
-            min-height: 22px;
+            min-height: 28px;
         }}
         QComboBox::drop-down {{
             subcontrol-origin: padding;
