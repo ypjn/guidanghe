@@ -203,6 +203,41 @@ def t_backup_keeps_readable():
     check("说明里留着原备份", os.path.basename(good) in message, message)
 
 
+def t_inspector_handle_locks_when_narrow():
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    os.environ["ARCHIVEBOX_APP_DIR"] = tempfile.mkdtemp(prefix="review_ui_")
+    from PySide6.QtWidgets import QApplication
+    import main as main_mod
+    app = QApplication.instance() or QApplication([])
+    window = main_mod.MainWindow()
+    window.resize(1280, 800)
+    window.show()
+    app.processEvents()
+    splitter = window.main_splitter
+    handle = splitter.handle(2)
+    check("收起时右侧分隔条拉不动",
+          handle is not None and not handle.isEnabled()
+          and splitter.sizes()[2] == 0,
+          str(splitter.sizes()))
+    window._set_inspector_open(True)
+    app.processEvents()
+    sizes = splitter.sizes()
+    sizes[1] += max(0, sizes[2] - 40)
+    sizes[2] = 40
+    splitter.setSizes(sizes)
+    app.processEvents()
+    check("展开后窄不过 260",
+          splitter.handle(2).isEnabled()
+          and splitter.sizes()[2] >= main_mod.INSPECTOR_MIN_WIDTH,
+          str(splitter.sizes()))
+    window._set_inspector_open(False)
+    app.processEvents()
+    check("再收起后宽度回到 0",
+          splitter.sizes()[2] == 0 and not splitter.handle(2).isEnabled(),
+          str(splitter.sizes()))
+    window.close()
+
+
 def t_headline_helpers_exist():
     # 空计划文案在界面方法上，这里只锁住扫描根标记字段存在
     result = ScanResult(root="/tmp")
@@ -219,6 +254,7 @@ def main() -> int:
     t_zero_byte_and_temp()
     t_undo_cancel()
     t_backup_keeps_readable()
+    t_inspector_handle_locks_when_narrow()
     t_headline_helpers_exist()
     print("review followup checks passed")
     return 0
