@@ -12,3 +12,12 @@ __pycache__/
 归档盒源码/archivebox_*/
 归档盒源码/consult_space_*/
 .flow_tmp/
+
+# local AI credentials / build-time bundled secrets
+ai.json
+ai.bundled.json
+.env
+.env.*
+*.pem
+*.key
+*.p12
